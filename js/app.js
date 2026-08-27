@@ -69,6 +69,8 @@ let STATE = {
   payees: [],
   selectedInvoiceIds: [],
   isLoggedIn: false,
+  loginStep: 1,
+  pendingUser: null,
   claudeApiKey: '',
   geminiApiKey: ''
 };
@@ -123,7 +125,7 @@ async function loadAll() {
     STATE.geminiApiKey = r ? r.value : '';
   } catch (e) { STATE.geminiApiKey = ''; }
 
-  if (!STATE.users || STATE.users.length === 0 || STATE.users.length < 5 || !STATE.users[0].password) {
+  if (!STATE.users || STATE.users.length === 0 || STATE.users.length < 5 || !STATE.users[0].password || !STATE.users[0].pin || !STATE.users[0].email) {
     STATE.users = seedUsers();
     await saveUsers();
   }
@@ -209,16 +211,16 @@ async function saveCurrentUser() {
 
 function seedUsers() {
   return [
-    { id: 'u_017481', username: '017481', password: '123', name: 'Vũ Thị Kim Tuyến', employeeCode: '017481', department: 'Phòng Thương mại quốc tế', role: 'employee', bank: { accountName: 'Vũ Thị Kim Tuyến', accountNumber: '17923381', bankName: 'ACB - Ngân hàng TMCP Á Châu' } },
-    { id: 'u_015408', username: '015408', password: '123', name: 'Nguyễn Phương Anh', employeeCode: '015408', department: 'Phòng Thương mại quốc tế', role: 'employee', bank: null },
-    { id: 'u_019690', username: '019690', password: '123', name: 'Ngô Mai Anh', employeeCode: '019690', department: 'Phòng Kế toán', role: 'employee', bank: null },
-    { id: 'u_017078', username: '017078', password: '123', name: 'Khuất Phương Nhung', employeeCode: '017078', department: 'Phòng Hành chính - Nhân sự', role: 'employee', bank: null },
-    { id: 'u_018906', username: '018906', password: '123', name: 'Đinh Ngọc Mai', employeeCode: '018906', department: 'Phòng Kế hoạch & Cung ứng', role: 'employee', bank: null },
-    { id: 'u_018233', username: '018233', password: '123', name: 'Lê Minh Đăng', employeeCode: '018233', department: 'Phòng R&D', role: 'employee', bank: null },
-    { id: 'u_018858', username: '018858', password: '123', name: 'Phạm Thị Lan Hương', employeeCode: '018858', department: 'Phòng Đảm bảo chất lượng', role: 'employee', bank: null },
-    { id: 'u_010023', username: '010023', password: '123', name: 'Nguyễn Văn Hùng', employeeCode: '010023', department: 'Phòng Thương mại quốc tế', role: 'dept_head', bank: null },
-    { id: 'u_010005', username: '010005', password: '123', name: 'Trần Thị Lan', employeeCode: '010005', department: 'Phòng Kế toán', role: 'chief_accountant', bank: null },
-    { id: 'u_010001', username: '010001', password: '123', name: 'Phạm Minh Đức', employeeCode: '010001', department: 'Ban Giám đốc', role: 'director', bank: null }
+    { id: 'u_017481', username: '017481', password: '123', pin: '1234', name: 'Vũ Thị Kim Tuyến', employeeCode: '017481', email: 'tuyen.vukim@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', role: 'employee', bank: { accountName: 'Vũ Thị Kim Tuyến', accountNumber: '17923381', bankName: 'ACB - Ngân hàng TMCP Á Châu' } },
+    { id: 'u_015408', username: '015408', password: '123', pin: '1234', name: 'Nguyễn Phương Anh', employeeCode: '015408', email: 'anh.nguyenphuong@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', role: 'employee', bank: null },
+    { id: 'u_019690', username: '019690', password: '123', pin: '1234', name: 'Ngô Mai Anh', employeeCode: '019690', email: 'anh.ngomai@cpc1hn.com.vn', department: 'Phòng Kế toán', role: 'employee', bank: null },
+    { id: 'u_017078', username: '017078', password: '123', pin: '1234', name: 'Khuất Phương Nhung', employeeCode: '017078', email: 'nhung.khuatphuong@cpc1hn.com.vn', department: 'Phòng Hành chính - Nhân sự', role: 'employee', bank: null },
+    { id: 'u_018906', username: '018906', password: '123', pin: '1234', name: 'Đinh Ngọc Mai', employeeCode: '018906', email: 'mai.dinhngoc@cpc1hn.com.vn', department: 'Phòng Kế hoạch & Cung ứng', role: 'employee', bank: null },
+    { id: 'u_018233', username: '018233', password: '123', pin: '1234', name: 'Lê Minh Đăng', employeeCode: '018233', email: 'dang.leminh@cpc1hn.com.vn', department: 'Phòng R&D', role: 'employee', bank: null },
+    { id: 'u_018858', username: '018858', password: '123', pin: '1234', name: 'Phạm Thị Lan Hương', employeeCode: '018858', email: 'huong.phamthilan@cpc1hn.com.vn', department: 'Phòng Đảm bảo chất lượng', role: 'employee', bank: null },
+    { id: 'u_010023', username: '010023', password: '123', pin: '1234', name: 'Nguyễn Văn Hùng', employeeCode: '010023', email: 'hung.nguyenvan@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', role: 'dept_head', bank: null },
+    { id: 'u_010005', username: '010005', password: '123', pin: '1234', name: 'Trần Thị Lan', employeeCode: '010005', email: 'lan.tranthi@cpc1hn.com.vn', department: 'Phòng Kế toán', role: 'chief_accountant', bank: null },
+    { id: 'u_010001', username: '010001', password: '123', pin: '1234', name: 'Phạm Minh Đức', employeeCode: '010001', email: 'duc.phamminh@cpc1hn.com.vn', department: 'Ban Giám đốc', role: 'director', bank: null }
   ];
 }
 
@@ -1030,7 +1032,7 @@ function getAdvanceOverdueDays(doc) {
 function getOverdueAdvanceRequests(userOnly = false) {
   const u = currentUser();
   const now = new Date();
-  return STATE.documents.filter(d => {
+  return getAccessibleDocuments().filter(d => {
     if (d.type !== 'advance' || d.status !== 'signed') return false;
     if (userOnly && d.employeeCode !== u.code && d.requesterId !== u.id) return false;
     const isReimbursed = STATE.documents.some(r => r.type === 'reimbursement' && (r.advanceRefs || []).includes(d.id));
@@ -1047,7 +1049,7 @@ function getOverdueAdvanceRequests(userOnly = false) {
 }
 
 function renderOverdueAdvanceWarningBannerHtml() {
-  const overdues = getOverdueAdvanceRequests(true);
+  const overdues = getOverdueAdvanceRequests(false);
   if (overdues.length === 0) return '';
 
   const listHtml = overdues.map(o => {
@@ -1083,32 +1085,69 @@ function sendOverdueAdvanceEmailNotification(isAutomated = false) {
     return;
   }
 
-  const recipientEmail = STATE.accountingEmail || 'ketoan@cpc1hn.com.vn';
+  const toEmailsSet = new Set();
+  const ccEmailsSet = new Set();
+
+  // CC: System Admins & Group Leaders (Trưởng nhóm)
+  STATE.users.forEach(u => {
+    if ((u.role === 'admin' || u.role === 'dept_head') && u.email) {
+      ccEmailsSet.add(u.email.trim());
+    }
+  });
+
+  // To: Overdue Employees' personal emails
+  overdues.forEach(o => {
+    const userRec = STATE.users.find(u => u.employeeCode === o.doc.employeeCode || u.id === o.doc.requesterId || u.name === o.doc.requesterName);
+    if (userRec && userRec.email) {
+      toEmailsSet.add(userRec.email.trim());
+    }
+  });
+
+  const toStr = Array.from(toEmailsSet).join(', ') || 'Chưa cập nhật email cá nhân';
+  const ccStr = Array.from(ccEmailsSet).join(', ') || 'Chưa có email Trưởng nhóm / Admin';
   const totalAmount = overdues.reduce((acc, o) => acc + computeTotal(o.doc), 0);
+
+  const mailSubject = `[CPC1HN] Cảnh báo nhắc nợ tạm ứng quá hạn > 30 ngày (${overdues.length} khoản)`;
+  const mailTo = Array.from(toEmailsSet).join(',');
+  const mailCc = Array.from(ccEmailsSet).join(',');
+
+  let mailBodyText = `Kính gửi các Bộ phận & Nhân viên tạm ứng,\n\nPhòng TCKT Công ty Cổ phần Dược phẩm CPC1 Hà Nội trân trọng thông báo danh sách các khoản tạm ứng đã quá 1 tháng (30 ngày) chưa làm thủ tục thanh toán hoàn ứng:\n\n`;
+  overdues.forEach((o, i) => {
+    const code = o.doc.docNo || o.doc.formCode;
+    mailBodyText += `${i + 1}. Mã phiếu: ${code} | Người tạm ứng: ${o.doc.requesterName} (${o.doc.department}) | Ngày lập: ${fmtDate(o.doc.documentDate)} | Số tiền: ${fmtMoney(computeTotal(o.doc), o.doc.currency)} | Quá hạn: ${o.daysOverdue} ngày\n`;
+  });
+  mailBodyText += `\nVui lòng khẩn trương lập Giấy đề nghị hoàn ứng.\n\nTrân trọng,\nPhòng TCKT - CPC1 Hà Nội`;
+
+  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(mailTo)}&cc=${encodeURIComponent(mailCc)}&su=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBodyText)}`;
+  const outlookWebUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(mailTo)}&cc=${encodeURIComponent(mailCc)}&subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBodyText)}`;
+  const mailtoUrl = `mailto:${encodeURIComponent(mailTo)}?cc=${encodeURIComponent(mailCc)}&subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBodyText)}`;
 
   const tableRowsHtml = overdues.map((o, idx) => {
     const code = o.doc.docNo || o.doc.formCode;
     const amountText = fmtMoney(computeTotal(o.doc), o.doc.currency);
+    const userRec = STATE.users.find(u => u.employeeCode === o.doc.employeeCode || u.id === o.doc.requesterId || u.name === o.doc.requesterName);
+    const userEmailStr = userRec && userRec.email ? `<br><span style="font-size:11px;color:#0D9488;">📧 ${userRec.email}</span>` : '';
     return `
       <tr>
         <td style="border:1px solid #CBD5E1;padding:8px;text-align:center;">${idx + 1}</td>
         <td style="border:1px solid #CBD5E1;padding:8px;font-weight:bold;">${code}</td>
-        <td style="border:1px solid #CBD5E1;padding:8px;">${o.doc.requesterName} (${o.doc.department})</td>
+        <td style="border:1px solid #CBD5E1;padding:8px;">${o.doc.requesterName} (${o.doc.department})${userEmailStr}</td>
         <td style="border:1px solid #CBD5E1;padding:8px;text-align:center;">${fmtDate(o.doc.documentDate)}</td>
         <td style="border:1px solid #CBD5E1;padding:8px;text-align:right;font-weight:bold;color:#E11D48;">${amountText}</td>
         <td style="border:1px solid #CBD5E1;padding:8px;text-align:center;font-weight:bold;color:#9F1239;">${o.daysOverdue} ngày</td>
       </tr>`;
   }).join('');
 
-  const modeBadgeText = isAutomated ? '🔄 LỊCH GỬI TỰ ĐỘNG HÀNG TUẦN (AUTO-WEEKLY)' : '✉️ THÔNG BÁO PHÁT SÓNG EMAIL NHẮC NỢ TẠM ỨNG';
+  const modeBadgeText = isAutomated ? '🔄 LỊCH GỬI TỰ ĐỘNG THỨ 2 ĐẦU TUẦN (AUTO-MONDAY)' : '✉️ THÔNG BÁO PHÁT SÓNG EMAIL NHẮC NỢ TẠM ỨNG';
 
   const emailModalHtml = `
     <div style="text-align:left;font-size:13.5px;color:#0F172A;line-height:1.6;">
-      <div style="background:#FFF1F2;border:1.5px solid #F43F5E;border-radius:10px;padding:12px 16px;margin-bottom:14px;">
-        <b>${modeBadgeText}</b><br>
-        • Người nhận: <b>${recipientEmail}</b> & Email các Nhân viên tạm ứng<br>
-        • Tần suất: <b>Định kỳ hàng tuần (Thứ 2 hàng tuần)</b><br>
-        • Chủ đề: <b>[CPC1HN] Thông báo nhắc nợ tạm ứng quá hạn > 30 ngày (${overdues.length} khoản)</b>
+      <div style="background:#FFF1F2;border:1.5px solid #F43F5E;border-radius:10px;padding:14px 16px;margin-bottom:14px;">
+        <b style="color:#9F1239;font-size:14px;">${modeBadgeText}</b><br>
+        • 📩 <b>Gửi trực tiếp (To)</b>: <b style="color:#0F172A;">${toStr}</b><br>
+        • 📋 <b>Đồng kính gửi (CC chung 1 luồng mail)</b>: <b style="color:#0D9488;">${ccStr}</b><br>
+        • ⏰ <b>Tần suất phát sóng</b>: <b>Cảnh báo Lần 1 (Khi quá 30 ngày) ➔ Các lần tiếp theo gửi tự động vào Thứ 2 đầu tuần</b><br>
+        • 📌 <b>Chủ đề Email</b>: <b>[CPC1HN] Cảnh báo nhắc nợ tạm ứng quá hạn > 30 ngày (${overdues.length} khoản - Tổng ${fmtMoney(totalAmount, 'VND')})</b>
       </div>
 
       <p style="margin-bottom:10px;">
@@ -1133,30 +1172,37 @@ function sendOverdueAdvanceEmailNotification(isAutomated = false) {
       </table>
 
       <div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:12.5px;color:#166534;">
-        🟢 <b>Cơ chế TỰ ĐỘNG DỪNG GỬI MAIL</b>: Khi nhân viên thực hiện <b>Lập Giấy đề nghị hoàn ứng</b> cho phiếu tạm ứng trên và được duyệt, hệ thống sẽ <b>TỰ ĐỘNG KHÓA VÀ DỪNG GỬI MAIL NHẮC NỢ</b> đối với khoản đó!
+        🟢 <b>Cơ chế TỰ ĐỘNG DỪNG GỬI MAIL</b>: Khi nhân viên thực hiện <b>Lập Giấy đề nghị hoàn ứng</b> cho phiếu tạm ứng trên và được hoàn ứng xong, hệ thống sẽ <b>TỰ ĐỘNG KHÓA VÀ DỪNG GỬI MAIL NHẮC NỢ</b> đối với khoản đó!
+      </div>
+
+      <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
+        <a href="${gmailUrl}" target="_blank" class="btn btn-teal" style="padding:10px 18px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:6px;border-radius:8px;background:#EA4335;color:#FFF;border:none;">
+          🔴 Mở trực tiếp Gmail Web (Nhanh nhất) ↗
+        </a>
+        <a href="${mailtoUrl}" target="_blank" class="btn btn-outline" style="padding:10px 18px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:6px;border-radius:8px;">
+          💻 Mở bằng Outlook / App Mail trên máy ↗
+        </a>
       </div>
     </div>`;
 
   playWarningChime();
-  showAlertModal(isAutomated ? '🔄 ĐÃ PHÁT SÓNG EMAIL NHẮC NỢ HÀNG TUẦN' : '📧 ĐÃ GỬI EMAIL THÔNG BÁO NHẮC NỢ TẠM ỨNG', emailModalHtml);
+  showAlertModal(isAutomated ? '🔄 ĐÃ PHÁT SÓNG EMAIL NHẮC NỢ THỨ 2 ĐẦU TUẦN' : '📧 ĐÃ GỬI EMAIL THÔNG BÁO NHẮC NỢ TẠM ỨNG', emailModalHtml);
   showToast(`✓ Đã phát sóng email nhắc nợ định kỳ cho ${overdues.length} khoản tạm ứng!`);
 }
 
 function checkAndDispatchWeeklyOverdueAdvanceEmails() {
-  // Cấu hình phát sóng email tự động: Tạm tắt khi chạy chạy thử nghiệm, sẵn sàng bật lại khi Public Web chính thức
-  const isPublicWebLive = false;
-  if (!isPublicWebLive) return;
-
   try {
-    const lastSent = localStorage.getItem('CPC1_LAST_WEEKLY_OVERDUE_EMAIL');
     const now = new Date();
-    const oneWeekMs = 7 * 24 * 3600 * 1000;
+    const isMonday = now.getDay() === 1; // 1 is Monday
+    const todayStr = now.toISOString().slice(0, 10);
+    const lastSentDay = localStorage.getItem('CPC1_LAST_OVERDUE_EMAIL_DATE');
 
-    if (!lastSent || (now.getTime() - new Date(lastSent).getTime() >= oneWeekMs)) {
+    // Trigger auto email dispatch on Mondays or first time overdue
+    if ((isMonday || !lastSentDay) && lastSentDay !== todayStr) {
       const overdues = getOverdueAdvanceRequests(false);
       if (overdues.length > 0) {
         sendOverdueAdvanceEmailNotification(true);
-        localStorage.setItem('CPC1_LAST_WEEKLY_OVERDUE_EMAIL', now.toISOString());
+        localStorage.setItem('CPC1_LAST_OVERDUE_EMAIL_DATE', todayStr);
       }
     }
   } catch (e) {}
@@ -1808,9 +1854,26 @@ function openManualInvoiceModal(initialData = {}) {
   });
 }
 
-/* ===================== RENDER: SIDEBAR & SHELL ===================== */
+function canUserAccessDoc(doc, user = currentUser()) {
+  if (!doc) return false;
+  if (!user) return true;
+  if (['admin', 'director', 'chief_accountant', 'dept_head'].includes(user.role)) {
+    return true;
+  }
+  const isOwnDoc = (
+    (doc.employeeCode && user.employeeCode && doc.employeeCode === user.employeeCode) ||
+    (doc.requesterId && user.id && doc.requesterId === user.id) ||
+    (doc.requesterName && user.name && doc.requesterName.trim().toLowerCase() === user.name.trim().toLowerCase())
+  );
+  return isOwnDoc;
+}
+
+function getAccessibleDocuments(user = currentUser()) {
+  return (STATE.documents || []).filter(doc => canUserAccessDoc(doc, user));
+}
+
 function pendingSignatureCount() {
-  return STATE.documents.filter(d => d.status === 'pending_signature').length;
+  return getAccessibleDocuments().filter(d => d.status === 'pending_signature').length;
 }
 
 function renderSidebar() {
@@ -1849,11 +1912,15 @@ function renderSidebar() {
         <span style="font-size:8px;">🟢</span>
         <span style="font-weight:600;">Firebase Cloud Realtime</span>
       </div>
-      <div class="user-box">
-        <label>Tài khoản đang đăng nhập</label>
-        <div style="font-weight:700;font-size:13px;color:var(--ink);">${u.name}</div>
-        <div class="user-role-pill">● ${roleLabelMap[u.role] || u.role}</div>
-        <button type="button" class="btn btn-ghost btn-sm" id="logout-btn" style="color:var(--stamp);font-size:12px;margin-top:8px;width:100%;text-align:center;border:1px dashed #FECDD3;background:#FFF1F2;padding:5px 0;border-radius:6px;cursor:pointer;font-weight:600;" title="Đăng xuất khỏi tài khoản">
+      <div class="user-box" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px 10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="color:#94A3B8;font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Tài khoản</span>
+          <span style="color:#2DD4BF;font-size:10.5px;font-weight:600;">● ${roleLabelMap[u.role] || u.role}</span>
+        </div>
+        <div style="font-weight:700;font-size:12.5px;color:#FFFFFF;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          👤 ${u.name} <span style="font-weight:400;color:#CBD5E1;font-size:11px;">(${u.employeeCode || ''})</span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="logout-btn" style="color:#F87171;font-size:11px;width:100%;text-align:center;border:1px solid rgba(248,113,113,0.3);background:rgba(239,68,68,0.1);padding:3px 0;border-radius:5px;cursor:pointer;font-weight:600;" title="Đăng xuất khỏi tài khoản">
           🚪 Đăng xuất
         </button>
       </div>
@@ -2353,10 +2420,15 @@ function blankItem(type) {
 }
 
 function ensureDraft(type) {
-  if (!STATE.draftForm || STATE.draftForm.type !== type) {
-    const u = currentUser();
+  const u = currentUser();
+  if (!STATE.draftForm || STATE.draftForm.type !== type || (!STATE.selectedId && STATE.draftForm.requesterId !== u.id)) {
     STATE.draftForm = mkDoc(type, u, {});
     if (type !== 'reimbursement') STATE.draftForm.items = [blankItem(type)];
+  } else if (!STATE.selectedId && STATE.draftForm) {
+    STATE.draftForm.requesterId = u.id;
+    STATE.draftForm.requesterName = u.name;
+    STATE.draftForm.employeeCode = u.employeeCode;
+    STATE.draftForm.department = u.department;
   }
   return STATE.draftForm;
 }
@@ -2478,14 +2550,15 @@ function renderForm() {
     <div class="field-row">
       <div class="field">
         <label>Bộ phận công tác</label>
-        <input id="f-department" value="${doc.department}">
+        <input id="f-department" value="${doc.department || currentUser().department}" readonly style="background:#F8FAFC;color:#334155;font-weight:600;border:1.5px solid #CBD5E1;">
       </div>
       <div class="field">
         <label>Mã nhân viên (Người đề nghị)</label>
-        <select id="f-employeeCode">
-          <option value="">— Chọn nhân viên —</option>
-          ${EMPLOYEE_DIRECTORY.map(e => `<option value="${e.code}" ${doc.employeeCode === e.code ? 'selected' : ''}>${e.code} — ${e.name} (${e.department})</option>`).join('')}
-        </select>
+        <div style="position:relative;">
+          <input id="f-employeeCode-display" value="${doc.employeeCode || currentUser().employeeCode} — ${doc.requesterName || currentUser().name}" readonly style="background:#F8FAFC;color:#0D9488;font-weight:700;border:1.5px solid #CBD5E1;padding-right:32px;">
+          <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:14px;" title="Tự động khóa theo tài khoản đang đăng nhập">🔒</span>
+        </div>
+        <input type="hidden" id="f-employeeCode" value="${doc.employeeCode || currentUser().employeeCode}">
       </div>
     </div>
 
@@ -2647,7 +2720,7 @@ function renderList() {
   const payeeFilter = STATE._listPayeeFilter || 'all';
   const listSearch = (STATE._listSearch || '').trim().toLowerCase();
 
-  let docs = [...STATE.documents];
+  let docs = getAccessibleDocuments();
   if (typeFilter !== 'all') docs = docs.filter(d => d.type === typeFilter);
   if (statusFilter !== 'all') docs = docs.filter(d => d.status === statusFilter);
   if (monthFilter !== 'all') docs = docs.filter(d => monthKey(d.documentDate || d.createdAt) === monthFilter);
@@ -3050,10 +3123,21 @@ function renderPaperPreview(doc) {
 function renderDetail() {
   const doc = STATE.documents.find(d => d.id === STATE.selectedId);
   if (!doc) return `<p>Không tìm thấy phiếu.</p>`;
+  if (!canUserAccessDoc(doc, currentUser())) {
+    return `
+      <div style="text-align:center;padding:60px 20px;background:#FFF;border-radius:12px;margin:20px 0;border:1px solid #E2E8F0;">
+        <div style="font-size:48px;margin-bottom:14px;">⛔</div>
+        <h2 style="font-size:20px;color:var(--ink);margin-bottom:8px;font-weight:800;">BẠN KHÔNG CÓ QUYỀN TRUY CẬP PHIẾU NÀY</h2>
+        <p style="font-size:13.5px;color:var(--ink-soft);max-width:520px;margin:0 auto 20px;line-height:1.6;">
+          Bảo mật phân quyền: Phiếu tài chính này chỉ được phép xem bởi <b>cá nhân người lập phiếu</b> hoặc <b>Quản trị viên / Trưởng bộ phận</b> phụ trách nhóm.
+        </p>
+        <button class="btn btn-primary" data-nav="list">← Quay lại Danh sách phiếu của tôi</button>
+      </div>
+    `;
+  }
   const t = DOC_TYPES[doc.type];
   const isOwner = doc.requesterId === currentUser().id;
 
-  // 1. Sắp xếp danh sách chứng từ đồng bộ chính xác theo từng dòng trong bảng phiếu
   const items = doc.items || doc.spentItems || [];
   const sortedList = items.map((it, idx) => {
     const att = (doc.attachments || []).find(a => a.id === it.attachmentId);
@@ -3068,7 +3152,6 @@ function renderDetail() {
     };
   });
 
-  // Chứng từ bổ sung (chưa gắn vào dòng nào)
   const linkedAttIds = new Set(items.map(it => it.attachmentId).filter(Boolean));
   const unlinkedAttachments = (doc.attachments || []).filter(a => !linkedAttIds.has(a.id));
   unlinkedAttachments.forEach((a) => {
@@ -3082,14 +3165,6 @@ function renderDetail() {
       isOrphan: true
     });
   });
-
-  // Tự động chọn file đầu tiên để xem trước nếu chưa chọn
-  const firstWithAtt = sortedList.find(r => r.att);
-  if (!STATE.previewAttachmentId && firstWithAtt) {
-    STATE.previewAttachmentId = firstWithAtt.att.id;
-  }
-  const activeAtt = (doc.attachments || []).find(a => a.id === STATE.previewAttachmentId);
-  const activeAttName = activeAtt ? activeAtt.fileName : (firstWithAtt ? firstWithAtt.att.fileName : 'Chưa chọn file');
 
   return `
   <div class="page-header">
@@ -3110,10 +3185,8 @@ function renderDetail() {
   ${renderFormDuplicateBannerHtml(doc)}
 
   <div class="detail-container">
-    <!-- 1. Bản xem trước phiếu in giấy -->
     ${renderPaperPreview(doc)}
 
-    <!-- 2. Thanh tiến trình ký duyệt -->
     ${doc.status === 'draft' && isOwner ? `
     <div class="action-bar">
       <p style="margin:0 0 10px;color:var(--ink-soft);font-weight:600;">Phiếu đang ở trạng thái Nháp. Bấm "Trình ký" để chuyển sang bước xin ký duyệt bản in giấy.</p>
@@ -3136,7 +3209,6 @@ function renderDetail() {
       <button class="btn btn-ghost btn-sm" data-removesigned="${doc.id}" style="margin-left:8px;color:var(--stamp);">Gỡ bản đã ký để tải lại</button>
     </div>` : ''}
 
-    <!-- 3. Danh sách chứng từ đính kèm ở bên dưới (Sắp xếp theo thứ tự ĐNTT) -->
     <div class="detail-attach-section">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
         <div>
@@ -3211,7 +3283,6 @@ function renderDetail() {
   `;
 }
 
-/* ===================== VIEW: PAYEES ===================== */
 function renderPayees() {
   return `
   <div class="page-header">
@@ -3262,140 +3333,299 @@ function renderPayees() {
   `;
 }
 
-/* ===================== VIEW: SETTINGS & BACKUP ===================== */
 function renderSettings() {
+  const isAuthorizedAdmin = ['admin', 'dept_head', 'chief_accountant', 'director'].includes(currentUser().role);
+
   return `
-  <div class="page-header">
-    <div>
-      <h1>Cài đặt & Cấu hình AI OCR</h1>
-      <p>Quản lý cấu hình AI Vision trích xuất hoá đơn và sao lưu toàn bộ dữ liệu hệ thống.</p>
-    </div>
-  </div>
-
-  <div class="form-card" style="max-width:750px;margin-bottom:24px;">
-    <h3 style="font-size:16px;margin-bottom:10px;">🤖 Cấu hình Trí tuệ nhân tạo (AI Vision OCR)</h3>
-    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;line-height:1.5;">
-      Mặc định hệ thống sử dụng thuật toán PDF.js offline miễn phí. Để đạt độ chính xác <b>100%</b> với mọi loại hoá đơn (kể cả scan mờ, méo hoặc hoá đơn đặc thù), bạn có thể cấu hình API Key của <b>Google Gemini (Miễn phí)</b> hoặc <b>Anthropic Claude</b>. Khoá API được lưu bảo mật cục bộ trên máy của bạn.
-    </p>
-
-    <div class="field" style="margin-bottom:14px;">
-      <label style="display:flex;align-items:center;justify-content:space-between;">
-        <span><b>Google Gemini API Key</b> <span style="color:var(--green);font-size:11.5px;font-weight:600;">(Khuyên dùng — Miễn phí)</span></span>
-        <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:12px;color:var(--teal);text-decoration:none;">🔗 Lấy key miễn phí tại Google AI Studio ↗</a>
-      </label>
-      <input type="password" id="cfg-gemini-key" value="${STATE.geminiApiKey || ''}" placeholder="AIzaSy..." style="font-family:var(--font-mono);">
-      <span class="hint">Mô hình <code>gemini-1.5-flash</code> đọc hoá đơn cực nhanh (1-2s) và hỗ trợ hoàn toàn miễn phí.</span>
+  <div style="display:flex;flex-direction:column;gap:24px;width:100%;max-width:960px;">
+    
+    <div class="page-header" style="margin-bottom:0;">
+      <div>
+        <h1 style="font-size:24px;font-weight:800;color:var(--ink);margin-bottom:6px;">Cài đặt & Cấu hình Hệ thống</h1>
+        <p style="font-size:13.5px;color:var(--ink-soft);">${isAuthorizedAdmin ? 'Quản lý cấu hình AI Vision trích xuất hoá đơn, phân quyền thành viên và sao lưu toàn bộ dữ liệu hệ thống.' : 'Cập nhật Mật khẩu và Mã PIN bảo mật cá nhân của bạn.'}</p>
+      </div>
     </div>
 
-    <div class="field" style="margin-bottom:18px;">
-      <label style="display:flex;align-items:center;justify-content:space-between;">
-        <span><b>Anthropic Claude API Key</b></span>
-        <a href="https://console.anthropic.com/settings/keys" target="_blank" style="font-size:12px;color:var(--teal);text-decoration:none;">🔗 Console Anthropic ↗</a>
-      </label>
-      <input type="password" id="cfg-claude-key" value="${STATE.claudeApiKey || ''}" placeholder="sk-ant-api03-..." style="font-family:var(--font-mono);">
+    ${isAuthorizedAdmin ? `
+    <!-- CARD 1: CẤU HÌNH AI OCR (CHỈ ADMIN / TRƯỞNG NHÓM) -->
+    <div class="form-card" style="width:100%;max-width:100%;margin-bottom:0;">
+      <h3 style="font-size:16px;margin-bottom:10px;">🤖 Cấu hình Trí tuệ nhân tạo (AI Vision OCR)</h3>
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;line-height:1.5;">
+        Mặc định hệ thống sử dụng thuật toán PDF.js offline miễn phí. Để đạt độ chính xác <b>100%</b> với mọi loại hoá đơn (kể cả scan mờ, méo hoặc hoá đơn đặc thù), bạn có thể cấu hình API Key của <b>Google Gemini (Miễn phí)</b> hoặc <b>Anthropic Claude</b>. Khoá API được lưu bảo mật cục bộ trên máy của bạn.
+      </p>
+
+      <div class="field" style="margin-bottom:14px;">
+        <label style="display:flex;align-items:center;justify-content:space-between;">
+          <span><b>Google Gemini API Key</b> <span style="color:var(--green);font-size:11.5px;font-weight:600;">(Khuyên dùng — Miễn phí)</span></span>
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:12px;color:var(--teal);text-decoration:none;">🔗 Lấy key miễn phí tại Google AI Studio ↗</a>
+        </label>
+        <input type="password" id="cfg-gemini-key" value="${STATE.geminiApiKey || ''}" placeholder="AIzaSy..." style="font-family:var(--font-mono);">
+        <span class="hint">Mô hình <code>gemini-1.5-flash</code> đọc hoá đơn cực nhanh (1-2s) và hỗ trợ hoàn toàn miễn phí.</span>
+      </div>
+
+      <div class="field" style="margin-bottom:18px;">
+        <label style="display:flex;align-items:center;justify-content:space-between;">
+          <span><b>Anthropic Claude API Key</b></span>
+          <a href="https://console.anthropic.com/settings/keys" target="_blank" style="font-size:12px;color:var(--teal);text-decoration:none;">🔗 Console Anthropic ↗</a>
+        </label>
+        <input type="password" id="cfg-claude-key" value="${STATE.claudeApiKey || ''}" placeholder="sk-ant-api03-..." style="font-family:var(--font-mono);">
+      </div>
+
+      <button class="btn btn-primary btn-sm" id="save-cfg-btn">💾 Lưu cấu hình AI</button>
     </div>
 
-    <button class="btn btn-primary btn-sm" id="save-cfg-btn">💾 Lưu cấu hình AI</button>
-  </div>
+    <!-- CARD 2: QUẢN LÝ DANH SÁCH THÀNH VIÊN (CHỈ ADMIN / TRƯỞNG NHÓM) -->
+    <div class="form-card" style="width:100%;max-width:100%;margin-bottom:0;">
+      <h3 style="font-size:16px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+        <span>👥 Quản Lý Danh Sách Thành Viên & Phân Quyền</span>
+        <span class="badge badge-teal">${STATE.users.length} tài khoản</span>
+      </h3>
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:16px;line-height:1.5;">
+        Thêm nhân viên mới, cấp quyền Trưởng nhóm / Admin hoặc đặt lại Mật khẩu & Mã PIN cho nhân viên trực tiếp trên giao diện web mà không cần sửa code. Tự động đồng bộ lên Firebase.
+      </p>
 
-  <div class="form-card" style="max-width:750px;margin-bottom:24px;">
-    <h3 style="font-size:16px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
-      <span>☁️ Đồng bộ Đám mây Firebase (Realtime Multi-user)</span>
-      <span class="badge badge-teal">🟢 Đang hoạt động</span>
-    </h3>
-    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;line-height:1.5;">
-      Dự án đã được kết nối với Firebase Firestore: <code>cpc1-vouchers</code>. Tất cả phiếu tài chính, kho hoá đơn và danh bạ người nhận được tự động đồng bộ thời gian thực giữa các máy tính trong công ty.
-    </p>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button type="button" class="btn btn-teal btn-sm" id="push-all-cloud-btn">☁ Đẩy toàn bộ dữ liệu hiện tại lên Firebase</button>
+      <!-- Clean Members Table -->
+      <div style="overflow-x:auto;margin-bottom:24px;border:1px solid #E2E8F0;border-radius:10px;">
+        <table class="data-table" style="width:100%;font-size:13px;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#F8FAFC;border-bottom:1px solid #E2E8F0;text-align:left;color:#475569;">
+              <th style="padding:10px 14px;">Mã NV</th>
+              <th style="padding:10px 14px;">Họ và tên</th>
+              <th style="padding:10px 14px;">Email nhận thông báo</th>
+              <th style="padding:10px 14px;">Bộ phận</th>
+              <th style="padding:10px 14px;">Vai trò / Quyền</th>
+              <th style="padding:10px 14px;text-align:right;">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${STATE.users.map(u => {
+              if (STATE.editingUserId === u.id) {
+                return `
+                  <tr style="background:#F0FDFA;border-bottom:1.5px solid #0D9488;">
+                    <td style="padding:10px;"><input type="text" id="eu-code-${u.id}" value="${u.employeeCode || u.username}" style="padding:6px 8px;font-size:12.5px;font-weight:700;width:95px;border-radius:6px;border:1px solid #0D9488;"></td>
+                    <td style="padding:10px;"><input type="text" id="eu-name-${u.id}" value="${u.name}" style="padding:6px 8px;font-size:12.5px;font-weight:600;width:150px;border-radius:6px;border:1px solid #0D9488;"></td>
+                    <td style="padding:10px;"><input type="email" id="eu-email-${u.id}" value="${u.email || (u.employeeCode + '@cpc1hn.com.vn')}" style="padding:6px 8px;font-size:12.5px;width:170px;border-radius:6px;border:1px solid #0D9488;"></td>
+                    <td style="padding:10px;"><input type="text" id="eu-dept-${u.id}" value="${u.department}" style="padding:6px 8px;font-size:12.5px;width:140px;border-radius:6px;border:1px solid #0D9488;"></td>
+                    <td style="padding:10px;">
+                      <select id="eu-role-${u.id}" style="padding:6px 8px;font-size:12px;font-weight:600;border-radius:6px;border:1px solid #0D9488;">
+                        <option value="employee" ${u.role === 'employee' ? 'selected' : ''}>👤 Nhân viên</option>
+                        <option value="dept_head" ${u.role === 'dept_head' ? 'selected' : ''}>👔 Trưởng nhóm / Admin nhóm</option>
+                        <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>👑 Admin toàn quyền</option>
+                        <option value="chief_accountant" ${u.role === 'chief_accountant' ? 'selected' : ''}>💼 Kế toán trưởng</option>
+                        <option value="director" ${u.role === 'director' ? 'selected' : ''}>⭐ Ban Giám đốc</option>
+                      </select>
+                    </td>
+                    <td style="padding:10px;text-align:right;white-space:nowrap;">
+                      <button type="button" class="btn btn-primary btn-sm save-user-edit-btn" data-saveuser="${u.id}" style="padding:4px 10px;font-size:12px;margin-right:4px;">💾 Lưu</button>
+                      <button type="button" class="btn btn-outline btn-sm cancel-user-edit-btn" data-canceledituser="${u.id}" style="padding:4px 10px;font-size:12px;margin-right:4px;">Huỷ</button>
+                      <button type="button" class="btn btn-ghost btn-sm reset-user-pwd-btn" data-resetpwd="${u.id}" style="color:#D97706;padding:4px 8px;font-size:11.5px;" title="Reset MK/PIN về 123/1234">🔑 Reset MK/PIN</button>
+                    </td>
+                  </tr>`;
+              }
+              return `
+                <tr style="border-bottom:1px solid #F1F5F9;">
+                  <td style="padding:12px 14px;font-weight:700;color:#0D9488;">${u.employeeCode || u.username}</td>
+                  <td style="padding:12px 14px;font-weight:600;color:#0F172A;">${u.name}</td>
+                  <td style="padding:12px 14px;color:#0284C7;font-weight:600;">${u.email || (u.employeeCode + '@cpc1hn.com.vn')}</td>
+                  <td style="padding:12px 14px;color:#64748B;">${u.department}</td>
+                  <td style="padding:12px 14px;">
+                    <span class="badge ${['admin','dept_head','director','chief_accountant'].includes(u.role) ? 'badge-teal' : 'badge-gray'}" style="font-size:11.5px;padding:4px 10px;">
+                      ${u.role === 'admin' ? '👑 Admin Nhóm' : u.role === 'dept_head' ? '👔 Trưởng nhóm' : u.role === 'chief_accountant' ? '💼 KT Trưởng' : u.role === 'director' ? '⭐ BGĐ' : '👤 Nhân viên'}
+                    </span>
+                  </td>
+                  <td style="padding:12px 14px;text-align:right;white-space:nowrap;">
+                    <button type="button" class="btn btn-outline btn-sm edit-user-btn" data-edituser="${u.id}" style="padding:4px 10px;font-size:12px;margin-right:4px;">✏️ Sửa</button>
+                    <button type="button" class="btn btn-ghost btn-sm del-user-btn" data-deluser="${u.id}" style="color:#EF4444;padding:4px 10px;font-size:12px;" ${u.id === currentUser().id ? 'disabled title="Không thể xoá tài khoản chính bạn"' : ''}>Xoá</button>
+                  </td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Form Add New Member -->
+      <div style="border-top:1px solid #E2E8F0;padding-top:20px;">
+        <h4 style="font-size:14.5px;font-weight:700;color:#0F172A;margin-bottom:14px;">➕ Thêm Nhân Viên Mới Vào Hệ Thống</h4>
+        <div class="field-row" style="margin-bottom:14px;">
+          <div class="field">
+            <label><b>Mã nhân viên mới</b></label>
+            <input type="text" id="new-user-code" placeholder="VD: 019999">
+          </div>
+          <div class="field">
+            <label><b>Họ và tên nhân viên</b></label>
+            <input type="text" id="new-user-name" placeholder="VD: Nguyễn Văn A">
+          </div>
+        </div>
+        <div class="field-row" style="margin-bottom:14px;">
+          <div class="field">
+            <label><b>Email cá nhân (Nhận thông báo tự động)</b></label>
+            <input type="email" id="new-user-email" placeholder="VD: a.nguyenvan@cpc1hn.com.vn">
+          </div>
+          <div class="field">
+            <label><b>Bộ phận công tác</b></label>
+            <input type="text" id="new-user-dept" placeholder="VD: Phòng Kế toán">
+          </div>
+          <div class="field">
+            <label><b>Vai trò / Phân quyền</b></label>
+            <select id="new-user-role" style="padding:10px;border-radius:6px;border:1px solid #CBD5E1;font-size:13px;font-weight:600;">
+              <option value="employee">👤 Nhân viên (Chỉ xem phiếu cá nhân)</option>
+              <option value="dept_head">👔 Trưởng nhóm / Admin nhóm (Xem hết phiếu)</option>
+              <option value="admin">👑 Admin toàn quyền hệ thống</option>
+              <option value="chief_accountant">💼 Kế toán trưởng</option>
+              <option value="director">⭐ Ban Giám đốc</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
+          <span style="font-size:12px;color:#64748B;">Mật khẩu mặc định: <b style="color:#0F172A;">123</b> · Mã PIN mặc định: <b style="color:#0F172A;">1234</b></span>
+          <button type="button" class="btn btn-primary btn-sm" id="add-new-user-btn" style="padding:10px 20px;">
+            ➕ Thêm nhân viên
+          </button>
+        </div>
+      </div>
     </div>
-  </div>
+    ` : ''}
 
-  <div class="form-card" style="max-width:750px;margin-bottom:24px;">
-    <h3 style="font-size:16px;margin-bottom:10px;">📧 Cấu hình Email Nhắc Nợ Tạm Ứng Quá Hạn</h3>
-    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;line-height:1.5;">
-      Tự động phát sóng thông báo email nhắc nợ định kỳ đến Phòng Kế toán và các Nhân viên tạm ứng quá 30 ngày chưa lập thủ tục hoàn ứng.
-    </p>
+    <!-- CARD 3: ĐỔI MẬT KHẨU & PIN (HIỂN THỊ CHO TẤT CẢ MỌI NGƯỜI) -->
+    <div class="form-card" style="width:100%;max-width:100%;margin-bottom:0;">
+      <h3 style="font-size:16px;margin-bottom:10px;">🔐 Đổi Mật Khẩu & Mã PIN Cá Nhân</h3>
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:16px;">Vui lòng xác thực Mật khẩu & Mã PIN hiện tại trước khi cập nhật thông tin bảo mật mới cho tài khoản <b>${currentUser().name}</b> (Mã NV: <code>${currentUser().employeeCode}</code>).</p>
 
-    <div class="field" style="margin-bottom:14px;">
-      <label><b>Email nhận báo cáo Kế toán</b></label>
-      <input type="email" id="cfg-accounting-email" value="${STATE.accountingEmail || 'ketoan@cpc1hn.com.vn'}" placeholder="ketoan@cpc1hn.com.vn">
+      <div class="field-row" style="margin-bottom:14px;">
+        <div class="field">
+          <label style="color:#0F172A;font-weight:700;">🔑 Mật khẩu HIỆN TẠI (cũ)</label>
+          <input type="password" id="cfg-user-old-password" placeholder="Nhập mật khẩu hiện tại...">
+        </div>
+        <div class="field">
+          <label style="color:#0F172A;font-weight:700;">🔐 Mã PIN HIỆN TẠI (cũ)</label>
+          <input type="password" id="cfg-user-old-pin" maxlength="4" placeholder="Nhập PIN 4 số hiện tại...">
+        </div>
+      </div>
+
+      <div class="field-row" style="margin-bottom:18px;">
+        <div class="field">
+          <label style="color:#0D9488;font-weight:700;">✨ Mật khẩu MỚI (nếu đổi)</label>
+          <input type="password" id="cfg-user-new-password" placeholder="Nhập mật khẩu mới...">
+        </div>
+        <div class="field">
+          <label style="color:#0D9488;font-weight:700;">✨ Mã PIN MỚI (4 chữ số)</label>
+          <input type="password" id="cfg-user-new-pin" maxlength="4" placeholder="VD: 5678">
+        </div>
+      </div>
+
+      <button type="button" class="btn btn-primary btn-sm" id="save-user-pwd-btn">🔒 Cập nhật Mật khẩu & Mã PIN mới</button>
     </div>
-  </div>
 
-  <div class="form-card" style="max-width:750px;">
-    <h3 style="font-size:16px;margin-bottom:10px;">💾 Sao lưu & Phục hồi dữ liệu</h3>
-    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:16px;">Xuất toàn bộ phiếu, hoá đơn và danh bạ ra file JSON để lưu trữ hoặc chuyển sang máy tính khác.</p>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <button class="btn btn-outline" id="export-backup-btn">⬇ Xuất file sao lưu (JSON)</button>
-      <button class="btn btn-ghost" id="import-backup-trigger-btn">⬆ Phục hồi từ file sao lưu</button>
-      <input type="file" id="import-backup-input" accept=".json,application/json" style="display:none;">
+    ${isAuthorizedAdmin ? `
+    <!-- CARD 4: FIREBASE REALTIME (CHỈ ADMIN / TRƯỞNG NHÓM) -->
+    <div class="form-card" style="width:100%;max-width:100%;margin-bottom:0;">
+      <h3 style="font-size:16px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+        <span>☁️ Đồng bộ Đám mây Firebase (Realtime Multi-user)</span>
+        <span class="badge badge-teal">🟢 Đang hoạt động</span>
+      </h3>
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;line-height:1.5;">
+        Dự án đã được kết nối với Firebase Firestore: <code>cpc1-vouchers</code>. Tất cả phiếu tài chính, kho hoá đơn và danh bạ người nhận được tự động đồng bộ thời gian thực giữa các máy tính trong công ty.
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-teal btn-sm" id="push-all-cloud-btn">☁ Đẩy toàn bộ dữ liệu hiện tại lên Firebase</button>
+      </div>
     </div>
-  </div>
 
-  <div class="form-card" style="max-width:750px;margin-top:24px;">
-    <h3 style="font-size:16px;margin-bottom:10px;">🔐 Đổi Mật Khẩu Cá Nhân</h3>
-    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">Đổi mật khẩu bảo mật cho tài khoản <b>${currentUser().name}</b> (Mã NV: <code>${currentUser().employeeCode}</code>).</p>
+    <!-- CARD 5: EMAIL CẤU HÌNH (CHỈ ADMIN / TRƯỞNG NHÓM) -->
+    <div class="form-card" style="width:100%;max-width:100%;margin-bottom:0;">
+      <h3 style="font-size:16px;margin-bottom:10px;">📧 Cấu hình Email Nhắc Nợ Tạm Ứng Quá Hạn</h3>
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;line-height:1.5;">
+        Tự động phát sóng thông báo email nhắc nợ định kỳ theo quy định tài chính CPC1.
+      </p>
 
-    <div class="field" style="margin-bottom:14px;">
-      <label><b>Mật khẩu mới</b></label>
-      <input type="password" id="cfg-user-new-password" placeholder="Nhập mật khẩu mới..." style="max-width:320px;">
+      <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:14px;margin-bottom:0;font-size:12.5px;line-height:1.6;color:#334155;">
+        <div style="font-weight:700;color:#0F172A;margin-bottom:6px;">📬 Cơ chế Tự động & Cấu hình Gửi Email (CC chung trong 1 luồng mail):</div>
+        <div>• <b>Gửi trực tiếp (To)</b>: Email cá nhân từng Nhân viên có khoản tạm ứng quá hạn.</div>
+        <div>• <b>Đồng kính gửi (CC chung 1 luồng)</b>: Email Trưởng nhóm / Admin nhóm + Email Admin toàn hệ thống.</div>
+        <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #CBD5E1;color:#0D9488;font-weight:600;">
+          ⏰ <b>Tần suất phát sóng</b>: <b>Cảnh báo Lần 1 ngay khi quá 30 ngày</b> ➔ Các lần tiếp theo tự động gửi vào <b>Thứ 2 đầu tuần hàng tuần</b> cho tới khi lập thủ tục Hoàn ứng xong!
+        </div>
+      </div>
     </div>
-    <button type="button" class="btn btn-teal btn-sm" id="save-user-pwd-btn">🔒 Cập nhật Mật khẩu mới</button>
+
+    <!-- CARD 6: SAO LƯU & PHỤC HỒI (CHỈ ADMIN / TRƯỞNG NHÓM) -->
+    <div class="form-card" style="width:100%;max-width:100%;margin-bottom:0;">
+      <h3 style="font-size:16px;margin-bottom:10px;">💾 Sao lưu & Phục hồi dữ liệu</h3>
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:16px;">Xuất toàn bộ phiếu, hoá đơn và danh bạ ra file JSON để lưu trữ hoặc chuyển sang máy tính khác.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <button class="btn btn-outline" id="export-backup-btn">⬇ Xuất file sao lưu (JSON)</button>
+        <button class="btn btn-ghost" id="import-backup-trigger-btn">⬆ Phục hồi từ file sao lưu</button>
+        <input type="file" id="import-backup-input" accept=".json,application/json" style="display:none;">
+      </div>
+    </div>
+    ` : ''}
+
   </div>
   `;
 }
 
 function renderLoginScreen() {
-  const defaultAccounts = STATE.users.map(u => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;margin-bottom:6px;">
-      <div>
-        <b style="color:#0F172A;">${u.name}</b> (${u.department})<br>
-        <span style="color:#64748B;">Mã NV: <code style="color:#0D9488;font-weight:700;">${u.employeeCode || u.username}</code></span>
-      </div>
-      <button type="button" class="btn btn-outline btn-sm quick-login-btn" data-usercode="${u.employeeCode || u.username}" style="padding:4px 8px;font-size:11px;cursor:pointer;">
-        Chọn nhanh
-      </button>
-    </div>`).join('');
+  const isStep2 = STATE.loginStep === 2 && STATE.pendingUser;
+  const user = STATE.pendingUser;
 
   return `
-    <div style="min-height:100vh;background:linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F766E 100%);display:flex;align-items:center;justify-content:center;padding:20px;font-family:var(--font-sans);">
-      <div style="background:#FFFFFF;border-radius:20px;box-shadow:0 25px 60px rgba(0,0,0,0.4);max-width:460px;width:100%;padding:36px;border:1px solid #CBD5E1;animation:modalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
+    <div style="position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:999999;background:linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F766E 100%);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;font-family:var(--font-sans);">
+      <div style="background:#FFFFFF;border-radius:20px;box-shadow:0 25px 60px rgba(0,0,0,0.4);max-width:440px;width:100%;padding:36px;border:1px solid #CBD5E1;animation:modalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
         <div style="text-align:center;margin-bottom:24px;">
-          <img src="${LOGO_DATA_URI}" alt="CPC1 Logo" style="height:65px;margin-bottom:12px;object-fit:contain;">
-          <h2 style="font-size:20px;font-weight:800;color:#0F172A;margin:0 0 6px;">CPC1 FINANCIAL VOUCHERS</h2>
-          <p style="font-size:13px;color:#64748B;margin:0;">Hệ thống Quản lý Phiếu tài chính & Kho Hoá đơn</p>
+          <img src="${LOGO_DATA_URI}" alt="CPC1 Logo" style="height:62px;margin-bottom:10px;object-fit:contain;">
+          <h2 style="font-size:20px;font-weight:800;color:#0F172A;margin:0 0 4px;">CPC1 FINANCIAL VOUCHERS</h2>
+          <p style="font-size:12.5px;color:#64748B;margin:0;">Hệ thống Quản lý Phiếu tài chính & Kho Hoá đơn</p>
         </div>
 
-        <form id="login-form" style="margin-bottom:20px;">
+        ${!isStep2 ? `
+        <form id="login-form">
           <div style="margin-bottom:16px;">
-            <label style="display:block;font-size:12.5px;font-weight:700;color:#334155;margin-bottom:6px;">Tên đăng nhập / Mã nhân viên</label>
-            <input type="text" id="login-username" placeholder="Nhập Mã NV (VD: 017481) hoặc Họ tên..." required style="width:100%;padding:11px 14px;border:1.5px solid #CBD5E1;border-radius:10px;font-size:13.5px;box-sizing:border-box;outline:none;">
+            <label style="display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:6px;">Mã nhân viên</label>
+            <input type="text" id="login-username" placeholder="Nhập mã nhân viên..." required style="width:100%;padding:11.5px 14px;border:1.5px solid #CBD5E1;border-radius:10px;font-size:13.5px;box-sizing:border-box;outline:none;">
           </div>
 
-          <div style="margin-bottom:20px;">
-            <label style="display:block;font-size:12.5px;font-weight:700;color:#334155;margin-bottom:6px;">Mật khẩu</label>
+          <div style="margin-bottom:22px;">
+            <label style="display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:6px;">Mật khẩu</label>
             <div style="position:relative;">
-              <input type="password" id="login-password" placeholder="Nhập mật khẩu (Mặc định: 123)" required style="width:100%;padding:11px 40px 11px 14px;border:1.5px solid #CBD5E1;border-radius:10px;font-size:13.5px;box-sizing:border-box;outline:none;">
+              <input type="password" id="login-password" placeholder="Nhập mật khẩu..." required style="width:100%;padding:11.5px 40px 11.5px 14px;border:1.5px solid #CBD5E1;border-radius:10px;font-size:13.5px;box-sizing:border-box;outline:none;">
               <button type="button" id="toggle-pwd-btn" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;color:#64748B;">👁</button>
             </div>
           </div>
 
-          <div id="login-error-msg" style="display:none;background:#FFF1F2;border:1px solid #FECDD3;color:#9F1239;padding:10px 12px;border-radius:8px;font-size:12.5px;margin-bottom:16px;"></div>
+          <div id="login-error-msg" style="display:none;background:#FFF1F2;border:1px solid #FECDD3;color:#9F1239;padding:10px 12px;border-radius:8px;font-size:12.5px;margin-bottom:18px;"></div>
 
-          <button type="submit" class="btn btn-primary" style="width:100%;background:#0D9488;color:#FFFFFF;border:none;padding:12px;font-size:15px;font-weight:700;border-radius:10px;cursor:pointer;box-shadow:0 4px 12px rgba(13,148,136,0.3);transition:all 0.15s;">
-            🔑 ĐĂNG NHẬP HỆ THỐNG
+          <button type="submit" class="btn btn-primary" style="width:100%;background:#0D9488;color:#FFFFFF;border:none;padding:12.5px;font-size:15px;font-weight:700;border-radius:10px;cursor:pointer;box-shadow:0 4px 12px rgba(13,148,136,0.3);transition:all 0.15s;">
+            TIẾP TỤC (XÁC THỰC MÃ PIN) ➔
           </button>
         </form>
+        ` : `
+        <form id="pin-form">
+          <div style="padding:10px 14px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;margin-bottom:20px;text-align:center;">
+            <div style="font-size:14px;color:#166534;font-weight:800;">👤 ${user.name}</div>
+            <div style="font-size:12px;color:#15803D;">Mã NV: <b>${user.employeeCode}</b> — ${user.department}</div>
+          </div>
 
-        <div style="border-top:1px solid #E2E8F0;padding-top:16px;">
-          <details style="font-size:12.5px;color:#475569;cursor:pointer;">
-            <summary style="font-weight:700;color:#0D9488;">📋 Danh sách Tài khoản Nhân viên (Mật khẩu mặc định: 123)</summary>
-            <div style="margin-top:10px;max-height:180px;overflow-y:auto;">
-              ${defaultAccounts}
+          <div style="margin-bottom:22px;text-align:center;">
+            <label style="display:block;font-size:13.5px;font-weight:800;color:#0F172A;margin-bottom:12px;">🔐 BƯỚC 2: NHẬP MÃ PIN (4 CHỮ SỐ)</label>
+            <div style="display:flex;justify-content:center;gap:12px;" id="pin-boxes-container">
+              <input type="password" maxlength="1" class="pin-digit-input" data-idx="0" inputmode="numeric" style="width:48px;height:52px;font-size:22px;text-align:center;border:2px solid #CBD5E1;border-radius:10px;outline:none;font-weight:800;background:#F8FAFC;" autofocus>
+              <input type="password" maxlength="1" class="pin-digit-input" data-idx="1" inputmode="numeric" style="width:48px;height:52px;font-size:22px;text-align:center;border:2px solid #CBD5E1;border-radius:10px;outline:none;font-weight:800;background:#F8FAFC;">
+              <input type="password" maxlength="1" class="pin-digit-input" data-idx="2" inputmode="numeric" style="width:48px;height:52px;font-size:22px;text-align:center;border:2px solid #CBD5E1;border-radius:10px;outline:none;font-weight:800;background:#F8FAFC;">
+              <input type="password" maxlength="1" class="pin-digit-input" data-idx="3" inputmode="numeric" style="width:48px;height:52px;font-size:22px;text-align:center;border:2px solid #CBD5E1;border-radius:10px;outline:none;font-weight:800;background:#F8FAFC;">
             </div>
-          </details>
-        </div>
+            <p style="font-size:11.5px;color:#64748B;margin-top:10px;margin-bottom:0;">(Mã PIN mặc định ban đầu: <b style="color:#0D9488;">1234</b>)</p>
+          </div>
+
+          <div id="login-error-msg" style="display:none;background:#FFF1F2;border:1px solid #FECDD3;color:#9F1239;padding:10px 12px;border-radius:8px;font-size:12.5px;margin-bottom:18px;"></div>
+
+          <button type="submit" class="btn btn-primary" style="width:100%;background:#0D9488;color:#FFFFFF;border:none;padding:12.5px;font-size:15px;font-weight:700;border-radius:10px;cursor:pointer;box-shadow:0 4px 12px rgba(13,148,136,0.3);margin-bottom:10px;">
+            🔑 XÁC NHẬN ĐĂNG NHẬP
+          </button>
+          <button type="button" id="back-to-step1-btn" style="width:100%;background:none;border:none;color:#64748B;font-size:12.5px;cursor:pointer;padding:6px;font-weight:600;">
+            ← Quay lại bước nhập Mật khẩu
+          </button>
+        </form>
+        `}
       </div>
     </div>
   `;
@@ -3403,10 +3633,12 @@ function renderLoginScreen() {
 
 function attachLoginScreenHandlers() {
   const form = document.getElementById('login-form');
+  const pinForm = document.getElementById('pin-form');
   const toggleBtn = document.getElementById('toggle-pwd-btn');
   const pwdInput = document.getElementById('login-password');
   const userInput = document.getElementById('login-username');
   const errBox = document.getElementById('login-error-msg');
+  const backBtn = document.getElementById('back-to-step1-btn');
 
   if (toggleBtn && pwdInput) {
     toggleBtn.addEventListener('click', () => {
@@ -3420,14 +3652,35 @@ function attachLoginScreenHandlers() {
     });
   }
 
-  document.querySelectorAll('.quick-login-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const code = btn.dataset.usercode;
-      if (userInput) userInput.value = code;
-      if (pwdInput) pwdInput.value = '123';
-      if (errBox) errBox.style.display = 'none';
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      STATE.loginStep = 1;
+      STATE.pendingUser = null;
+      render();
     });
-  });
+  }
+
+  // Handle PIN digit inputs focus auto-advance
+  const pinInputs = document.querySelectorAll('.pin-digit-input');
+  if (pinInputs.length > 0) {
+    setTimeout(() => { if (pinInputs[0]) pinInputs[0].focus(); }, 100);
+    pinInputs.forEach((inp, idx) => {
+      inp.addEventListener('input', (e) => {
+        const val = e.target.value;
+        if (val && idx < pinInputs.length - 1) {
+          pinInputs[idx + 1].focus();
+        }
+        if (idx === pinInputs.length - 1 && val) {
+          if (pinForm) pinForm.requestSubmit();
+        }
+      });
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !e.target.value && idx > 0) {
+          pinInputs[idx - 1].focus();
+        }
+      });
+    });
+  }
 
   if (form) {
     form.addEventListener('submit', async (e) => {
@@ -3437,7 +3690,7 @@ function attachLoginScreenHandlers() {
 
       if (!userVal || !pwdVal) {
         if (errBox) {
-          errBox.textContent = 'Vui lòng nhập đầy đủ Tên đăng nhập và Mật khẩu!';
+          errBox.textContent = 'Vui lòng nhập đầy đủ Mã nhân viên và Mật khẩu!';
           errBox.style.display = 'block';
         }
         return;
@@ -3447,12 +3700,12 @@ function attachLoginScreenHandlers() {
         const code = (u.employeeCode || '').trim().toLowerCase();
         const uname = (u.username || '').trim().toLowerCase();
         const name = (u.name || '').trim().toLowerCase();
-        return userVal === code || userVal === uname || name.includes(userVal);
+        return userVal === code || userVal === uname || name === userVal;
       });
 
       if (!matchedUser) {
         if (errBox) {
-          errBox.textContent = '❌ Tên đăng nhập hoặc Mã nhân viên không tồn tại trong hệ thống!';
+          errBox.textContent = '❌ Mã nhân viên hoặc Mật khẩu không chính xác!';
           errBox.style.display = 'block';
         }
         return;
@@ -3461,20 +3714,56 @@ function attachLoginScreenHandlers() {
       const userPwd = matchedUser.password || '123';
       if (pwdVal !== userPwd) {
         if (errBox) {
-          errBox.textContent = '❌ Mật khẩu không chính xác! Vui lòng thử lại (Mật khẩu mặc định: 123).';
+          errBox.textContent = '❌ Mã nhân viên hoặc Mật khẩu không chính xác!';
           errBox.style.display = 'block';
         }
         return;
       }
 
-      STATE.currentUserId = matchedUser.id;
+      // Step 1 Passed -> Go to Step 2 PIN
+      STATE.loginStep = 2;
+      STATE.pendingUser = matchedUser;
+      render();
+    });
+  }
+
+  if (pinForm) {
+    pinForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const pinDigits = Array.from(document.querySelectorAll('.pin-digit-input')).map(inp => inp.value.trim()).join('');
+      if (pinDigits.length < 4) {
+        if (errBox) {
+          errBox.textContent = 'Vui lòng nhập đủ 4 chữ số Mã PIN bảo mật!';
+          errBox.style.display = 'block';
+        }
+        return;
+      }
+
+      const userPin = STATE.pendingUser ? (STATE.pendingUser.pin || '1234') : '1234';
+      if (pinDigits !== userPin) {
+        if (errBox) {
+          errBox.textContent = '❌ Mã PIN bảo mật không chính xác! (Mã PIN mặc định: 1234)';
+          errBox.style.display = 'block';
+        }
+        document.querySelectorAll('.pin-digit-input').forEach(inp => { inp.value = ''; inp.style.borderColor = '#EF4444'; });
+        const first = document.querySelectorAll('.pin-digit-input')[0];
+        if (first) first.focus();
+        return;
+      }
+
+      // Success PIN Login
+      STATE.currentUserId = STATE.pendingUser.id;
       STATE.isLoggedIn = true;
+      const loggedUser = STATE.pendingUser;
+      STATE.loginStep = 1;
+      STATE.pendingUser = null;
+
       try {
-        await window.storage.set('current-user-id', matchedUser.id);
+        await window.storage.set('current-user-id', loggedUser.id);
         await window.storage.set('is-logged-in', 'true');
       } catch (err) {}
 
-      showToast(`Xin chào ${matchedUser.name}!`);
+      showToast(`Xin chào ${loggedUser.name}!`);
       render();
     });
   }
@@ -3892,7 +4181,14 @@ function attachHandlers() {
     render();
   });
 
-  // Overview Send Overdue Email
+  // Overview Send Overdue Email (Class listener for all triggers)
+  document.querySelectorAll('.send-overdue-email-btn-trigger').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sendOverdueAdvanceEmailNotification();
+    });
+  });
+
   const ovEmailBtn = document.getElementById('ov-send-email-btn');
   if (ovEmailBtn) ovEmailBtn.addEventListener('click', () => sendOverdueAdvanceEmailNotification());
 
@@ -4288,20 +4584,178 @@ function attachHandlers() {
   const saveUserPwdBtn = document.getElementById('save-user-pwd-btn');
   if (saveUserPwdBtn) {
     saveUserPwdBtn.addEventListener('click', async () => {
+      const oldPwd = (document.getElementById('cfg-user-old-password') || {}).value?.trim();
+      const oldPin = (document.getElementById('cfg-user-old-pin') || {}).value?.trim();
       const newPwd = (document.getElementById('cfg-user-new-password') || {}).value?.trim();
-      if (!newPwd) {
-        showToast('Vui lòng nhập mật khẩu mới');
+      const newPin = (document.getElementById('cfg-user-new-pin') || {}).value?.trim();
+
+      const curU = currentUser();
+      const expectedOldPwd = curU.password || '123';
+      const expectedOldPin = curU.pin || '1234';
+
+      if (!oldPwd || !oldPin) {
+        showAlertModal('Xác thực thất bại', 'Vui lòng nhập Mật khẩu hiện tại và Mã PIN hiện tại để xác thực!');
         return;
       }
-      const curU = currentUser();
-      curU.password = newPwd;
+
+      if (oldPwd !== expectedOldPwd) {
+        showAlertModal('Lỗi xác thực', '❌ Mật khẩu hiện tại (cũ) không chính xác!');
+        return;
+      }
+
+      if (oldPin !== expectedOldPin) {
+        showAlertModal('Lỗi xác thực', '❌ Mã PIN hiện tại (cũ) không chính xác!');
+        return;
+      }
+
+      if (!newPwd && !newPin) {
+        showToast('Vui lòng nhập Mật khẩu mới hoặc Mã PIN mới cần cập nhật');
+        return;
+      }
+
+      if (newPwd) curU.password = newPwd;
+      if (newPin) curU.pin = newPin;
+
       const targetInUsers = STATE.users.find(u => u.id === curU.id);
-      if (targetInUsers) targetInUsers.password = newPwd;
+      if (targetInUsers) {
+        if (newPwd) targetInUsers.password = newPwd;
+        if (newPin) targetInUsers.pin = newPin;
+      }
+
       await saveUsers();
-      showToast('✓ Đã cập nhật mật khẩu mới thành công!');
-      document.getElementById('cfg-user-new-password').value = '';
+      showToast('✓ Đã cập nhật Mật khẩu & Mã PIN mới thành công!');
+
+      if (document.getElementById('cfg-user-old-password')) document.getElementById('cfg-user-old-password').value = '';
+      if (document.getElementById('cfg-user-old-pin')) document.getElementById('cfg-user-old-pin').value = '';
+      if (document.getElementById('cfg-user-new-password')) document.getElementById('cfg-user-new-password').value = '';
+      if (document.getElementById('cfg-user-new-pin')) document.getElementById('cfg-user-new-pin').value = '';
     });
   }
+
+  // Add new member & Manage members
+  const addUserBtn = document.getElementById('add-new-user-btn');
+  if (addUserBtn) {
+    addUserBtn.addEventListener('click', async () => {
+      const code = (document.getElementById('new-user-code') || {}).value?.trim();
+      const name = (document.getElementById('new-user-name') || {}).value?.trim();
+      const email = (document.getElementById('new-user-email') || {}).value?.trim() || `${code}@cpc1hn.com.vn`;
+      const dept = (document.getElementById('new-user-dept') || {}).value?.trim() || 'CPC1 Hà Nội';
+      const role = (document.getElementById('new-user-role') || {}).value || 'employee';
+
+      if (!code || !name) {
+        showToast('Vui lòng nhập đầy đủ Mã nhân viên và Họ tên!');
+        return;
+      }
+
+      const existing = STATE.users.find(u => u.employeeCode === code || u.username === code);
+      if (existing) {
+        showAlertModal('Lỗi', `Mã nhân viên ${code} đã tồn tại trong hệ thống (Tên: ${existing.name})!`);
+        return;
+      }
+
+      const newUser = {
+        id: uid('u'),
+        username: code,
+        employeeCode: code,
+        name: name,
+        email: email,
+        department: dept,
+        role: role,
+        password: '123',
+        pin: '1234',
+        bank: null
+      };
+
+      STATE.users.push(newUser);
+      await saveUsers();
+      showToast(`✓ Đã thêm nhân viên ${name} (${code}) thành công!`);
+      render();
+    });
+  }
+
+  document.querySelectorAll('.del-user-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const userId = btn.dataset.deluser;
+      const targetUser = STATE.users.find(u => u.id === userId);
+      if (!targetUser) return;
+      if (userId === currentUser().id) {
+        showToast('Không thể xoá tài khoản chính bạn đang đăng nhập');
+        return;
+      }
+      showConfirmModal('Xoá nhân viên?', `Bạn có chắc muốn xoá tài khoản nhân viên ${targetUser.name} (${targetUser.employeeCode})?`, async () => {
+        STATE.users = STATE.users.filter(u => u.id !== userId);
+        await saveUsers();
+        showToast(`✓ Đã xoá nhân viên ${targetUser.name}`);
+        render();
+      });
+    });
+  });
+
+  // Edit member handlers
+  document.querySelectorAll('.edit-user-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      STATE.editingUserId = btn.dataset.edituser;
+      render();
+    });
+  });
+
+  document.querySelectorAll('.cancel-user-edit-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      STATE.editingUserId = null;
+      render();
+    });
+  });
+
+  document.querySelectorAll('.save-user-edit-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const uidVal = btn.dataset.saveuser;
+      const targetUser = STATE.users.find(u => u.id === uidVal);
+      if (!targetUser) return;
+
+      const code = (document.getElementById(`eu-code-${uidVal}`) || {}).value?.trim();
+      const name = (document.getElementById(`eu-name-${uidVal}`) || {}).value?.trim();
+      const email = (document.getElementById(`eu-email-${uidVal}`) || {}).value?.trim();
+      const dept = (document.getElementById(`eu-dept-${uidVal}`) || {}).value?.trim();
+      const role = (document.getElementById(`eu-role-${uidVal}`) || {}).value;
+
+      if (!code || !name) {
+        showToast('Vui lòng nhập Mã nhân viên và Họ tên!');
+        return;
+      }
+
+      targetUser.employeeCode = code;
+      targetUser.username = code;
+      targetUser.name = name;
+      targetUser.email = email || `${code}@cpc1hn.com.vn`;
+      targetUser.department = dept || 'CPC1 Hà Nội';
+      targetUser.role = role || 'employee';
+
+      await saveUsers();
+      STATE.editingUserId = null;
+      showToast(`✓ Đã cập nhật thông tin nhân viên ${name} thành công!`);
+      render();
+    });
+  });
+
+  document.querySelectorAll('.reset-user-pwd-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const uidVal = btn.dataset.resetpwd;
+      const targetUser = STATE.users.find(u => u.id === uidVal);
+      if (!targetUser) return;
+      showConfirmModal('Reset Mật khẩu & Mã PIN?', `Đặt lại Mật khẩu về 123 và Mã PIN về 1234 cho nhân viên ${targetUser.name} (${targetUser.employeeCode})?`, async () => {
+        targetUser.password = '123';
+        targetUser.pin = '1234';
+        await saveUsers();
+        showToast(`✓ Đã reset MK (123) và PIN (1234) cho nhân viên ${targetUser.name}!`);
+        render();
+      });
+    });
+  });
 }
 
 function formatVoucherItemNote(note, invoiceRef) {
