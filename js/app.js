@@ -135,13 +135,6 @@ async function loadAll() {
     await savePayees();
   }
 
-  try {
-    const r = await window.storage.get('current-user-id');
-    STATE.currentUserId = r ? r.value : STATE.users[0].id;
-  } catch (e) {
-    STATE.currentUserId = STATE.users[0].id;
-  }
-
   // Parse Deep Link URL parameters (e.g. ?docId=123 or ?page=settings)
   try {
     const urlParams = new URLSearchParams(window.location.search);
@@ -155,13 +148,22 @@ async function loadAll() {
     }
   } catch (e) {}
 
+  // Session check: ALWAYS require login for fresh tabs / new Chrome profiles / new devices!
+  // MUST use sessionStorage for 100% isolated authentication per Chrome profile & device.
   try {
-    const sessionFlag = sessionStorage.getItem('CPC1_LOGGED_IN');
-    const localFlag = localStorage.getItem('CPC1_LOGGED_IN');
-    const r = await window.storage.get('is-logged-in');
-    STATE.isLoggedIn = (sessionFlag === 'true' || localFlag === 'true' || (r && r.value === 'true'));
+    const sessionFlag = sessionStorage.getItem('CPC1_SESSION_LOGGED_IN');
+    const sessionUserId = sessionStorage.getItem('CPC1_SESSION_USER_ID');
+
+    if (sessionFlag === 'true' && sessionUserId && STATE.users.some(u => u.id === sessionUserId)) {
+      STATE.isLoggedIn = true;
+      STATE.currentUserId = sessionUserId;
+    } else {
+      STATE.isLoggedIn = false;
+      STATE.currentUserId = null;
+    }
   } catch (e) {
     STATE.isLoggedIn = false;
+    STATE.currentUserId = null;
   }
 
   // Khởi chạy đồng bộ thời gian thực đa người dùng qua Firebase Firestore
@@ -3774,10 +3776,12 @@ function attachLoginScreenHandlers() {
       STATE.pendingUser = null;
 
       try {
-        sessionStorage.setItem('CPC1_LOGGED_IN', 'true');
-        localStorage.setItem('CPC1_LOGGED_IN', 'true');
-        await window.storage.set('current-user-id', loggedUser.id);
-        await window.storage.set('is-logged-in', 'true');
+        sessionStorage.setItem('CPC1_SESSION_LOGGED_IN', 'true');
+        sessionStorage.setItem('CPC1_SESSION_USER_ID', loggedUser.id);
+        // Clear global storage login flags to prevent auto-login leaks across Chrome profiles
+        localStorage.removeItem('CPC1_LOGGED_IN');
+        localStorage.removeItem('cpc1_is-logged-in');
+        localStorage.removeItem('cpc1_current-user-id');
       } catch (err) {}
 
       // Handle target deep link redirect after login
@@ -4195,9 +4199,12 @@ function attachHandlers() {
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
       STATE.isLoggedIn = false;
+      STATE.currentUserId = null;
       try {
-        sessionStorage.removeItem('CPC1_LOGGED_IN');
+        sessionStorage.clear();
         localStorage.removeItem('CPC1_LOGGED_IN');
+        localStorage.removeItem('cpc1_is-logged-in');
+        localStorage.removeItem('cpc1_current-user-id');
         await window.storage.set('is-logged-in', 'false');
       } catch (e) {}
       showToast('Đã đăng xuất tài khoản');
