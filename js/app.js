@@ -67,17 +67,8 @@ const MAX_ATTACH_BYTES = 3.5 * 1024 * 1024; // 3.5MB limit per attachment
 let STATE = {
   documents: [],
   payees: [],
-  users: [],
-  invoices: [],
-  currentUserId: null,
-  page: 'overview',
-  selectedId: null,
-  draftForm: null,
-  formType: 'payment',
-  previewAttachmentId: null,
-  editingPayeeId: null,
-  invoiceUploading: false,
   selectedInvoiceIds: [],
+  isLoggedIn: false,
   claudeApiKey: '',
   geminiApiKey: ''
 };
@@ -132,7 +123,7 @@ async function loadAll() {
     STATE.geminiApiKey = r ? r.value : '';
   } catch (e) { STATE.geminiApiKey = ''; }
 
-  if (!STATE.users || STATE.users.length === 0) {
+  if (!STATE.users || STATE.users.length === 0 || STATE.users.length < 5 || !STATE.users[0].password) {
     STATE.users = seedUsers();
     await saveUsers();
   }
@@ -147,6 +138,13 @@ async function loadAll() {
     STATE.currentUserId = r ? r.value : STATE.users[0].id;
   } catch (e) {
     STATE.currentUserId = STATE.users[0].id;
+  }
+
+  try {
+    const r = await window.storage.get('is-logged-in');
+    STATE.isLoggedIn = r ? r.value === 'true' : false;
+  } catch (e) {
+    STATE.isLoggedIn = false;
   }
 
   // Khởi chạy đồng bộ thời gian thực đa người dùng qua Firebase Firestore
@@ -211,10 +209,16 @@ async function saveCurrentUser() {
 
 function seedUsers() {
   return [
-    { id: uid('u'), name: 'Vũ Thị Kim Tuyến', employeeCode: '017481', department: 'Phòng Thương mại quốc tế', role: 'employee', bank: { accountName: 'Vũ Thị Kim Tuyến', accountNumber: '17923381', bankName: 'ACB - Ngân hàng TMCP Á Châu' } },
-    { id: uid('u'), name: 'Nguyễn Văn Hùng', employeeCode: '010023', department: 'Phòng Thương mại quốc tế', role: 'dept_head', bank: null },
-    { id: uid('u'), name: 'Trần Thị Lan', employeeCode: '010005', department: 'Phòng Kế toán', role: 'chief_accountant', bank: null },
-    { id: uid('u'), name: 'Phạm Minh Đức', employeeCode: '010001', department: 'Ban Giám đốc', role: 'director', bank: null }
+    { id: 'u_017481', username: '017481', password: '123', name: 'Vũ Thị Kim Tuyến', employeeCode: '017481', department: 'Phòng Thương mại quốc tế', role: 'employee', bank: { accountName: 'Vũ Thị Kim Tuyến', accountNumber: '17923381', bankName: 'ACB - Ngân hàng TMCP Á Châu' } },
+    { id: 'u_015408', username: '015408', password: '123', name: 'Nguyễn Phương Anh', employeeCode: '015408', department: 'Phòng Thương mại quốc tế', role: 'employee', bank: null },
+    { id: 'u_019690', username: '019690', password: '123', name: 'Ngô Mai Anh', employeeCode: '019690', department: 'Phòng Kế toán', role: 'employee', bank: null },
+    { id: 'u_017078', username: '017078', password: '123', name: 'Khuất Phương Nhung', employeeCode: '017078', department: 'Phòng Hành chính - Nhân sự', role: 'employee', bank: null },
+    { id: 'u_018906', username: '018906', password: '123', name: 'Đinh Ngọc Mai', employeeCode: '018906', department: 'Phòng Kế hoạch & Cung ứng', role: 'employee', bank: null },
+    { id: 'u_018233', username: '018233', password: '123', name: 'Lê Minh Đăng', employeeCode: '018233', department: 'Phòng R&D', role: 'employee', bank: null },
+    { id: 'u_018858', username: '018858', password: '123', name: 'Phạm Thị Lan Hương', employeeCode: '018858', department: 'Phòng Đảm bảo chất lượng', role: 'employee', bank: null },
+    { id: 'u_010023', username: '010023', password: '123', name: 'Nguyễn Văn Hùng', employeeCode: '010023', department: 'Phòng Thương mại quốc tế', role: 'dept_head', bank: null },
+    { id: 'u_010005', username: '010005', password: '123', name: 'Trần Thị Lan', employeeCode: '010005', department: 'Phòng Kế toán', role: 'chief_accountant', bank: null },
+    { id: 'u_010001', username: '010001', password: '123', name: 'Phạm Minh Đức', employeeCode: '010001', department: 'Ban Giám đốc', role: 'director', bank: null }
   ];
 }
 
@@ -1846,11 +1850,12 @@ function renderSidebar() {
         <span style="font-weight:600;">Firebase Cloud Realtime</span>
       </div>
       <div class="user-box">
-        <label>Đang thao tác vai trò</label>
-        <select id="user-select">
-          ${STATE.users.map(usr => `<option value="${usr.id}" ${usr.id === u.id ? 'selected' : ''}>${usr.name}</option>`).join('')}
-        </select>
+        <label>Tài khoản đang đăng nhập</label>
+        <div style="font-weight:700;font-size:13px;color:var(--ink);">${u.name}</div>
         <div class="user-role-pill">● ${roleLabelMap[u.role] || u.role}</div>
+        <button type="button" class="btn btn-ghost btn-sm" id="logout-btn" style="color:var(--stamp);font-size:12px;margin-top:8px;width:100%;text-align:center;border:1px dashed #FECDD3;background:#FFF1F2;padding:5px 0;border-radius:6px;cursor:pointer;font-weight:600;" title="Đăng xuất khỏi tài khoản">
+          🚪 Đăng xuất
+        </button>
       </div>
     </div>
   </div>`;
@@ -3327,7 +3332,152 @@ function renderSettings() {
       <input type="file" id="import-backup-input" accept=".json,application/json" style="display:none;">
     </div>
   </div>
+
+  <div class="form-card" style="max-width:750px;margin-top:24px;">
+    <h3 style="font-size:16px;margin-bottom:10px;">🔐 Đổi Mật Khẩu Cá Nhân</h3>
+    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">Đổi mật khẩu bảo mật cho tài khoản <b>${currentUser().name}</b> (Mã NV: <code>${currentUser().employeeCode}</code>).</p>
+
+    <div class="field" style="margin-bottom:14px;">
+      <label><b>Mật khẩu mới</b></label>
+      <input type="password" id="cfg-user-new-password" placeholder="Nhập mật khẩu mới..." style="max-width:320px;">
+    </div>
+    <button type="button" class="btn btn-teal btn-sm" id="save-user-pwd-btn">🔒 Cập nhật Mật khẩu mới</button>
+  </div>
   `;
+}
+
+function renderLoginScreen() {
+  const defaultAccounts = STATE.users.map(u => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;margin-bottom:6px;">
+      <div>
+        <b style="color:#0F172A;">${u.name}</b> (${u.department})<br>
+        <span style="color:#64748B;">Mã NV: <code style="color:#0D9488;font-weight:700;">${u.employeeCode || u.username}</code></span>
+      </div>
+      <button type="button" class="btn btn-outline btn-sm quick-login-btn" data-usercode="${u.employeeCode || u.username}" style="padding:4px 8px;font-size:11px;cursor:pointer;">
+        Chọn nhanh
+      </button>
+    </div>`).join('');
+
+  return `
+    <div style="min-height:100vh;background:linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F766E 100%);display:flex;align-items:center;justify-content:center;padding:20px;font-family:var(--font-sans);">
+      <div style="background:#FFFFFF;border-radius:20px;box-shadow:0 25px 60px rgba(0,0,0,0.4);max-width:460px;width:100%;padding:36px;border:1px solid #CBD5E1;animation:modalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
+        <div style="text-align:center;margin-bottom:24px;">
+          <img src="${LOGO_DATA_URI}" alt="CPC1 Logo" style="height:65px;margin-bottom:12px;object-fit:contain;">
+          <h2 style="font-size:20px;font-weight:800;color:#0F172A;margin:0 0 6px;">CPC1 FINANCIAL VOUCHERS</h2>
+          <p style="font-size:13px;color:#64748B;margin:0;">Hệ thống Quản lý Phiếu tài chính & Kho Hoá đơn</p>
+        </div>
+
+        <form id="login-form" style="margin-bottom:20px;">
+          <div style="margin-bottom:16px;">
+            <label style="display:block;font-size:12.5px;font-weight:700;color:#334155;margin-bottom:6px;">Tên đăng nhập / Mã nhân viên</label>
+            <input type="text" id="login-username" placeholder="Nhập Mã NV (VD: 017481) hoặc Họ tên..." required style="width:100%;padding:11px 14px;border:1.5px solid #CBD5E1;border-radius:10px;font-size:13.5px;box-sizing:border-box;outline:none;">
+          </div>
+
+          <div style="margin-bottom:20px;">
+            <label style="display:block;font-size:12.5px;font-weight:700;color:#334155;margin-bottom:6px;">Mật khẩu</label>
+            <div style="position:relative;">
+              <input type="password" id="login-password" placeholder="Nhập mật khẩu (Mặc định: 123)" required style="width:100%;padding:11px 40px 11px 14px;border:1.5px solid #CBD5E1;border-radius:10px;font-size:13.5px;box-sizing:border-box;outline:none;">
+              <button type="button" id="toggle-pwd-btn" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;color:#64748B;">👁</button>
+            </div>
+          </div>
+
+          <div id="login-error-msg" style="display:none;background:#FFF1F2;border:1px solid #FECDD3;color:#9F1239;padding:10px 12px;border-radius:8px;font-size:12.5px;margin-bottom:16px;"></div>
+
+          <button type="submit" class="btn btn-primary" style="width:100%;background:#0D9488;color:#FFFFFF;border:none;padding:12px;font-size:15px;font-weight:700;border-radius:10px;cursor:pointer;box-shadow:0 4px 12px rgba(13,148,136,0.3);transition:all 0.15s;">
+            🔑 ĐĂNG NHẬP HỆ THỐNG
+          </button>
+        </form>
+
+        <div style="border-top:1px solid #E2E8F0;padding-top:16px;">
+          <details style="font-size:12.5px;color:#475569;cursor:pointer;">
+            <summary style="font-weight:700;color:#0D9488;">📋 Danh sách Tài khoản Nhân viên (Mật khẩu mặc định: 123)</summary>
+            <div style="margin-top:10px;max-height:180px;overflow-y:auto;">
+              ${defaultAccounts}
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function attachLoginScreenHandlers() {
+  const form = document.getElementById('login-form');
+  const toggleBtn = document.getElementById('toggle-pwd-btn');
+  const pwdInput = document.getElementById('login-password');
+  const userInput = document.getElementById('login-username');
+  const errBox = document.getElementById('login-error-msg');
+
+  if (toggleBtn && pwdInput) {
+    toggleBtn.addEventListener('click', () => {
+      if (pwdInput.type === 'password') {
+        pwdInput.type = 'text';
+        toggleBtn.textContent = '🙈';
+      } else {
+        pwdInput.type = 'password';
+        toggleBtn.textContent = '👁';
+      }
+    });
+  }
+
+  document.querySelectorAll('.quick-login-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.dataset.usercode;
+      if (userInput) userInput.value = code;
+      if (pwdInput) pwdInput.value = '123';
+      if (errBox) errBox.style.display = 'none';
+    });
+  });
+
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const userVal = (userInput.value || '').trim().toLowerCase();
+      const pwdVal = (pwdInput.value || '').trim();
+
+      if (!userVal || !pwdVal) {
+        if (errBox) {
+          errBox.textContent = 'Vui lòng nhập đầy đủ Tên đăng nhập và Mật khẩu!';
+          errBox.style.display = 'block';
+        }
+        return;
+      }
+
+      const matchedUser = STATE.users.find(u => {
+        const code = (u.employeeCode || '').trim().toLowerCase();
+        const uname = (u.username || '').trim().toLowerCase();
+        const name = (u.name || '').trim().toLowerCase();
+        return userVal === code || userVal === uname || name.includes(userVal);
+      });
+
+      if (!matchedUser) {
+        if (errBox) {
+          errBox.textContent = '❌ Tên đăng nhập hoặc Mã nhân viên không tồn tại trong hệ thống!';
+          errBox.style.display = 'block';
+        }
+        return;
+      }
+
+      const userPwd = matchedUser.password || '123';
+      if (pwdVal !== userPwd) {
+        if (errBox) {
+          errBox.textContent = '❌ Mật khẩu không chính xác! Vui lòng thử lại (Mật khẩu mặc định: 123).';
+          errBox.style.display = 'block';
+        }
+        return;
+      }
+
+      STATE.currentUserId = matchedUser.id;
+      STATE.isLoggedIn = true;
+      try {
+        await window.storage.set('current-user-id', matchedUser.id);
+        await window.storage.set('is-logged-in', 'true');
+      } catch (err) {}
+
+      showToast(`Xin chào ${matchedUser.name}!`);
+      render();
+    });
+  }
 }
 
 /* ===================== CONTROLLER & EVENT BINDINGS ===================== */
@@ -3347,6 +3497,13 @@ function setupInvoiceTopScrollbar() {
 function render() {
   const app = document.getElementById('app');
   if (!app) return;
+
+  if (!STATE.isLoggedIn) {
+    app.innerHTML = renderLoginScreen();
+    attachLoginScreenHandlers();
+    return;
+  }
+
   const scrollY = window.scrollY;
   const hScrollEl = document.querySelector('[data-hscroll]');
   const hScrollLeft = hScrollEl ? hScrollEl.scrollLeft : 0;
@@ -3717,6 +3874,15 @@ function showAddToDraftVoucherModal(checkedInvoiceIds) {
 }
 
 function attachHandlers() {
+  const logoutBtn = document.getElementById('logout-btn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      STATE.isLoggedIn = false;
+      try { await window.storage.set('is-logged-in', 'false'); } catch (e) {}
+      showToast('Đã đăng xuất tài khoản');
+      render();
+    });
+  }
   const pickRepoBtn = document.getElementById('pick-invoice-repo-btn');
   if (pickRepoBtn) pickRepoBtn.addEventListener('click', () => showPickInvoiceRepoModal());
   // Overview Month Switcher
@@ -4116,6 +4282,24 @@ function attachHandlers() {
           showAlertModal('Lỗi phục hồi', 'File sao lưu không hợp lệ: ' + err.message);
         }
       });
+    });
+  }
+
+  const saveUserPwdBtn = document.getElementById('save-user-pwd-btn');
+  if (saveUserPwdBtn) {
+    saveUserPwdBtn.addEventListener('click', async () => {
+      const newPwd = (document.getElementById('cfg-user-new-password') || {}).value?.trim();
+      if (!newPwd) {
+        showToast('Vui lòng nhập mật khẩu mới');
+        return;
+      }
+      const curU = currentUser();
+      curU.password = newPwd;
+      const targetInUsers = STATE.users.find(u => u.id === curU.id);
+      if (targetInUsers) targetInUsers.password = newPwd;
+      await saveUsers();
+      showToast('✓ Đã cập nhật mật khẩu mới thành công!');
+      document.getElementById('cfg-user-new-password').value = '';
     });
   }
 }
