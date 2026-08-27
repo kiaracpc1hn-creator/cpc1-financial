@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hệ thống Quản lý Phiếu tài chính & Hoá đơn — CPC1</title>
+  <meta name="description" content="Hệ thống Quản lý Phiếu tài chính, Lập Đề nghị thanh toán, Phiếu trình, Tạm ứng, Hoàn ứng và Kho Hoá đơn điện tử CPC1.">
+  
+  <!-- Design System & Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- PDF Parsing & Generation Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- Firebase Cloud SDKs (Realtime Cloud Database & Storage) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+</head>
+<body>
+  <!-- Root App Shell -->
+  <div id="app"></div>
+  
+  <!-- Global Toast Notification Container -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Application Modular Scripts -->
+  <script src="js/storage.js"></script>
+  <script src="js/number-to-words.js"></script>
+  <script src="js/pdf-parser.js"></script>
+  <script src="js/accounting-bridge.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
