@@ -142,9 +142,24 @@ async function loadAll() {
     STATE.currentUserId = STATE.users[0].id;
   }
 
+  // Parse Deep Link URL parameters (e.g. ?docId=123 or ?page=settings)
   try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const deepDocId = urlParams.get('docId') || urlParams.get('id');
+    const deepPage = urlParams.get('page');
+
+    if (deepDocId) {
+      STATE.pendingRedirect = { page: 'detail', docId: deepDocId };
+    } else if (deepPage) {
+      STATE.pendingRedirect = { page: deepPage };
+    }
+  } catch (e) {}
+
+  try {
+    const sessionFlag = sessionStorage.getItem('CPC1_LOGGED_IN');
+    const localFlag = localStorage.getItem('CPC1_LOGGED_IN');
     const r = await window.storage.get('is-logged-in');
-    STATE.isLoggedIn = r ? r.value === 'true' : false;
+    STATE.isLoggedIn = (sessionFlag === 'true' || localFlag === 'true' || (r && r.value === 'true'));
   } catch (e) {
     STATE.isLoggedIn = false;
   }
@@ -3759,9 +3774,22 @@ function attachLoginScreenHandlers() {
       STATE.pendingUser = null;
 
       try {
+        sessionStorage.setItem('CPC1_LOGGED_IN', 'true');
+        localStorage.setItem('CPC1_LOGGED_IN', 'true');
         await window.storage.set('current-user-id', loggedUser.id);
         await window.storage.set('is-logged-in', 'true');
       } catch (err) {}
+
+      // Handle target deep link redirect after login
+      if (STATE.pendingRedirect) {
+        if (STATE.pendingRedirect.page === 'detail' && STATE.pendingRedirect.docId) {
+          STATE.page = 'detail';
+          STATE.selectedId = STATE.pendingRedirect.docId;
+        } else if (STATE.pendingRedirect.page) {
+          STATE.page = STATE.pendingRedirect.page;
+        }
+        STATE.pendingRedirect = null;
+      }
 
       showToast(`Xin chào ${loggedUser.name}!`);
       render();
@@ -4167,7 +4195,11 @@ function attachHandlers() {
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
       STATE.isLoggedIn = false;
-      try { await window.storage.set('is-logged-in', 'false'); } catch (e) {}
+      try {
+        sessionStorage.removeItem('CPC1_LOGGED_IN');
+        localStorage.removeItem('CPC1_LOGGED_IN');
+        await window.storage.set('is-logged-in', 'false');
+      } catch (e) {}
       showToast('Đã đăng xuất tài khoản');
       render();
     });
