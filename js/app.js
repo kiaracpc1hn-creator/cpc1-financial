@@ -585,12 +585,22 @@ function removeSignedCopy(doc) {
 }
 
 function deleteDoc(id) {
-  showConfirmModal('Xoá phiếu?', 'Bạn có chắc chắn muốn xoá phiếu này? Hành động không thể hoàn tác.', async () => {
+  const doc = STATE.documents.find(d => d.id === id);
+  if (!doc) return;
+  const isAuthorizedAdmin = ['admin', 'dept_head', 'chief_accountant', 'director'].includes(currentUser().role);
+  const isOwner = doc.requesterId === currentUser().id;
+
+  if (!isAuthorizedAdmin && !(doc.status === 'draft' && isOwner)) {
+    showAlertModal('Quyền Hạn Hạn Chế', 'Chỉ Trưởng nhóm hoặc Admin mới được phép xóa phiếu đang chờ ký!');
+    return;
+  }
+
+  showConfirmModal('Xoá phiếu?', `Bạn có chắc chắn muốn xoá phiếu ${doc.docNo || doc.formCode}? Hành động này không thể hoàn tác.`, async () => {
     STATE.documents = STATE.documents.filter(d => d.id !== id);
     await saveDocuments();
     STATE.page = 'list';
     render();
-    showToast('Đã xoá phiếu');
+    showToast('Đã xoá phiếu thành công!');
   });
 }
 
@@ -1903,9 +1913,12 @@ function openManualInvoiceModal(initialData = {}) {
 function canUserAccessDoc(doc, user = currentUser()) {
   if (!doc) return false;
   if (!user) return true;
+  // Admin toàn hệ thống, Trưởng nhóm / Phụ trách bộ phận (dept_head), Kế toán trưởng, Giám đốc:
+  // Xem TOÀN BỘ 100% tất cả Hóa đơn và các loại phiếu (ĐNTT, ĐNTƯ, ĐNHƯ, Phiếu trình, Phiếu thu) của tất cả thành viên trong công ty!
   if (['admin', 'director', 'chief_accountant', 'dept_head'].includes(user.role)) {
     return true;
   }
+  // Nhân viên thường (employee): Chỉ xem được phiếu do chính mình lập
   const isOwnDoc = (
     (doc.employeeCode && user.employeeCode && doc.employeeCode === user.employeeCode) ||
     (doc.requesterId && user.id && doc.requesterId === user.id) ||
@@ -2733,14 +2746,20 @@ function renderDocTable(docs) {
         <th>Ngày lập</th>
         <th style="text-align:right;">Số tiền</th>
         <th>Trạng thái</th>
+        <th style="text-align:center;">Thao tác</th>
       </tr>
     </thead>
     <tbody>
-      ${docs.map(d => `
+      ${docs.map(d => {
+        const isAuthorizedAdmin = ['admin', 'dept_head', 'chief_accountant', 'director'].includes(currentUser().role);
+        const isOwner = d.requesterId === currentUser().id;
+        const canEdit = (d.status === 'draft' || d.status === 'pending_signature') && (isOwner || isAuthorizedAdmin);
+        const canDelete = isAuthorizedAdmin || (d.status === 'draft' && isOwner);
+        return `
         <tr class="row-click" data-open="${d.id}">
           <td><span style="font-weight:700;color:var(--teal);font-family:var(--font-mono);">${d.docNo || d.formCode}</span></td>
           <td><b>${DOC_TYPES[d.type].label}</b></td>
-          <td style="max-width:280px;">${docSummaryText(d)}</td>
+          <td style="max-width:240px;">${docSummaryText(d)}</td>
           <td>${d.requesterName}</td>
           <td>${getBeneficiaryName(d)}</td>
           <td>${fmtDate(d.documentDate)}</td>
@@ -2753,7 +2772,12 @@ function renderDocTable(docs) {
                 : `<span class="badge ${STATUS_BADGE[d.status]}">${STATUS_LABEL[d.status]}</span>`;
             })()}
           </td>
-        </tr>`).join('')}
+          <td style="text-align:center;white-space:nowrap;" onclick="event.stopPropagation();">
+            ${canEdit ? `<button class="btn btn-ghost btn-sm" data-editdoc="${d.id}" style="padding:3px 7px;font-size:12px;" title="Sửa phiếu">✏️ Sửa</button>` : ''}
+            ${canDelete ? `<button class="btn btn-ghost btn-sm" data-deldoc="${d.id}" style="padding:3px 7px;font-size:12px;color:#E11D48;" title="Chỉ Admin & Trưởng nhóm có quyền xóa">🗑️ Xoá</button>` : ''}
+          </td>
+        </tr>`;
+      }).join('')}
     </tbody>
   </table>`;
 }
