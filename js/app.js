@@ -3846,6 +3846,8 @@ function attachLoginScreenHandlers() {
           STATE.page = STATE.pendingRedirect.page;
         }
         STATE.pendingRedirect = null;
+      } else {
+        STATE.page = 'overview';
       }
 
       showToast(`Xin chào ${loggedUser.name}!`);
