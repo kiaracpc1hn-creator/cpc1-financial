@@ -86,7 +86,7 @@
             const store = tx.objectStore(STORE_NAME);
             const req = store.get(key);
             req.onsuccess = () => {
-              if (req.result) {
+              if (req.result && req.result.value !== undefined && req.result.value !== null) {
                 resolve({ key: req.result.key, value: req.result.value });
               } else {
                 const localVal = localStorage.getItem('cpc1_' + key);
@@ -107,24 +107,29 @@
         localResult = val !== null ? { key, value: val } : null;
       }
 
-      // 2. If online and Firebase is connected, try to fetch fresh cloud state
-      if (!isBinary && this.isFirebaseConnected()) {
+      // If local cache hit, return immediately
+      if (localResult && localResult.value !== undefined && localResult.value !== null) {
+        return localResult;
+      }
+
+      // 2. Local cache miss: ALWAYS fetch fresh data (including attachments) from Firebase Cloud Firestore if connected!
+      if (this.isFirebaseConnected()) {
         try {
           const docSnap = await firestoreDb.collection(FIREBASE_COLLECTION).doc(key).get();
           if (docSnap.exists) {
             const data = docSnap.data();
-            if (data && data.value !== undefined) {
-              // Cache locally into IndexedDB
+            if (data && data.value !== undefined && data.value !== null) {
+              // Cache locally into IndexedDB for instant future reads
               this._setLocal(key, data.value).catch(() => {});
               return { key, value: data.value };
             }
           }
         } catch (err) {
-          console.warn(`[CPC1 Cloud] Get "${key}" offline/fallback to local:`, err.message);
+          console.warn(`[CPC1 Cloud] Get "${key}" cloud fallback error:`, err.message);
         }
       }
 
-      return localResult;
+      return null;
     },
 
     async _setLocal(key, value) {
@@ -156,8 +161,8 @@
       // 2. Sync to Firebase Cloud Firestore if connected
       if (this.isFirebaseConnected()) {
         try {
-          if (typeof value === 'string' && value.length > 950000) {
-            console.log(`[CPC1 Cloud] Large attachment (${Math.round(value.length/1024)}KB) saved locally in IndexedDB.`);
+          if (typeof value === 'string' && value.length > 1040000) {
+            console.warn(`[CPC1 Cloud] File "${key}" (${Math.round(value.length/1024)}KB) exceeds Firestore 1MB document limit.`);
           } else {
             firestoreDb.collection(FIREBASE_COLLECTION).doc(key).set({
               key: key,
