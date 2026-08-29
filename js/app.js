@@ -3682,8 +3682,10 @@ function renderLoginScreen() {
               <input type="password" maxlength="1" class="pin-digit-input" data-idx="1" inputmode="numeric" style="width:48px;height:52px;font-size:22px;text-align:center;border:2px solid #CBD5E1;border-radius:10px;outline:none;font-weight:800;background:#F8FAFC;">
               <input type="password" maxlength="1" class="pin-digit-input" data-idx="2" inputmode="numeric" style="width:48px;height:52px;font-size:22px;text-align:center;border:2px solid #CBD5E1;border-radius:10px;outline:none;font-weight:800;background:#F8FAFC;">
               <input type="password" maxlength="1" class="pin-digit-input" data-idx="3" inputmode="numeric" style="width:48px;height:52px;font-size:22px;text-align:center;border:2px solid #CBD5E1;border-radius:10px;outline:none;font-weight:800;background:#F8FAFC;">
+            <div style="font-size:12.5px;color:#475569;margin-top:12px;margin-bottom:0;display:flex;align-items:center;justify-content:center;gap:6px;">
+              <span>⏱️ Thời gian nhập PIN còn lại:</span>
+              <b id="pin-timer-display" style="color:#0D9488;font-size:13.5px;font-family:var(--font-mono);">20 giây</b>
             </div>
-            <p style="font-size:11.5px;color:#64748B;margin-top:10px;margin-bottom:0;">(Mã PIN mặc định ban đầu: <b style="color:#0D9488;">1234</b>)</p>
           </div>
 
           <div id="login-error-msg" style="display:none;background:#FFF1F2;border:1px solid #FECDD3;color:#9F1239;padding:10px 12px;border-radius:8px;font-size:12.5px;margin-bottom:18px;"></div>
@@ -3722,12 +3724,44 @@ function attachLoginScreenHandlers() {
     });
   }
 
+  // Clear any existing PIN countdown timer
+  if (STATE._pinTimerInterval) {
+    clearInterval(STATE._pinTimerInterval);
+    STATE._pinTimerInterval = null;
+  }
+
   if (backBtn) {
     backBtn.addEventListener('click', () => {
+      if (STATE._pinTimerInterval) {
+        clearInterval(STATE._pinTimerInterval);
+        STATE._pinTimerInterval = null;
+      }
       STATE.loginStep = 1;
       STATE.pendingUser = null;
       render();
     });
+  }
+
+  if (pinForm) {
+    let timeLeft = 20;
+    const timerDisplay = document.getElementById('pin-timer-display');
+    STATE._pinTimerInterval = setInterval(() => {
+      timeLeft--;
+      if (timerDisplay) {
+        timerDisplay.textContent = `${timeLeft} giây`;
+        if (timeLeft <= 5) {
+          timerDisplay.style.color = '#E11D48';
+        }
+      }
+      if (timeLeft <= 0) {
+        clearInterval(STATE._pinTimerInterval);
+        STATE._pinTimerInterval = null;
+        STATE.loginStep = 1;
+        STATE.pendingUser = null;
+        showToast('⏱️ Đã hết 20 giây nhập mã PIN! Vui lòng thử đăng nhập lại.');
+        render();
+      }
+    }, 1000);
   }
 
   // Handle PIN digit inputs focus auto-advance
@@ -3822,6 +3856,10 @@ function attachLoginScreenHandlers() {
       }
 
       // Success PIN Login
+      if (STATE._pinTimerInterval) {
+        clearInterval(STATE._pinTimerInterval);
+        STATE._pinTimerInterval = null;
+      }
       STATE.currentUserId = STATE.pendingUser.id;
       STATE.isLoggedIn = true;
       const loggedUser = STATE.pendingUser;
