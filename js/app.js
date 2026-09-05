@@ -181,29 +181,25 @@ async function loadAll() {
         let changed = false;
 
         if (key === 'documents') {
-          const currentStr = JSON.stringify(STATE.documents || []);
-          if (currentStr !== val) {
-            STATE.documents = JSON.parse(val) || [];
-            changed = true;
-          }
+          if (STATE._rawStrDocuments === val) return;
+          STATE._rawStrDocuments = val;
+          STATE.documents = JSON.parse(val) || [];
+          changed = true;
         } else if (key === 'invoices') {
-          const currentStr = JSON.stringify(STATE.invoices || []);
-          if (currentStr !== val) {
-            STATE.invoices = JSON.parse(val) || [];
-            changed = true;
-          }
+          if (STATE._rawStrInvoices === val) return;
+          STATE._rawStrInvoices = val;
+          STATE.invoices = JSON.parse(val) || [];
+          changed = true;
         } else if (key === 'payees') {
-          const currentStr = JSON.stringify(STATE.payees || []);
-          if (currentStr !== val) {
-            STATE.payees = JSON.parse(val) || [];
-            changed = true;
-          }
+          if (STATE._rawStrPayees === val) return;
+          STATE._rawStrPayees = val;
+          STATE.payees = JSON.parse(val) || [];
+          changed = true;
         } else if (key === 'trash') {
-          const currentStr = JSON.stringify(STATE.trash || []);
-          if (currentStr !== val) {
-            STATE.trash = JSON.parse(val) || [];
-            changed = true;
-          }
+          if (STATE._rawStrTrash === val) return;
+          STATE._rawStrTrash = val;
+          STATE.trash = JSON.parse(val) || [];
+          changed = true;
         }
 
         // Không re-render lại DOM khi người dùng đang active gõ chữ trong các ô input/textarea/select để tránh giật lag, nháy màn hình và mất con trỏ
@@ -239,20 +235,32 @@ async function isFreshInstall() {
 }
 
 async function saveDocuments() {
-  try { await window.storage.set('documents', JSON.stringify(STATE.documents)); }
-  catch (e) { showToast('Lỗi lưu danh sách phiếu'); }
+  try {
+    const str = JSON.stringify(STATE.documents);
+    STATE._rawStrDocuments = str;
+    await window.storage.set('documents', str);
+  } catch (e) { showToast('Lỗi lưu danh sách phiếu'); }
 }
 async function savePayees() {
-  try { await window.storage.set('payees', JSON.stringify(STATE.payees)); }
-  catch (e) { showToast('Lỗi lưu danh bạ'); }
+  try {
+    const str = JSON.stringify(STATE.payees);
+    STATE._rawStrPayees = str;
+    await window.storage.set('payees', str);
+  } catch (e) { showToast('Lỗi lưu danh bạ'); }
 }
 async function saveInvoices() {
-  try { await window.storage.set('invoices', JSON.stringify(STATE.invoices)); }
-  catch (e) { showToast('Lỗi lưu kho hoá đơn'); }
+  try {
+    const str = JSON.stringify(STATE.invoices);
+    STATE._rawStrInvoices = str;
+    await window.storage.set('invoices', str);
+  } catch (e) { showToast('Lỗi lưu kho hoá đơn'); }
 }
 async function saveTrash() {
-  try { await window.storage.set('trash', JSON.stringify(STATE.trash || [])); }
-  catch (e) { showToast('Lỗi lưu thùng rác'); }
+  try {
+    const str = JSON.stringify(STATE.trash || []);
+    STATE._rawStrTrash = str;
+    await window.storage.set('trash', str);
+  } catch (e) { showToast('Lỗi lưu thùng rác'); }
 }
 async function saveUsers() {
   try { await window.storage.set('users', JSON.stringify(STATE.users)); }
@@ -2370,7 +2378,7 @@ function renderTrash() {
   <div class="page-header">
     <div>
       <h1>🗑️ Thùng rác (Mục đã xoá)</h1>
-      <p>Danh sách các phiếu tài chính và hoá đơn đã xoá. Bạn có thể khôi phục lại bất kỳ lúc nào.</p>
+      <p>Danh sách các phiếu tài chính và hoá đơn đã xoá. <strong style="color:var(--danger);">Tất cả mục trong thùng rác sẽ tự động xoá vĩnh viễn sau 30 ngày.</strong></p>
     </div>
     ${trashItems.length > 0 ? `
       <button type="button" class="btn btn-outline btn-sm" id="empty-trash-btn" style="color:var(--danger);border-color:var(--danger);" title="Xoá vĩnh viễn tất cả mục trong thùng rác">
@@ -2402,7 +2410,7 @@ function renderTrash() {
             <th style="width:150px;">Người đề nghị</th>
             <th>Nội dung / Diễn giải</th>
             <th style="width:140px;text-align:right;">Số tiền</th>
-            <th style="width:180px;">Ngày xoá & Người xoá</th>
+            <th style="width:180px;">Ngày xoá & Thời hạn</th>
             <th style="width:160px;text-align:center;">Thao tác</th>
           </tr>
         </thead>
@@ -2413,7 +2421,10 @@ function renderTrash() {
             const owner = item.requesterName || item.deletedBy || '—';
             const amt = item.totalAmount || item.amount || 0;
             const amtFormatted = amt ? `${Number(amt).toLocaleString('vi-VN')} ${item.currency || 'VNĐ'}` : '—';
+            const deletedTime = item.deletedAt ? new Date(item.deletedAt).getTime() : Date.now();
             const deletedDateStr = item.deletedAt ? new Date(item.deletedAt).toLocaleString('vi-VN') : '—';
+            const daysElapsed = Math.floor((Date.now() - deletedTime) / (24 * 60 * 60 * 1000));
+            const daysRemaining = Math.max(0, 30 - daysElapsed);
             const noteText = item.description || item.note || item.reason || '—';
 
             return `
@@ -2430,6 +2441,9 @@ function renderTrash() {
               <td style="font-size:12px;color:var(--ink-soft);">
                 <div>📅 ${deletedDateStr}</div>
                 <div>👤 Bởi: ${item.deletedBy || 'N/A'}</div>
+                <div style="margin-top:3px;font-size:11px;font-weight:700;color:${daysRemaining <= 5 ? '#EF4444' : '#D97706'};">
+                  ⏳ Tự động xoá: còn ${daysRemaining} ngày
+                </div>
               </td>
               <td style="text-align:center;white-space:nowrap;">
                 <button type="button" class="btn btn-outline btn-sm" data-restoretrash="${item.id}" style="font-size:12px;padding:3px 8px;color:var(--teal);border-color:var(--teal);" title="Khôi phục lại mục này quay lại danh sách chính">
@@ -2540,6 +2554,39 @@ async function emptyAllTrash() {
     render();
     showToast('Đã xoá sạch toàn bộ Thùng rác!');
   });
+}
+
+async function autoPurgeExpiredTrash() {
+  if (!STATE.trash || STATE.trash.length === 0) return;
+  const now = Date.now();
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  const expired = STATE.trash.filter(item => {
+    if (!item.deletedAt) return false;
+    return (now - new Date(item.deletedAt).getTime()) > thirtyDaysMs;
+  });
+
+  if (expired.length === 0) return;
+
+  for (const item of expired) {
+    if (item.attachmentId) {
+      try { await window.storage.delete('attachment:' + item.attachmentId, true); } catch (e) {}
+    }
+    if (item.signedAttachmentId) {
+      try { await window.storage.delete('attachment:' + item.signedAttachmentId, true); } catch (e) {}
+    }
+    if (item.attachments && item.attachments.length > 0) {
+      for (const a of item.attachments) {
+        try { await window.storage.delete('attachment:' + a.id, true); } catch (e) {}
+      }
+    }
+  }
+
+  STATE.trash = STATE.trash.filter(item => {
+    if (!item.deletedAt) return true;
+    return (now - new Date(item.deletedAt).getTime()) <= thirtyDaysMs;
+  });
+
+  await saveTrash();
 }
 
 /* ===================== VIEW: INVOICES ===================== */
@@ -4793,58 +4840,62 @@ function attachHandlers() {
   const fp = document.getElementById('filter-payee'); if (fp) fp.addEventListener('change', e => { STATE._listPayeeFilter = e.target.value; render(); });
   const fls = document.getElementById('filter-list-search');
   if (fls) {
+    let listSearchTimer = null;
     fls.addEventListener('input', e => {
       STATE._listSearch = e.target.value;
-      const tableWrapper = document.querySelector('.doc-table');
-      if (tableWrapper) {
-        // Re-render only document list table if on list page
-        const typeFilter = STATE._listTypeFilter || 'all';
-        const statusFilter = STATE._listStatusFilter || 'all';
-        const monthFilter = STATE._listMonthFilter || 'all';
-        const requesterFilter = STATE._listRequesterFilter || 'all';
-        const payeeFilter = STATE._listPayeeFilter || 'all';
-        const listSearch = (STATE._listSearch || '').trim().toLowerCase();
+      if (listSearchTimer) clearTimeout(listSearchTimer);
+      listSearchTimer = setTimeout(() => {
+        const tableWrapper = document.querySelector('.doc-table');
+        if (tableWrapper) {
+          // Re-render only document list table if on list page
+          const typeFilter = STATE._listTypeFilter || 'all';
+          const statusFilter = STATE._listStatusFilter || 'all';
+          const monthFilter = STATE._listMonthFilter || 'all';
+          const requesterFilter = STATE._listRequesterFilter || 'all';
+          const payeeFilter = STATE._listPayeeFilter || 'all';
+          const listSearch = (STATE._listSearch || '').trim().toLowerCase();
 
-        let docs = [...STATE.documents];
-        if (typeFilter !== 'all') docs = docs.filter(d => d.type === typeFilter);
-        if (statusFilter !== 'all') docs = docs.filter(d => d.status === statusFilter);
-        if (monthFilter !== 'all') docs = docs.filter(d => monthKey(d.documentDate || d.createdAt) === monthFilter);
-        if (requesterFilter !== 'all') docs = docs.filter(d => d.requesterName === requesterFilter);
-        if (payeeFilter !== 'all') docs = docs.filter(d => getBeneficiaryName(d) === payeeFilter);
-        if (listSearch) {
-          docs = docs.filter(d => {
-            const summary = docSummaryText(d);
-            const ben = getBeneficiaryName(d);
-            const total = computeTotal(d);
-            const haystack = [
-              d.requesterName,
-              ben,
-              summary,
-              d.department,
-              d.documentDate,
-              fmtDate(d.documentDate),
-              String(total),
-              fmtMoney(total, d.currency),
-              DOC_TYPES[d.type].label,
-              DOC_TYPES[d.type].formCode
-            ].join(' ').toLowerCase();
-            return haystack.includes(listSearch);
-          });
+          let docs = [...STATE.documents];
+          if (typeFilter !== 'all') docs = docs.filter(d => d.type === typeFilter);
+          if (statusFilter !== 'all') docs = docs.filter(d => d.status === statusFilter);
+          if (monthFilter !== 'all') docs = docs.filter(d => monthKey(d.documentDate || d.createdAt) === monthFilter);
+          if (requesterFilter !== 'all') docs = docs.filter(d => d.requesterName === requesterFilter);
+          if (payeeFilter !== 'all') docs = docs.filter(d => getBeneficiaryName(d) === payeeFilter);
+          if (listSearch) {
+            docs = docs.filter(d => {
+              const summary = docSummaryText(d);
+              const ben = getBeneficiaryName(d);
+              const total = computeTotal(d);
+              const haystack = [
+                d.requesterName,
+                ben,
+                summary,
+                d.department,
+                d.documentDate,
+                fmtDate(d.documentDate),
+                String(total),
+                fmtMoney(total, d.currency),
+                DOC_TYPES[d.type].label,
+                DOC_TYPES[d.type].formCode
+              ].join(' ').toLowerCase();
+              return haystack.includes(listSearch);
+            });
+          }
+          docs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = renderDocTable(docs);
+          const newTable = tempDiv.firstElementChild;
+          if (newTable) {
+            tableWrapper.replaceWith(newTable);
+            newTable.querySelectorAll('.row-click').forEach(r => r.addEventListener('click', () => {
+              STATE.selectedId = r.dataset.open;
+              STATE.page = 'detail';
+              STATE.previewAttachmentId = null;
+              render();
+            }));
+          }
         }
-        docs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = renderDocTable(docs);
-        const newTable = tempDiv.firstElementChild;
-        if (newTable) {
-          tableWrapper.replaceWith(newTable);
-          newTable.querySelectorAll('.row-click').forEach(r => r.addEventListener('click', () => {
-            STATE.selectedId = r.dataset.open;
-            STATE.page = 'detail';
-            STATE.previewAttachmentId = null;
-            render();
-          }));
-        }
-      }
+      }, 150);
     });
   }
 
@@ -5836,6 +5887,7 @@ async function initApp() {
   const app = document.getElementById('app');
   if (app) app.innerHTML = '<div style="padding:40px;font-family:Inter,sans-serif;color:#0A2F52;font-weight:600;">Đang khởi động hệ thống CPC1...</div>';
   await loadAll();
+  await autoPurgeExpiredTrash();
   checkAndDispatchWeeklyOverdueAdvanceEmails();
   render();
 }
