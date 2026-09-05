@@ -68,6 +68,7 @@ let STATE = {
   documents: [],
   payees: [],
   selectedInvoiceIds: [],
+  trash: [],
   isLoggedIn: false,
   loginStep: 1,
   pendingUser: null,
@@ -109,6 +110,11 @@ async function loadAll() {
     STATE.invoices = r ? JSON.parse(r.value) : [];
     cleanDuplicateInvoicesInRepo();
   } catch (e) { STATE.invoices = []; }
+
+  try {
+    const r = await window.storage.get('trash');
+    STATE.trash = r ? JSON.parse(r.value) : [];
+  } catch (e) { STATE.trash = []; }
 
   try {
     const r = await window.storage.get('users');
@@ -169,7 +175,7 @@ async function loadAll() {
   // Khởi chạy đồng bộ thời gian thực đa người dùng qua Firebase Firestore
   if (window.storage && window.storage.listenRealtime && !STATE._realtimeBound) {
     STATE._realtimeBound = true;
-    window.storage.listenRealtime(['documents', 'invoices', 'payees'], (key, val) => {
+    window.storage.listenRealtime(['documents', 'invoices', 'payees', 'trash'], (key, val) => {
       try {
         if (!val) return;
         let changed = false;
@@ -190,6 +196,12 @@ async function loadAll() {
           const currentStr = JSON.stringify(STATE.payees || []);
           if (currentStr !== val) {
             STATE.payees = JSON.parse(val) || [];
+            changed = true;
+          }
+        } else if (key === 'trash') {
+          const currentStr = JSON.stringify(STATE.trash || []);
+          if (currentStr !== val) {
+            STATE.trash = JSON.parse(val) || [];
             changed = true;
           }
         }
@@ -237,6 +249,10 @@ async function savePayees() {
 async function saveInvoices() {
   try { await window.storage.set('invoices', JSON.stringify(STATE.invoices)); }
   catch (e) { showToast('Lỗi lưu kho hoá đơn'); }
+}
+async function saveTrash() {
+  try { await window.storage.set('trash', JSON.stringify(STATE.trash || [])); }
+  catch (e) { showToast('Lỗi lưu thùng rác'); }
 }
 async function saveUsers() {
   try { await window.storage.set('users', JSON.stringify(STATE.users)); }
@@ -616,12 +632,21 @@ function deleteDoc(id) {
     return;
   }
 
-  showConfirmModal('Xoá phiếu?', `Bạn có chắc chắn muốn xoá phiếu ${doc.docNo || doc.formCode}? Hành động này không thể hoàn tác.`, async () => {
+  showConfirmModal('Chuyển phiếu vào Thùng rác?', `Bạn có chắc chắn muốn xoá phiếu ${doc.docNo || doc.formCode}? Phiếu sẽ được chuyển vào Thùng rác và có thể khôi phục lại bất kỳ lúc nào.`, async () => {
+    const trashDoc = JSON.parse(JSON.stringify(doc));
+    trashDoc.deletedAt = new Date().toISOString();
+    trashDoc.deletedBy = currentUser().name;
+    trashDoc.itemType = 'document';
+
+    if (!STATE.trash) STATE.trash = [];
+    STATE.trash.unshift(trashDoc);
+    await saveTrash();
+
     STATE.documents = STATE.documents.filter(d => d.id !== id);
     await saveDocuments();
     STATE.page = 'list';
     render();
-    showToast('Đã xoá phiếu thành công!');
+    showToast('✓ Đã chuyển phiếu vào Thùng rác thành công!');
   });
 }
 
@@ -1642,15 +1667,21 @@ function deleteInvoiceRecord(id) {
     return;
   }
 
-  showConfirmModal('Xoá hoá đơn?', 'Xoá hoá đơn này khỏi kho chứng từ và tự động gỡ khỏi các phiếu Nháp liên quan?', async () => {
-    if (rec.attachmentId) {
-      try { await window.storage.delete('attachment:' + rec.attachmentId, true); } catch (e) {}
-    }
+  showConfirmModal('Chuyển hoá đơn vào Thùng rác?', 'Chuyển hoá đơn này vào Thùng rác (có thể khôi phục lại) và tự động gỡ khỏi các phiếu Nháp liên quan?', async () => {
+    const trashInv = JSON.parse(JSON.stringify(rec));
+    trashInv.deletedAt = new Date().toISOString();
+    trashInv.deletedBy = currentUser().name;
+    trashInv.itemType = 'invoice';
+
+    if (!STATE.trash) STATE.trash = [];
+    STATE.trash.unshift(trashInv);
+    await saveTrash();
+
     await removeInvoiceFromDraftVouchers(rec);
     STATE.invoices = STATE.invoices.filter(r => r.id !== id);
     await saveInvoices();
     render();
-    showToast('✓ Đã xoá hoá đơn khỏi Kho và tự động gỡ khỏi các phiếu Nháp!');
+    showToast('✓ Đã chuyển hoá đơn vào Thùng rác thành công!');
   });
 }
 
@@ -1971,6 +2002,7 @@ function renderSidebar() {
     { key: 'list', label: 'Danh sách phiếu', icon: '☰' },
     { key: 'inbox', label: 'Chờ ký', icon: '✓', badge: pendingSignatureCount() },
     { key: 'payees', label: 'Danh bạ người nhận', icon: '☎' },
+    { key: 'trash', label: 'Thùng rác', icon: '🗑️', badge: (STATE.trash && STATE.trash.length > 0) ? STATE.trash.length : null },
     { key: 'settings', label: 'Cài đặt & Sao lưu', icon: '⚙' }
   ];
 
@@ -2258,8 +2290,180 @@ function renderPage() {
   if (STATE.page === 'inbox') return renderInbox();
   if (STATE.page === 'detail') return renderDetail();
   if (STATE.page === 'payees') return renderPayees();
+  if (STATE.page === 'trash') return renderTrash();
   if (STATE.page === 'settings') return renderSettings();
   return renderOverview();
+}
+
+/* ===================== VIEW: TRASH (THÙNG RÁC) ===================== */
+function renderTrash() {
+  const trashItems = STATE.trash || [];
+  const selectedType = STATE._trashTypeFilter || 'all';
+
+  let filtered = [...trashItems];
+  if (selectedType === 'document') filtered = filtered.filter(i => i.itemType === 'document');
+  if (selectedType === 'invoice') filtered = filtered.filter(i => i.itemType === 'invoice');
+
+  return `
+  <div class="page-header">
+    <div>
+      <h1>🗑️ Thùng rác (Mục đã xoá)</h1>
+      <p>Danh sách các phiếu tài chính và hoá đơn đã xoá. Bạn có thể khôi phục lại bất kỳ lúc nào.</p>
+    </div>
+    ${trashItems.length > 0 ? `
+      <button type="button" class="btn btn-outline btn-sm" id="empty-trash-btn" style="color:var(--danger);border-color:var(--danger);" title="Xoá vĩnh viễn tất cả mục trong thùng rác">
+        ❌ Xoá sạch thùng rác (${trashItems.length})
+      </button>` : ''}
+  </div>
+
+  <div class="filters" style="margin-top:0;margin-bottom:14px;">
+    <select id="filter-trash-type">
+      <option value="all" ${selectedType === 'all' ? 'selected' : ''}>Tất cả loại mục (${trashItems.length})</option>
+      <option value="document" ${selectedType === 'document' ? 'selected' : ''}>Phiếu tài chính (${trashItems.filter(i => i.itemType === 'document').length})</option>
+      <option value="invoice" ${selectedType === 'invoice' ? 'selected' : ''}>Hoá đơn điện tử (${trashItems.filter(i => i.itemType === 'invoice').length})</option>
+    </select>
+  </div>
+
+  ${filtered.length === 0 ? `
+    <div class="empty-state" style="padding:48px 16px;background:var(--card);border-radius:12px;border:1px solid var(--line);text-align:center;">
+      <div class="big" style="font-size:42px;">🗑️</div>
+      <p style="font-size:15px;font-weight:600;color:var(--ink);margin-top:10px;">Thùng rác trống</p>
+      <p style="font-size:13px;color:var(--ink-soft);margin-top:4px;">Chưa có phiếu hay hoá đơn nào bị xoá.</p>
+    </div>
+  ` : `
+    <div class="doc-table" style="overflow-x:auto;">
+      <table class="invoice-table" style="min-width:960px;">
+        <thead>
+          <tr>
+            <th style="width:100px;">Loại mục</th>
+            <th style="width:160px;">Mã / Số hoá đơn</th>
+            <th style="width:150px;">Người đề nghị</th>
+            <th>Nội dung / Diễn giải</th>
+            <th style="width:140px;text-align:right;">Số tiền</th>
+            <th style="width:180px;">Ngày xoá & Người xoá</th>
+            <th style="width:160px;text-align:center;">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.map(item => {
+            const isDoc = item.itemType === 'document';
+            const code = isDoc ? (item.docNo || item.formCode) : (item.invoiceNumber ? `HĐ ${item.invoiceNumber}${item.seriesNo ? ` (${item.seriesNo})` : ''}` : 'Hoá đơn');
+            const owner = item.requesterName || item.deletedBy || '—';
+            const amt = item.totalAmount || item.amount || 0;
+            const amtFormatted = amt ? `${Number(amt).toLocaleString('vi-VN')} ${item.currency || 'VNĐ'}` : '—';
+            const deletedDateStr = item.deletedAt ? new Date(item.deletedAt).toLocaleString('vi-VN') : '—';
+            const noteText = item.description || item.note || item.reason || '—';
+
+            return `
+            <tr>
+              <td>
+                <span class="badge ${isDoc ? 'badge-blue' : 'badge-purple'}">
+                  ${isDoc ? '📄 Phiếu' : '🧾 Hoá đơn'}
+                </span>
+              </td>
+              <td style="font-weight:700;">${code}</td>
+              <td>${owner}</td>
+              <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${noteText.replace(/"/g, '&quot;')}">${noteText}</td>
+              <td style="font-weight:600;font-family:var(--font-mono);text-align:right;">${amtFormatted}</td>
+              <td style="font-size:12px;color:var(--ink-soft);">
+                <div>📅 ${deletedDateStr}</div>
+                <div>👤 Bởi: ${item.deletedBy || 'N/A'}</div>
+              </td>
+              <td style="text-align:center;white-space:nowrap;">
+                <button type="button" class="btn btn-outline btn-sm" data-restoretrash="${item.id}" style="font-size:12px;padding:3px 8px;color:var(--teal);border-color:var(--teal);" title="Khôi phục lại mục này quay lại danh sách chính">
+                  🔄 Khôi phục
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" data-purgetrash="${item.id}" style="font-size:12px;padding:3px 6px;color:var(--danger);" title="Xoá vĩnh viễn mục này">
+                  ❌ Xoá
+                </button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `}
+  `;
+}
+
+async function restoreTrashItem(id) {
+  if (!STATE.trash) return;
+  const item = STATE.trash.find(i => i.id === id);
+  if (!item) return;
+
+  const isDoc = item.itemType === 'document';
+  const code = isDoc ? (item.docNo || item.formCode) : (item.invoiceNumber || 'Hoá đơn');
+
+  showConfirmModal('Khôi phục mục này?', `Khôi phục ${isDoc ? 'phiếu' : 'hoá đơn'} "${code}" quay lại danh sách chính?`, async () => {
+    const itemType = item.itemType || 'document';
+    delete item.deletedAt;
+    delete item.deletedBy;
+    delete item.itemType;
+
+    if (itemType === 'document') {
+      if (!STATE.documents) STATE.documents = [];
+      STATE.documents.unshift(item);
+      await saveDocuments();
+    } else {
+      if (!STATE.invoices) STATE.invoices = [];
+      STATE.invoices.unshift(item);
+      await saveInvoices();
+    }
+
+    STATE.trash = STATE.trash.filter(i => i.id !== id);
+    await saveTrash();
+    render();
+    showToast('✓ Đã khôi phục mục thành công!');
+  });
+}
+
+async function purgeTrashItem(id) {
+  if (!STATE.trash) return;
+  const item = STATE.trash.find(i => i.id === id);
+  if (!item) return;
+
+  showConfirmModal('Xoá vĩnh viễn?', `Bạn có chắc muốn xoá VĨNH VIỄN mục này? Dữ liệu và file đính kèm sẽ không thể phục hồi lại.`, async () => {
+    if (item.attachmentId) {
+      try { await window.storage.delete('attachment:' + item.attachmentId, true); } catch (e) {}
+    }
+    if (item.signedAttachmentId) {
+      try { await window.storage.delete('attachment:' + item.signedAttachmentId, true); } catch (e) {}
+    }
+    if (item.attachments && item.attachments.length > 0) {
+      for (const a of item.attachments) {
+        try { await window.storage.delete('attachment:' + a.id, true); } catch (e) {}
+      }
+    }
+
+    STATE.trash = STATE.trash.filter(i => i.id !== id);
+    await saveTrash();
+    render();
+    showToast('Đã xoá vĩnh viễn mục khỏi Thùng rác!');
+  });
+}
+
+async function emptyAllTrash() {
+  if (!STATE.trash || STATE.trash.length === 0) return;
+  showConfirmModal('❌ Xoá sạch Thùng rác?', `Bạn có chắc chắn muốn xoá vĩnh viễn toàn bộ ${STATE.trash.length} mục trong Thùng rác? Hành động này không thể hoàn tác.`, async () => {
+    for (const item of STATE.trash) {
+      if (item.attachmentId) {
+        try { await window.storage.delete('attachment:' + item.attachmentId, true); } catch (e) {}
+      }
+      if (item.signedAttachmentId) {
+        try { await window.storage.delete('attachment:' + item.signedAttachmentId, true); } catch (e) {}
+      }
+      if (item.attachments && item.attachments.length > 0) {
+        for (const a of item.attachments) {
+          try { await window.storage.delete('attachment:' + a.id, true); } catch (e) {}
+        }
+      }
+    }
+    STATE.trash = [];
+    await saveTrash();
+    render();
+    showToast('Đã xoá sạch toàn bộ Thùng rác!');
+  });
+}
 }
 
 /* ===================== VIEW: INVOICES ===================== */
@@ -4604,7 +4808,15 @@ function attachHandlers() {
     addManualBtn.addEventListener('click', () => {
       openManualInvoiceModal();
     });
-  }
+  // Trash Bin Handlers
+  const fttrash = document.getElementById('filter-trash-type');
+  if (fttrash) fttrash.addEventListener('change', e => { STATE._trashTypeFilter = e.target.value; render(); });
+
+  const emptyTrashBtn = document.getElementById('empty-trash-btn');
+  if (emptyTrashBtn) emptyTrashBtn.addEventListener('click', emptyAllTrash);
+
+  document.querySelectorAll('[data-restoretrash]').forEach(el => el.addEventListener('click', () => restoreTrashItem(el.dataset.restoretrash)));
+  document.querySelectorAll('[data-purgetrash]').forEach(el => el.addEventListener('click', () => purgeTrashItem(el.dataset.purgetrash)));
 
 
 
