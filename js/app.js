@@ -172,14 +172,35 @@ async function loadAll() {
     window.storage.listenRealtime(['documents', 'invoices', 'payees'], (key, val) => {
       try {
         if (!val) return;
+        let changed = false;
+
         if (key === 'documents') {
-          STATE.documents = JSON.parse(val) || [];
+          const currentStr = JSON.stringify(STATE.documents || []);
+          if (currentStr !== val) {
+            STATE.documents = JSON.parse(val) || [];
+            changed = true;
+          }
         } else if (key === 'invoices') {
-          STATE.invoices = JSON.parse(val) || [];
+          const currentStr = JSON.stringify(STATE.invoices || []);
+          if (currentStr !== val) {
+            STATE.invoices = JSON.parse(val) || [];
+            changed = true;
+          }
         } else if (key === 'payees') {
-          STATE.payees = JSON.parse(val) || [];
+          const currentStr = JSON.stringify(STATE.payees || []);
+          if (currentStr !== val) {
+            STATE.payees = JSON.parse(val) || [];
+            changed = true;
+          }
         }
-        render();
+
+        // Không re-render lại DOM khi người dùng đang active gõ chữ trong các ô input/textarea/select để tránh giật lag, nháy màn hình và mất con trỏ
+        const activeTag = document.activeElement ? document.activeElement.tagName : '';
+        const isEditing = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT';
+
+        if (changed && !isEditing) {
+          render();
+        }
       } catch (err) {
         console.warn('Realtime parse err:', err);
       }
@@ -4604,9 +4625,13 @@ function attachHandlers() {
 
   const fsearch = document.getElementById('filter-inv-search');
   if (fsearch) {
+    let invSearchTimer = null;
     fsearch.addEventListener('input', e => {
       STATE._invSearch = e.target.value;
-      updateInvoiceTableView();
+      if (invSearchTimer) clearTimeout(invSearchTimer);
+      invSearchTimer = setTimeout(() => {
+        updateInvoiceTableView();
+      }, 200);
     });
   }
 
@@ -4914,19 +4939,24 @@ function attachInvoiceTableHandlers() {
       rec.seriesNo = el.value.trim().toUpperCase();
       el.value = rec.seriesNo;
       const s = rec.seriesNo;
+      let autoNote = null;
       if (/1K26TED|K26TED/i.test(s)) {
-        rec.note = "Phí bảo hiểm lô hàng xuất";
+        autoNote = "Phí bảo hiểm lô hàng xuất";
       } else if (/C26TML/i.test(s)) {
-        rec.note = "Phí cấp C/O cho lô hàng";
+        autoNote = "Phí cấp C/O cho lô hàng";
       } else if (/26T/i.test(s)) {
-        rec.note = "Lệ phí cấp C/O cho lô hàng";
+        autoNote = "Lệ phí cấp C/O cho lô hàng";
       } else if (/1C26TAA|C26TAA|1C26TYY|C26TYY|1C26TNM|C26TNM/i.test(s)) {
         if (!rec.note || rec.note.includes("Cước")) {
-          rec.note = "Cước vận chuyển quốc tế lô hàng xuất";
+          autoNote = "Cước vận chuyển quốc tế lô hàng xuất";
         }
       }
+      if (autoNote) {
+        rec.note = autoNote;
+        const noteArea = document.querySelector(`[data-invnote="${rec.id}"]`);
+        if (noteArea) noteArea.value = autoNote;
+      }
       await saveInvoices();
-      render();
       showToast('Đã lưu ký hiệu');
     }
   }));
@@ -4952,14 +4982,19 @@ function attachInvoiceTableHandlers() {
   }));
 
   document.querySelectorAll('[data-invamount]').forEach(el => {
-    el.addEventListener('input', () => {
+    el.addEventListener('blur', () => {
       const digits = el.value.replace(/[^\d]/g, '');
       el.value = digits ? Number(digits).toLocaleString('vi-VN') : '';
     });
     el.addEventListener('change', async () => {
       const rec = STATE.invoices.find(r => r.id === el.dataset.invamount);
       const digits = el.value.replace(/[^\d]/g, '');
-      if (rec) { rec.amount = digits ? Number(digits) : 0; await saveInvoices(); showToast('Đã lưu số tiền'); }
+      if (rec) {
+        rec.amount = digits ? Number(digits) : 0;
+        el.value = rec.amount ? Number(rec.amount).toLocaleString('vi-VN') : '';
+        await saveInvoices();
+        showToast('Đã lưu số tiền');
+      }
     });
   });
 
