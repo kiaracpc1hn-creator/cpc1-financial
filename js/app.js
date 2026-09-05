@@ -2464,7 +2464,6 @@ async function emptyAllTrash() {
     showToast('Đã xoá sạch toàn bộ Thùng rác!');
   });
 }
-}
 
 /* ===================== VIEW: INVOICES ===================== */
 function getFilteredInvoices() {
@@ -4808,6 +4807,7 @@ function attachHandlers() {
     addManualBtn.addEventListener('click', () => {
       openManualInvoiceModal();
     });
+  }
   // Trash Bin Handlers
   const fttrash = document.getElementById('filter-trash-type');
   if (fttrash) fttrash.addEventListener('change', e => { STATE._trashTypeFilter = e.target.value; render(); });
