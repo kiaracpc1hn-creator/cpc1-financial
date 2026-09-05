@@ -92,6 +92,7 @@ function buildWarningTextSummary(warningData) {
   return text;
 }
 
+// Full Inline-Styled HTML Template for 100% Compatibility with Gmail & Outlook Inbox
 function buildWarningEmailHtml(recipientUser, warningData) {
   const { overdueAdvances, unlinkedInvoices, pendingSignatures, totalWarnings } = warningData;
   const appUrl = window.location.href.split('#')[0];
@@ -102,58 +103,48 @@ function buildWarningEmailHtml(recipientUser, warningData) {
   <html>
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CPC1HN - Cảnh Báo Tài Chính</title>
-    <style>
-      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #F8FAFC; color: #1E293B; margin: 0; padding: 20px; }
-      .container { max-width: 680px; margin: 0 auto; background: #FFFFFF; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #E2E8F0; }
-      .header { background: linear-gradient(135deg, #0A2F52 0%, #0D9488 100%); padding: 24px 30px; color: #FFFFFF; }
-      .header h1 { margin: 0; font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
-      .header p { margin: 6px 0 0 0; font-size: 13px; opacity: 0.9; }
-      .body { padding: 30px; }
-      .summary-badge { background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; color: #991B1B; font-weight: 600; font-size: 14px; }
-      .section-title { font-size: 15px; font-weight: 700; color: #0F172A; margin: 20px 0 10px 0; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid #F1F5F9; padding-bottom: 6px; }
-      table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
-      th { background-color: #F1F5F9; color: #475569; text-align: left; padding: 8px 12px; font-weight: 600; }
-      td { padding: 10px 12px; border-bottom: 1px solid #E2E8F0; }
-      .tag-danger { background: #FEE2E2; color: #DC2626; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }
-      .tag-warning { background: #FEF3C7; color: #D97706; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }
-      .tag-info { background: #E0F2FE; color: #0284C7; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }
-      .btn { display: inline-block; background: #0D9488; color: #FFFFFF !important; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 14px; margin-top: 20px; text-align: center; }
-      .footer { background: #F8FAFC; padding: 16px 30px; border-top: 1px solid #E2E8F0; font-size: 12px; color: #64748B; text-align: center; }
-    </style>
   </head>
-  <body>
-    <div class="container">
-      <div class="header">
-        <h1>🏢 CPC1HN — Báo Cáo Cảnh Báo Tài Chính</h1>
-        <p>Kính gửi <strong>${recipientUser ? recipientUser.name : 'Anh/Chị'}</strong> (Ngày ${dateStr})</p>
+  <body style="font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background-color:#F8FAFC;color:#1E293B;margin:0;padding:20px;">
+    <div style="max-width:680px;margin:0 auto;background:#FFFFFF;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);border:1px solid #E2E8F0;">
+      
+      <!-- HEADER -->
+      <div style="background:linear-gradient(135deg, #0A2F52 0%, #0D9488 100%);padding:24px 30px;color:#FFFFFF;">
+        <h1 style="margin:0;font-size:20px;font-weight:700;color:#FFFFFF;display:flex;align-items:center;gap:10px;">🏢 CPC1HN — Báo Cáo Cảnh Báo Tài Chính</h1>
+        <p style="margin:6px 0 0 0;font-size:13px;color:rgba(255,255,255,0.9);">Kính gửi <strong style="color:#FFFFFF;">${recipientUser ? recipientUser.name : 'Anh/Chị'}</strong> (Ngày ${dateStr})</p>
       </div>
 
-      <div class="body">
-        <div class="summary-badge">
-          🚨 Tổng cộng có <strong>${totalWarnings}</strong> hạng mục tài chính cần xử lý hoặc hoàn ứng ngay!
+      <!-- BODY CONTENT -->
+      <div style="padding:24px 30px;">
+        <div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;padding:12px 16px;margin-bottom:24px;color:#991B1B;font-weight:600;font-size:14px;">
+          🚨 Tổng cộng có <strong style="color:#DC2626;">${totalWarnings}</strong> hạng mục tài chính cần xử lý hoặc hoàn ứng ngay!
         </div>
 
         ${overdueAdvances.length > 0 ? `
-          <div class="section-title">🛑 1. Đề Nghị Tạm Ứng Quá 30 Ngày Chưa Hoàn Ứng (${overdueAdvances.length})</div>
-          <table>
+          <div style="font-size:15px;font-weight:700;color:#0F172A;margin:20px 0 10px 0;border-bottom:2px solid #F1F5F9;padding-bottom:6px;">
+            🛑 1. Đề Nghị Tạm Ứng Quá 30 Ngày Chưa Hoàn Ứng (${overdueAdvances.length})
+          </div>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:13px;">
             <thead>
-              <tr>
-                <th>Mã phiếu</th>
-                <th>Người đề nghị</th>
-                <th>Ngày lập</th>
-                <th>Số tiền</th>
-                <th>Trạng thái</th>
+              <tr style="background-color:#F1F5F9;">
+                <th style="color:#475569;text-align:left;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Mã phiếu</th>
+                <th style="color:#475569;text-align:left;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Người đề nghị</th>
+                <th style="color:#475569;text-align:left;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Ngày lập</th>
+                <th style="color:#475569;text-align:right;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Số tiền</th>
+                <th style="color:#475569;text-align:center;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Trạng thái</th>
               </tr>
             </thead>
             <tbody>
               ${overdueAdvances.map(d => `
                 <tr>
-                  <td><strong>${d.docNo || d.formCode}</strong></td>
-                  <td>${d.requesterName}</td>
-                  <td>${d.documentDate || '—'}</td>
-                  <td><strong>${Number(d.totalAmount || d.amount || 0).toLocaleString('vi-VN')} ${d.currency || 'VNĐ'}</strong></td>
-                  <td><span class="tag-danger">Quá 30 ngày</span></td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;font-weight:700;color:#0F172A;">${d.docNo || d.formCode}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;">${d.requesterName}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;">${d.documentDate || '—'}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:right;font-weight:700;color:#0D9488;">${Number(d.totalAmount || d.amount || 0).toLocaleString('vi-VN')} ${d.currency || 'VNĐ'}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:center;">
+                    <span style="background:#FEE2E2;color:#DC2626;padding:3px 8px;border-radius:4px;font-weight:700;font-size:11px;">Quá 30 ngày</span>
+                  </td>
                 </tr>
               `).join('')}
             </tbody>
@@ -161,25 +152,29 @@ function buildWarningEmailHtml(recipientUser, warningData) {
         ` : ''}
 
         ${unlinkedInvoices.length > 0 ? `
-          <div class="section-title">🧾 2. Hóa Đơn Điện Tử Trong Kho Chưa Làm ĐNTT (${unlinkedInvoices.length})</div>
-          <table>
+          <div style="font-size:15px;font-weight:700;color:#0F172A;margin:20px 0 10px 0;border-bottom:2px solid #F1F5F9;padding-bottom:6px;">
+            🧾 2. Hóa Đơn Điện Tử Trong Kho Chưa Làm ĐNTT (${unlinkedInvoices.length})
+          </div>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:13px;">
             <thead>
-              <tr>
-                <th>Số hóa đơn</th>
-                <th>Đơn vị bán</th>
-                <th>Ngày HD</th>
-                <th>Số tiền</th>
-                <th>Trạng thái</th>
+              <tr style="background-color:#F1F5F9;">
+                <th style="color:#475569;text-align:left;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Số hóa đơn</th>
+                <th style="color:#475569;text-align:left;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Đơn vị bán</th>
+                <th style="color:#475569;text-align:left;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Ngày HD</th>
+                <th style="color:#475569;text-align:right;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Số tiền</th>
+                <th style="color:#475569;text-align:center;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Trạng thái</th>
               </tr>
             </thead>
             <tbody>
               ${unlinkedInvoices.map(inv => `
                 <tr>
-                  <td><strong>HĐ ${inv.invoiceNumber || '—'}</strong></td>
-                  <td>${inv.sellerName || '—'}</td>
-                  <td>${inv.date || '—'}</td>
-                  <td><strong>${Number(inv.totalAmount || inv.amount || 0).toLocaleString('vi-VN')} VNĐ</strong></td>
-                  <td><span class="tag-warning">Chưa lập ĐNTT</span></td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;font-weight:700;color:#0F172A;">HĐ ${inv.invoiceNumber || '—'}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;">${inv.sellerName || '—'}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;">${inv.date || '—'}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:right;font-weight:700;color:#0284C7;">${Number(inv.totalAmount || inv.amount || 0).toLocaleString('vi-VN')} VNĐ</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:center;">
+                    <span style="background:#FEF3C7;color:#D97706;padding:3px 8px;border-radius:4px;font-weight:700;font-size:11px;">Chưa lập ĐNTT</span>
+                  </td>
                 </tr>
               `).join('')}
             </tbody>
@@ -187,37 +182,42 @@ function buildWarningEmailHtml(recipientUser, warningData) {
         ` : ''}
 
         ${pendingSignatures.length > 0 ? `
-          <div class="section-title">⏳ 3. Phiếu ĐNTT / Tạm Ứng Đang Chờ Ký Duyệt (${pendingSignatures.length})</div>
-          <table>
+          <div style="font-size:15px;font-weight:700;color:#0F172A;margin:20px 0 10px 0;border-bottom:2px solid #F1F5F9;padding-bottom:6px;">
+            ⏳ 3. Phiếu ĐNTT / Tạm Ứng Đang Chờ Ký Duyệt (${pendingSignatures.length})
+          </div>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:13px;">
             <thead>
-              <tr>
-                <th>Mã phiếu</th>
-                <th>Loại phiếu</th>
-                <th>Người đề nghị</th>
-                <th>Số tiền</th>
-                <th>Trạng thái</th>
+              <tr style="background-color:#F1F5F9;">
+                <th style="color:#475569;text-align:left;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Mã phiếu</th>
+                <th style="color:#475569;text-align:left;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Loại phiếu</th>
+                <th style="color:#475569;text-align:left;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Người đề nghị</th>
+                <th style="color:#475569;text-align:right;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Số tiền</th>
+                <th style="color:#475569;text-align:center;padding:10px 12px;font-weight:700;border-bottom:2px solid #E2E8F0;">Trạng thái</th>
               </tr>
             </thead>
             <tbody>
               ${pendingSignatures.map(d => `
                 <tr>
-                  <td><strong>${d.docNo || d.formCode}</strong></td>
-                  <td>${d.title || d.formCode}</td>
-                  <td>${d.requesterName}</td>
-                  <td><strong>${Number(d.totalAmount || d.amount || 0).toLocaleString('vi-VN')} ${d.currency || 'VNĐ'}</strong></td>
-                  <td><span class="tag-info">Chờ ký</span></td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;font-weight:700;color:#0F172A;">${d.docNo || d.formCode}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;">${d.title || d.formCode}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;">${d.requesterName}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:right;font-weight:700;color:#0369A1;">${Number(d.totalAmount || d.amount || 0).toLocaleString('vi-VN')} ${d.currency || 'VNĐ'}</td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:center;">
+                    <span style="background:#E0F2FE;color:#0284C7;padding:3px 8px;border-radius:4px;font-weight:700;font-size:11px;">Chờ ký</span>
+                  </td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         ` : ''}
 
-        <div style="text-align: center;">
-          <a href="${appUrl}" class="btn" target="_blank">🔗 Mở Hệ Thống CPC1 Để Xử Lý Ngay</a>
+        <div style="text-align:center;margin-top:24px;">
+          <a href="${appUrl}" style="display:inline-block;background:#0D9488;color:#FFFFFF !important;text-decoration:none;padding:12px 26px;border-radius:8px;font-weight:700;font-size:14px;text-align:center;box-shadow:0 4px 10px rgba(13,148,136,0.25);" target="_blank">🔗 Mở Hệ Thống CPC1 Để Xử Lý Ngay</a>
         </div>
       </div>
 
-      <div class="footer">
+      <!-- FOOTER -->
+      <div style="background:#F8FAFC;padding:16px 30px;border-top:1px solid #E2E8F0;font-size:12px;color:#64748B;text-align:center;">
         Email được tự động tạo từ Hệ thống Quản lý Phiếu tài chính & Hoá đơn CPC1.<br>
         Mọi thắc mắc xin vui lòng liên hệ Bộ phận Kế toán / Ban Giám đốc.
       </div>
@@ -269,7 +269,7 @@ async function sendWarningEmail(recipientEmail, subject, htmlBody, plainTextSumm
     }
   }
 
-  // 3. FormSubmit Gateway Direct HTTP Delivery
+  // 3. FormSubmit AJAX Gateway with HTML & Table format
   try {
     const fsResp = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(recipientEmail)}`, {
       method: 'POST',
@@ -279,8 +279,11 @@ async function sendWarningEmail(recipientEmail, subject, htmlBody, plainTextSumm
       },
       body: JSON.stringify({
         _subject: subject,
-        name: 'Hệ thống Tài chính CPC1HN',
+        _template: "table",
+        _captcha: "false",
+        name: 'Hệ thống Quản lý Tài chính CPC1HN',
         email: recipientEmail,
+        html: htmlBody,
         message: plainTextSummary || 'Báo cáo cảnh báo tạm ứng quá hạn và hóa đơn chưa ĐNTT từ CPC1HN.'
       })
     });
