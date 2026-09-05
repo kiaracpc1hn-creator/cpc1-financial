@@ -2046,24 +2046,19 @@ function renderSidebar() {
           <span class="badge b-approved" style="font-size:10px;padding:1px 5px;">${signedCount}</span>
         </button>
       </div>
-    </div>
-
-    <button class="nav-item ${STATE.page === 'inbox' ? 'active' : ''}" data-nav="inbox">
-      <span class="nav-icon">✓</span>
-      <span>Cần duyệt ngay</span>
-      ${pendingSignatureCount() > 0 ? `<span class="nav-badge">${pendingSignatureCount()}</span>` : ''}
-    </button>
 
     <button class="nav-item ${STATE.page === 'payees' ? 'active' : ''}" data-nav="payees">
       <span class="nav-icon">☎</span>
       <span>Danh bạ người nhận</span>
     </button>
 
+    ${['admin', 'dept_head', 'chief_accountant', 'director'].includes(u.role) ? `
     <button class="nav-item ${STATE.page === 'trash' ? 'active' : ''}" data-nav="trash">
       <span class="nav-icon">🗑️</span>
       <span>Thùng rác</span>
       ${(STATE.trash && STATE.trash.length > 0) ? `<span class="nav-badge">${STATE.trash.length}</span>` : ''}
     </button>
+    ` : ''}
 
     <button class="nav-item ${STATE.page === 'settings' ? 'active' : ''}" data-nav="settings">
       <span class="nav-icon">⚙</span>
@@ -2349,6 +2344,20 @@ function renderPage() {
 
 /* ===================== VIEW: TRASH (THÙNG RÁC) ===================== */
 function renderTrash() {
+  const user = currentUser();
+  const isAuthorizedAdmin = ['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role);
+  if (!isAuthorizedAdmin) {
+    return `
+    <div class="empty-state" style="padding:60px 20px;background:var(--card);border-radius:12px;border:1px solid var(--line);text-align:center;margin-top:20px;">
+      <div class="big" style="font-size:48px;">🔒</div>
+      <p style="font-size:18px;font-weight:700;color:var(--danger);margin-top:12px;">Quyền truy cập bị hạn chế</p>
+      <p style="font-size:14px;color:var(--ink-soft);margin-top:6px;max-width:480px;margin-left:auto;margin-right:auto;">
+        Chỉ <strong>Admin</strong> và <strong>Trưởng nhóm / Quản lý</strong> mới có quyền xem và thao tác dữ liệu trong Thùng rác.
+      </p>
+    </div>
+    `;
+  }
+
   const trashItems = STATE.trash || [];
   const selectedType = STATE._trashTypeFilter || 'all';
 
@@ -2439,6 +2448,11 @@ function renderTrash() {
 }
 
 async function restoreTrashItem(id) {
+  const user = currentUser();
+  if (!['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role)) {
+    showAlertModal('Không có quyền', 'Chỉ Admin và Trưởng nhóm mới có quyền thao tác trên Thùng rác!');
+    return;
+  }
   if (!STATE.trash) return;
   const item = STATE.trash.find(i => i.id === id);
   if (!item) return;
@@ -2470,6 +2484,11 @@ async function restoreTrashItem(id) {
 }
 
 async function purgeTrashItem(id) {
+  const user = currentUser();
+  if (!['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role)) {
+    showAlertModal('Không có quyền', 'Chỉ Admin và Trưởng nhóm mới có quyền thao tác trên Thùng rác!');
+    return;
+  }
   if (!STATE.trash) return;
   const item = STATE.trash.find(i => i.id === id);
   if (!item) return;
@@ -2495,6 +2514,11 @@ async function purgeTrashItem(id) {
 }
 
 async function emptyAllTrash() {
+  const user = currentUser();
+  if (!['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role)) {
+    showAlertModal('Không có quyền', 'Chỉ Admin và Trưởng nhóm mới có quyền thao tác trên Thùng rác!');
+    return;
+  }
   if (!STATE.trash || STATE.trash.length === 0) return;
   showConfirmModal('❌ Xoá sạch Thùng rác?', `Bạn có chắc chắn muốn xoá vĩnh viễn toàn bộ ${STATE.trash.length} mục trong Thùng rác? Hành động này không thể hoàn tác.`, async () => {
     for (const item of STATE.trash) {
@@ -3116,13 +3140,6 @@ function renderList() {
   const allRequesters = [...new Set(STATE.documents.map(d => d.requesterName))].sort((a, b) => a.localeCompare(b));
   const allPayees = [...new Set(STATE.documents.map(d => getBeneficiaryName(d)))].sort((a, b) => a.localeCompare(b));
 
-  const categoryTabs = [
-    { key: 'all', label: '📋 Tất cả phiếu', count: accessibleDocs.length, badgeCls: 'badge-pill' },
-    { key: 'draft', label: '📝 Nháp', count: draftCount, badgeCls: 'b-draft' },
-    { key: 'pending_signature', label: '⏳ Chờ ký', count: pendingCount, badgeCls: 'b-pending' },
-    { key: 'signed', label: '✍️ Đã ký', count: signedCount, badgeCls: 'b-approved' }
-  ];
-
   const categoryTitleMap = {
     all: 'Danh sách phiếu tài chính',
     draft: 'Danh sách phiếu Nháp',
@@ -3139,15 +3156,6 @@ function renderList() {
   </div>
 
   ${renderGlobalDuplicateWarningBannerHtml()}
-
-  <div class="list-category-tabs" style="display:flex;gap:10px;margin-bottom:16px;overflow-x:auto;padding-bottom:4px;">
-    ${categoryTabs.map(t => `
-      <button type="button" class="btn-cat-tab ${category === t.key ? 'active' : ''}" data-statuscat="${t.key}" style="display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;border:1.5px solid ${category === t.key ? 'var(--teal)' : 'var(--line)'};background:${category === t.key ? '#F0FDF4' : 'var(--card)'};color:${category === t.key ? 'var(--teal)' : 'var(--ink)'};cursor:pointer;transition:all 0.15s ease;">
-        <span>${t.label}</span>
-        <span class="badge ${t.badgeCls}" style="font-size:11px;padding:2px 7px;">${t.count}</span>
-      </button>
-    `).join('')}
-  </div>
 
   <div class="filters">
     <select id="filter-type">
