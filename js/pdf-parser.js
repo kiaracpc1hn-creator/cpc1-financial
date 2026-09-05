@@ -67,7 +67,7 @@ async function extractInvoiceDataFromPdfFile(file, dataUrl = null) {
         else if (aiResult.invoiceNumber) parsed.invoiceNo = aiResult.invoiceNumber;
         if (aiResult.date) parsed.date = aiResult.date;
         if (aiResult.amount) parsed.amount = Number(aiResult.amount) || parsed.amount;
-        if (aiResult.sellerName) parsed.sellerName = aiResult.sellerName;
+        if (aiResult.sellerName) parsed.sellerName = cleanSellerName(aiResult.sellerName);
         if (aiResult.note) parsed.description = aiResult.note;
         if (aiResult.currency) parsed.currency = aiResult.currency;
       }
@@ -83,18 +83,22 @@ function cleanSellerName(raw) {
   if (!raw) return "";
   let s = raw.trim();
 
-  // Loại bỏ các dòng mã cơ quan thuế / mã số thuế
+  // 1. Loại bỏ các dòng mã cơ quan thuế / mã số thuế
   if (/^(?:Mã\s*của\s*cơ\s*quan\s*thuế|Mã\s*cơ\s*quan\s*thuế|Mã\s*CQT|Mã\s*số\s*thuế|Tax\s*code|Ký\s*hiệu|Mẫu\s*số|Số\s*hoá\s*đơn|Ngày\s*lập)[\:\s]/i.test(s)) {
     return "";
   }
   if (/Mã\s*của\s*Cơ\s*quan\s*thuế/i.test(s)) return "";
 
-  // Loại bỏ nhãn phía trước "Đơn vị bán hàng (Seller):", "Tên người bán:", "Bên bán:"
-  s = s.replace(/^(?:[\)\:\-\s]*Seller[\)\:\-\s]*|[\)\:\-\s]*Đơn\s*vị\s*(?:bán|thu)[\w\s\(\)]*[\:\-]+|[\)\:\-\s]*Tên\s*(?:đơn\s*vị|người)\s*(?:bán|thu)[\w\s\(\)]*[\:\-]+|[\)\:\-\s]*Bên\s*bán[\w\s\(\)]*[\:\-]+|[\)\:\s\-]+)+/i, '').trim();
-  s = s.replace(/^[\)\:\-\s]+/, '').trim();
+  // 2. Loại bỏ triệt để các tiền tố "Đơn vị bán", "Tên người bán", "Bên bán", "Đơn vị thu", "Seller",... (có hoặc không có dấu hai chấm / khoảng trắng)
+  const prefixRegex = /^(?:[\s\:\-\(\)]*(?:Seller|Supplier|Issuer|Vendor|Beneficiary|Payee|Đơn\s*vị\s*(?:bán\s*hàng|bán|thu|phát\s*hành|cung\s*cấp|nhận\s*tiền|thụ\s*hưởng)|Tên\s*(?:đơn\s*vị|người)\s*(?:bán\s*hàng|bán|thu|phát\s*hành|cung\s*cấp)|Tên\s*đơn\s*vị|Bên\s*(?:bán|thu|phát\s*hành|cung\s*cấp)|Cơ\s*sở\s*phát\s*hành|Nhà\s*cung\s*cấp|Người\s*bán|Cơ\s*quan\s*thu)[\s\:\-\(\)]*)+/i;
 
-  // Loại bỏ mã số thuế / địa chỉ gắn liền phía sau
-  s = s.replace(/\s*(?:Mã\s*số\s*thuế|Tax\s*code|Địa\s*chỉ|Address|Điện\s*thoại|Tel)[\:\s].*$/i, '').trim();
+  for (let iter = 0; iter < 3; iter++) {
+    s = s.replace(prefixRegex, '').trim();
+  }
+  s = s.replace(/^[\)\:\-\s\.\,]+/, '').trim();
+
+  // 3. Loại bỏ mã số thuế / địa chỉ / số điện thoại gắn liền phía sau
+  s = s.replace(/\s*(?:Mã\s*số\s*thuế|Tax\s*code|MST|Địa\s*chỉ|Address|Điện\s*thoại|Tel|Số\s*tài\s*khoản|STK)[\:\s].*$/i, '').trim();
 
   if (/Mã\s*của\s*cơ\s*quan\s*thuế|Mã\s*CQT/i.test(s)) return "";
 
@@ -473,7 +477,7 @@ function parseInvoiceText(fullText, lines, filename) {
     amount,
     currency,
     description,
-    sellerName
+    sellerName: cleanSellerName(sellerName)
   };
 }
 
@@ -543,7 +547,7 @@ async function extractInvoiceDataFromPdfFile(file, dataUrl = null) {
         else if (aiResult.invoiceNumber) parsed.invoiceNo = aiResult.invoiceNumber;
         if (aiResult.date) parsed.date = aiResult.date;
         if (aiResult.amount) parsed.amount = Number(aiResult.amount) || parsed.amount;
-        if (aiResult.sellerName) parsed.sellerName = aiResult.sellerName;
+        if (aiResult.sellerName) parsed.sellerName = cleanSellerName(aiResult.sellerName);
         if (aiResult.note) parsed.description = aiResult.note;
         if (aiResult.currency) parsed.currency = aiResult.currency;
       }
@@ -604,7 +608,7 @@ async function callGeminiExtractInvoiceFull(base64Data, apiKey, mimeType = "appl
   "date": "YYYY-MM-DD",
   "seriesNo": "string (Ký hiệu, ví dụ: C26TML, 26T, 1C26TYY, 1K26TED, 1C26TDN)",
   "invoiceNumber": "string (Số hoá đơn/biên lai, giữ nguyên số 0 ở đầu)",
-  "sellerName": "string (Tên đơn vị bán/thu phí ở phần trên cùng, ví dụ: CỤC XUẤT NHẬP KHẨU, CÔNG TY TNHH VNFT GROUP. Không lấy tên công ty mua hàng CPC1)",
+  "sellerName": "string (Chỉ lấy TÊN CÔNG TY/ĐƠN VỊ BÁN ở phần trên cùng. TUYỆT ĐỐI KHÔNG LẤY TIỀN TỐ như 'Đơn vị bán:', 'Tên người bán:', 'Bên bán:', 'Đơn vị thu:'. Ví dụ đúng: CÔNG TY TNHH VNFT GROUP, SỞ CÔNG THƯƠNG THÀNH PHỐ HÀ NỘI)",
   "amount": number (Tổng tiền thanh toán sau thuế ở cuối bảng, chỉ ghi số),
   "currency": "VND hoặc USD",
   "note": "string (QUY TẮC NOTE BẮT BUỘC: 1. Nếu ký hiệu 1C26TAA, 1C26TYY, 1C26TNM: Nếu KHÔNG CÓ THUẾ VAT -> 'Cước vận chuyển quốc tế lô hàng xuất'; Nếu CÓ THUẾ VAT -> 'Cước phí địa phương của lô hàng xuất'. 2. Nếu ký hiệu 1K26TED -> 'Phí bảo hiểm lô hàng xuất'. 3. Nếu C26TML -> 'Phí cấp C/O cho lô hàng'. 4. Nếu 26T hoặc Cục Xuất Nhập Khẩu -> 'Lệ phí cấp C/O cho lô hàng')"
