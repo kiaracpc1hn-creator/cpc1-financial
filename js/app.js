@@ -2046,6 +2046,7 @@ function renderSidebar() {
           <span class="badge b-approved" style="font-size:10px;padding:1px 5px;">${signedCount}</span>
         </button>
       </div>
+    </div>
 
     <button class="nav-item ${STATE.page === 'payees' ? 'active' : ''}" data-nav="payees">
       <span class="nav-icon">☎</span>
