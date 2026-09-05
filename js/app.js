@@ -1995,16 +1995,14 @@ function renderSidebar() {
     chief_accountant: 'Kế toán trưởng',
     director: 'Thủ trưởng đơn vị'
   };
-  const items = [
-    { key: 'overview', label: 'Tổng quan', icon: '📊' },
-    { key: 'invoices', label: 'Kho Hoá đơn', icon: '🧾' },
-    { key: 'create-select', label: 'Tạo phiếu mới', icon: '＋' },
-    { key: 'list', label: 'Danh sách phiếu', icon: '☰' },
-    { key: 'inbox', label: 'Chờ ký', icon: '✓', badge: pendingSignatureCount() },
-    { key: 'payees', label: 'Danh bạ người nhận', icon: '☎' },
-    { key: 'trash', label: 'Thùng rác', icon: '🗑️', badge: (STATE.trash && STATE.trash.length > 0) ? STATE.trash.length : null },
-    { key: 'settings', label: 'Cài đặt & Sao lưu', icon: '⚙' }
-  ];
+
+  const accessibleDocs = getAccessibleDocuments();
+  const draftCount = accessibleDocs.filter(d => d.status === 'draft').length;
+  const pendingCount = accessibleDocs.filter(d => d.status === 'pending_signature').length;
+  const signedCount = accessibleDocs.filter(d => d.status === 'signed' || d.status === 'completed').length;
+
+  const isListActive = STATE.page === 'list' || STATE.page === 'detail';
+  const currentCategory = STATE._listStatusCategory || 'all';
 
   return `
   <div class="sidebar">
@@ -2012,12 +2010,66 @@ function renderSidebar() {
       <img class="brand-seal" src="${LOGO_DATA_URI}" alt="CPC1HN">
       <div class="brand-text">CPC1<span>Phiếu tài chính</span></div>
     </div>
-    ${items.map(it => `
-      <button class="nav-item ${STATE.page === it.key || (it.key === 'list' && STATE.page === 'detail') ? 'active' : ''}" data-nav="${it.key}">
-        <span class="nav-icon">${it.icon}</span>
-        <span>${it.label}</span>
-        ${it.badge ? `<span class="nav-badge">${it.badge}</span>` : ''}
-      </button>`).join('')}
+
+    <button class="nav-item ${STATE.page === 'overview' ? 'active' : ''}" data-nav="overview">
+      <span class="nav-icon">📊</span>
+      <span>Tổng quan</span>
+    </button>
+
+    <button class="nav-item ${STATE.page === 'invoices' ? 'active' : ''}" data-nav="invoices">
+      <span class="nav-icon">🧾</span>
+      <span>Kho Hoá đơn</span>
+    </button>
+
+    <button class="nav-item ${STATE.page === 'create-select' ? 'active' : ''}" data-nav="create-select">
+      <span class="nav-icon">＋</span>
+      <span>Tạo phiếu mới</span>
+    </button>
+
+    <div style="margin:2px 0;">
+      <button class="nav-item ${isListActive && currentCategory === 'all' ? 'active' : ''}" data-nav="list" data-statuscat="all">
+        <span class="nav-icon">☰</span>
+        <span>Danh sách phiếu</span>
+        <span class="nav-badge">${accessibleDocs.length}</span>
+      </button>
+      <div class="nav-sub-menu" style="padding-left:22px;margin:3px 0 6px 0;display:flex;flex-direction:column;gap:3px;">
+        <button type="button" class="nav-sub-item ${isListActive && currentCategory === 'draft' ? 'active' : ''}" data-nav="list" data-statuscat="draft" style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-radius:6px;font-size:12px;color:${isListActive && currentCategory === 'draft' ? '#FFFFFF' : '#CBD5E1'};background:${isListActive && currentCategory === 'draft' ? 'rgba(255,255,255,0.18)' : 'transparent'};border:none;cursor:pointer;font-weight:600;width:100%;text-align:left;">
+          <span>📝 Nháp</span>
+          <span class="badge b-draft" style="font-size:10px;padding:1px 5px;">${draftCount}</span>
+        </button>
+        <button type="button" class="nav-sub-item ${isListActive && currentCategory === 'pending_signature' ? 'active' : ''}" data-nav="list" data-statuscat="pending_signature" style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-radius:6px;font-size:12px;color:${isListActive && currentCategory === 'pending_signature' ? '#FFFFFF' : '#CBD5E1'};background:${isListActive && currentCategory === 'pending_signature' ? 'rgba(255,255,255,0.18)' : 'transparent'};border:none;cursor:pointer;font-weight:600;width:100%;text-align:left;">
+          <span>⏳ Chờ ký</span>
+          <span class="badge b-pending" style="font-size:10px;padding:1px 5px;">${pendingCount}</span>
+        </button>
+        <button type="button" class="nav-sub-item ${isListActive && currentCategory === 'signed' ? 'active' : ''}" data-nav="list" data-statuscat="signed" style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-radius:6px;font-size:12px;color:${isListActive && currentCategory === 'signed' ? '#FFFFFF' : '#CBD5E1'};background:${isListActive && currentCategory === 'signed' ? 'rgba(255,255,255,0.18)' : 'transparent'};border:none;cursor:pointer;font-weight:600;width:100%;text-align:left;">
+          <span>✍️ Đã ký</span>
+          <span class="badge b-approved" style="font-size:10px;padding:1px 5px;">${signedCount}</span>
+        </button>
+      </div>
+    </div>
+
+    <button class="nav-item ${STATE.page === 'inbox' ? 'active' : ''}" data-nav="inbox">
+      <span class="nav-icon">✓</span>
+      <span>Cần duyệt ngay</span>
+      ${pendingSignatureCount() > 0 ? `<span class="nav-badge">${pendingSignatureCount()}</span>` : ''}
+    </button>
+
+    <button class="nav-item ${STATE.page === 'payees' ? 'active' : ''}" data-nav="payees">
+      <span class="nav-icon">☎</span>
+      <span>Danh bạ người nhận</span>
+    </button>
+
+    <button class="nav-item ${STATE.page === 'trash' ? 'active' : ''}" data-nav="trash">
+      <span class="nav-icon">🗑️</span>
+      <span>Thùng rác</span>
+      ${(STATE.trash && STATE.trash.length > 0) ? `<span class="nav-badge">${STATE.trash.length}</span>` : ''}
+    </button>
+
+    <button class="nav-item ${STATE.page === 'settings' ? 'active' : ''}" data-nav="settings">
+      <span class="nav-icon">⚙</span>
+      <span>Cài đặt & Sao lưu</span>
+    </button>
+
     <div class="nav-sep"></div>
     <div class="sidebar-footer">
       <div style="padding:8px 12px;margin-bottom:10px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;font-size:11px;color:#166534;display:flex;align-items:center;gap:6px;">
@@ -3012,9 +3064,26 @@ function renderList() {
   const monthFilter = STATE._listMonthFilter || 'all';
   const requesterFilter = STATE._listRequesterFilter || 'all';
   const payeeFilter = STATE._listPayeeFilter || 'all';
+  const category = STATE._listStatusCategory || 'all';
   const listSearch = (STATE._listSearch || '').trim().toLowerCase();
 
-  let docs = getAccessibleDocuments();
+  const accessibleDocs = getAccessibleDocuments();
+  const draftCount = accessibleDocs.filter(d => d.status === 'draft').length;
+  const pendingCount = accessibleDocs.filter(d => d.status === 'pending_signature').length;
+  const signedCount = accessibleDocs.filter(d => d.status === 'signed' || d.status === 'completed').length;
+
+  let docs = [...accessibleDocs];
+
+  // Status Category Filtering (Nháp, Chờ ký, Đã ký)
+  if (category === 'draft') {
+    docs = docs.filter(d => d.status === 'draft');
+  } else if (category === 'pending_signature') {
+    docs = docs.filter(d => d.status === 'pending_signature');
+  } else if (category === 'signed') {
+    docs = docs.filter(d => d.status === 'signed' || d.status === 'completed');
+  }
+
+  // Dropdown Filtering
   if (typeFilter !== 'all') docs = docs.filter(d => d.type === typeFilter);
   if (statusFilter !== 'all') docs = docs.filter(d => d.status === statusFilter);
   if (monthFilter !== 'all') docs = docs.filter(d => monthKey(d.documentDate || d.createdAt) === monthFilter);
@@ -3047,15 +3116,38 @@ function renderList() {
   const allRequesters = [...new Set(STATE.documents.map(d => d.requesterName))].sort((a, b) => a.localeCompare(b));
   const allPayees = [...new Set(STATE.documents.map(d => getBeneficiaryName(d)))].sort((a, b) => a.localeCompare(b));
 
+  const categoryTabs = [
+    { key: 'all', label: '📋 Tất cả phiếu', count: accessibleDocs.length, badgeCls: 'badge-pill' },
+    { key: 'draft', label: '📝 Nháp', count: draftCount, badgeCls: 'b-draft' },
+    { key: 'pending_signature', label: '⏳ Chờ ký', count: pendingCount, badgeCls: 'b-pending' },
+    { key: 'signed', label: '✍️ Đã ký', count: signedCount, badgeCls: 'b-approved' }
+  ];
+
+  const categoryTitleMap = {
+    all: 'Danh sách phiếu tài chính',
+    draft: 'Danh sách phiếu Nháp',
+    pending_signature: 'Danh sách phiếu Chờ ký',
+    signed: 'Danh sách phiếu Đã ký'
+  };
+
   return `
   <div class="page-header">
     <div>
-      <h1>Danh sách phiếu tài chính</h1>
-      <p>Tổng cộng ${docs.length} phiếu trong hệ thống.</p>
+      <h1>${categoryTitleMap[category] || 'Danh sách phiếu tài chính'}</h1>
+      <p>Tổng cộng ${docs.length} phiếu (${category === 'all' ? 'tất cả trạng thái' : (category === 'draft' ? 'phiếu Nháp chưa trình' : (category === 'pending_signature' ? 'phiếu Đang trình ký' : 'phiếu Đã ký hoàn tất'))}).</p>
     </div>
   </div>
 
   ${renderGlobalDuplicateWarningBannerHtml()}
+
+  <div class="list-category-tabs" style="display:flex;gap:10px;margin-bottom:16px;overflow-x:auto;padding-bottom:4px;">
+    ${categoryTabs.map(t => `
+      <button type="button" class="btn-cat-tab ${category === t.key ? 'active' : ''}" data-statuscat="${t.key}" style="display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;border:1.5px solid ${category === t.key ? 'var(--teal)' : 'var(--line)'};background:${category === t.key ? '#F0FDF4' : 'var(--card)'};color:${category === t.key ? 'var(--teal)' : 'var(--ink)'};cursor:pointer;transition:all 0.15s ease;">
+        <span>${t.label}</span>
+        <span class="badge ${t.badgeCls}" style="font-size:11px;padding:2px 7px;">${t.count}</span>
+      </button>
+    `).join('')}
+  </div>
 
   <div class="filters">
     <select id="filter-type">
@@ -4571,10 +4663,24 @@ function attachHandlers() {
   });
 
   // Navigation
-  document.querySelectorAll('[data-nav]').forEach(el => el.addEventListener('click', () => {
+  document.querySelectorAll('[data-nav]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
     STATE.page = el.dataset.nav;
+    if (el.dataset.statuscat !== undefined) {
+      STATE._listStatusCategory = el.dataset.statuscat;
+    } else if (el.dataset.nav === 'list') {
+      STATE._listStatusCategory = 'all';
+    }
     STATE.draftForm = null;
     STATE.editingPayeeId = null;
+    render();
+  }));
+
+  // Status Category Tabs
+  document.querySelectorAll('[data-statuscat]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    STATE._listStatusCategory = el.dataset.statuscat;
+    if (STATE.page !== 'list') STATE.page = 'list';
     render();
   }));
 
