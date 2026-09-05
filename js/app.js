@@ -2109,7 +2109,11 @@ function renderOverview() {
   const unlinkedInvoices = STATE.invoices.filter(r => getInvoiceRecordStatus(r).key === 'not_submitted');
   const unlinkedTotalAmount = unlinkedInvoices.reduce((sum, r) => sum + (r.amount || 0), 0);
 
-  // 3. Month invoices summary
+  // 3. Pending signature documents
+  const pendingDocs = getAccessibleDocuments().filter(d => d.status === 'pending_signature');
+  const pendingTotalAmount = pendingDocs.reduce((sum, d) => sum + computeTotal(d), 0);
+
+  // 4. Month invoices summary
   const monthInvoices = STATE.invoices.filter(r => monthKey(r.date || r.uploadedAt) === selectedMonth);
   const monthTotalAmount = monthInvoices.reduce((sum, r) => sum + (r.amount || 0), 0);
 
@@ -2117,12 +2121,9 @@ function renderOverview() {
   <div class="page-header">
     <div>
       <h1>📊 Tổng quan Quản lý Tài chính & Kho Hoá đơn</h1>
-      <p>Theo dõi các khoản tạm ứng quá hạn, bảng tổng hợp hoá đơn theo số Invoice và danh sách hoá đơn chưa làm ĐNTT.</p>
+      <p>Theo dõi các khoản tạm ứng quá hạn, phiếu đang chờ ký, danh sách hoá đơn chưa làm ĐNTT và bảng tổng hợp.</p>
     </div>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-      <button type="button" id="btn-open-email-warning-modal" class="btn" style="background:linear-gradient(135deg, #0A2F52 0%, #0D9488 100%);color:#FFF;font-weight:700;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(13,148,136,0.3);" title="Mở trình gửi Email cảnh báo 30 ngày tạm ứng, hoá đơn chưa lập ĐNTT & phiếu chờ ký">
-        ✉️ Cảnh Báo Email Tự Động
-      </button>
       <div style="display:flex;gap:6px;align-items:center;">
         <label style="font-weight:600;font-size:13px;color:var(--ink);">Tháng:</label>
         <select id="overview-month-select" style="font-weight:700;padding:6px 12px;border-radius:6px;border:1.5px solid var(--teal);color:var(--teal);background:#F0FDFA;cursor:pointer;">
@@ -2133,7 +2134,7 @@ function renderOverview() {
   </div>
 
   <!-- KPI SUMMARY CARDS -->
-  <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(230px, 1fr));gap:16px;margin-bottom:24px;">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:16px;margin-bottom:24px;">
     
     <div style="background:#FFF1F2;border:1px solid #FECDD3;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(244,63,94,0.06);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -2142,6 +2143,15 @@ function renderOverview() {
       </div>
       <div style="font-size:22px;font-weight:800;color:#E11D48;">${overdues.length} khoản</div>
       <div style="font-size:12.5px;color:#BE123C;margin-top:4px;">Tổng nợ: <b>${fmtMoney(overdueTotalAmount, 'VND')}</b></div>
+    </div>
+
+    <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(217,119,6,0.06);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:12px;color:#92400E;font-weight:700;letter-spacing:0.5px;">⏳ PHIẾU ĐANG CHỜ KÝ DUYỆT</span>
+        <span style="font-size:20px;">⏳</span>
+      </div>
+      <div style="font-size:22px;font-weight:800;color:#D97706;">${pendingDocs.length} phiếu</div>
+      <div style="font-size:12.5px;color:#B45309;margin-top:4px;">Tổng tiền: <b>${fmtMoney(pendingTotalAmount, 'VND')}</b></div>
     </div>
 
     <div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(2,132,199,0.06);">
@@ -2208,6 +2218,65 @@ function renderOverview() {
                   </td>
                   <td style="text-align:center;">
                     <button class="icon-btn" data-open="${o.doc.id}" title="Xem chi tiết phiếu">👁</button>
+                  </td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `}
+  </div>
+
+  <!-- SECTION 2: PENDING SIGNATURES -->
+  <div class="form-card" style="margin-bottom:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+      <h3 style="font-size:15.5px;color:#D97706;display:flex;align-items:center;gap:8px;margin:0;">
+        <span>⏳ List Phiếu Tài chính & ĐNTT Đang Chờ Ký duyệt</span>
+        <span class="badge" style="background:#FEF3C7;color:#D97706;font-weight:700;">${pendingDocs.length} phiếu</span>
+      </h3>
+      <div style="font-size:13px;color:var(--ink-soft);">
+        Tổng giá trị chờ ký: <b style="color:#D97706;font-size:14px;">${fmtMoney(pendingTotalAmount, 'VND')}</b>
+      </div>
+    </div>
+
+    ${pendingDocs.length === 0 ? `
+      <div style="text-align:center;padding:24px 10px;color:#15803D;background:#F0FDF4;border-radius:8px;border:1px dashed #86EFAC;">
+        🎉 Không có phiếu nào đang ở trạng thái chờ ký duyệt!
+      </div>
+    ` : `
+      <div style="overflow-x:auto;">
+        <table class="items-table" style="font-size:12.5px;width:100%;">
+          <thead>
+            <tr>
+              <th style="width:36px;text-align:center;">STT</th>
+              <th style="width:140px;text-align:center;">Mã phiếu</th>
+              <th style="width:140px;">Loại biểu mẫu</th>
+              <th>Người đề nghị</th>
+              <th>Bộ phận</th>
+              <th style="width:100px;text-align:center;">Ngày lập</th>
+              <th style="width:130px;text-align:right;">Số tiền</th>
+              <th style="width:100px;text-align:center;">Trạng thái</th>
+              <th style="width:70px;text-align:center;">Phiếu</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pendingDocs.map((d, i) => {
+              const code = d.docNo || d.formCode;
+              const typeLabel = DOC_TYPES[d.type] ? DOC_TYPES[d.type].label : (d.title || d.type);
+              return `
+                <tr>
+                  <td style="text-align:center;">${i + 1}</td>
+                  <td style="text-align:center;font-weight:700;color:var(--teal);">${code}</td>
+                  <td>${typeLabel}</td>
+                  <td style="font-weight:600;">${d.requesterName}</td>
+                  <td>${d.department || ''}</td>
+                  <td style="text-align:center;">${fmtDate(d.documentDate || d.createdAt)}</td>
+                  <td style="text-align:right;font-weight:700;color:#D97706;">${fmtMoney(computeTotal(d), d.currency)}</td>
+                  <td style="text-align:center;">
+                    <span class="badge b-pending" style="font-size:11px;">Chờ ký</span>
+                  </td>
+                  <td style="text-align:center;">
+                    <button class="icon-btn" data-open="${d.id}" title="Xem chi tiết phiếu">👁</button>
                   </td>
                 </tr>`;
             }).join('')}
