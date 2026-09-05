@@ -9,40 +9,44 @@
 function getWarningItems(targetUser = null) {
   const docs = (window.STATE && window.STATE.documents) ? window.STATE.documents : [];
   const invoices = (window.STATE && window.STATE.invoices) ? window.STATE.invoices : [];
-  const now = Date.now();
-  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
 
-  // 1. Tạm ứng quá 30 ngày chưa hoàn ứng
-  const advanceDocs = docs.filter(d => d.type === 'advance' && (d.status === 'signed' || d.status === 'completed'));
-  
-  // Tìm các phiếu hoàn ứng đã lập
-  const settlementDocNos = new Set(
-    docs.filter(d => d.type === 'settlement' && d.status !== 'draft')
-        .map(d => d.advanceDocNo || d.advanceDocId)
-        .filter(Boolean)
-  );
+  // 1. Tạm ứng quá 30 ngày chưa hoàn ứng (Lấy từ getOverdueAdvanceRequests để đồng bộ 100% với Dashboard)
+  let overdueAdvances = [];
+  if (typeof window.getOverdueAdvanceRequests === 'function') {
+    overdueAdvances = window.getOverdueAdvanceRequests(false).map(o => o.doc);
+  } else {
+    const now = Date.now();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const advanceDocs = docs.filter(d => d.type === 'advance' && (d.status === 'signed' || d.status === 'completed'));
+    overdueAdvances = advanceDocs.filter(d => {
+      const isReimbursed = docs.some(r => (r.type === 'reimbursement' || r.type === 'settlement') && (r.advanceRefs || []).includes(d.id));
+      if (isReimbursed) return false;
+      const docTime = new Date(d.documentDate || d.createdAt).getTime();
+      return (now - docTime) > thirtyDaysMs;
+    });
+  }
 
-  const overdueAdvances = advanceDocs.filter(d => {
-    const docTime = new Date(d.documentDate || d.createdAt).getTime();
-    const isOverdue = (now - docTime) > thirtyDaysMs;
-    const isSettled = settlementDocNos.has(d.docNo) || settlementDocNos.has(d.id);
-    const matchesUser = !targetUser || d.requesterName === targetUser.name || d.employeeCode === targetUser.employeeCode;
-    return isOverdue && !isSettled && matchesUser;
-  });
+  if (targetUser && targetUser.role === 'employee') {
+    overdueAdvances = overdueAdvances.filter(d => d.requesterName === targetUser.name || d.employeeCode === targetUser.employeeCode);
+  }
 
-  // 2. Hoá đơn chưa làm ĐNTT
-  const unlinkedInvoices = invoices.filter(inv => {
-    const isUnlinked = inv.status === 'unlinked' || !inv.linkedDocNo;
-    const matchesUser = !targetUser || inv.uploadedBy === targetUser.name || inv.buyerName === targetUser.name;
-    return isUnlinked && matchesUser;
-  });
+  // 2. Hoá đơn chưa làm ĐNTT (Đồng bộ với Dashboard Overview)
+  let unlinkedInvoices = [];
+  if (typeof window.getInvoiceRecordStatus === 'function') {
+    unlinkedInvoices = invoices.filter(r => window.getInvoiceRecordStatus(r).key === 'not_submitted');
+  } else {
+    unlinkedInvoices = invoices.filter(r => r.status === 'unlinked' || !r.linkedDocNo);
+  }
+
+  if (targetUser && targetUser.role === 'employee') {
+    unlinkedInvoices = unlinkedInvoices.filter(inv => inv.uploadedBy === targetUser.name || inv.buyerName === targetUser.name);
+  }
 
   // 3. Phiếu ĐNTT / Tạm ứng / Trình đang chờ ký
-  const pendingSignatures = docs.filter(d => {
-    const isPending = d.status === 'pending_signature';
-    const matchesUser = !targetUser || d.requesterName === targetUser.name || (targetUser.role && ['admin', 'dept_head', 'chief_accountant', 'director'].includes(targetUser.role));
-    return isPending && matchesUser;
-  });
+  let pendingSignatures = docs.filter(d => d.status === 'pending_signature');
+  if (targetUser && targetUser.role === 'employee') {
+    pendingSignatures = pendingSignatures.filter(d => d.requesterName === targetUser.name);
+  }
 
   return {
     overdueAdvances,
