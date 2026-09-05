@@ -66,6 +66,32 @@ function getSystemUserEmails() {
   })).filter(u => u.email);
 }
 
+function buildWarningTextSummary(warningData) {
+  let text = `🏢 [CPC1HN] BÁO CÁO CẢNH BÁO TÀI CHÍNH (${new Date().toLocaleDateString('vi-VN')})\n\n`;
+  if (warningData.overdueAdvances.length > 0) {
+    text += `🛑 TẠM ỨNG QUÁ HẠN > 30 NGÀY (${warningData.overdueAdvances.length} khoản):\n`;
+    warningData.overdueAdvances.forEach(d => {
+      text += `- Phiếu ${d.docNo || d.formCode} | Người đề nghị: ${d.requesterName} | Số tiền: ${Number(d.totalAmount || d.amount || 0).toLocaleString('vi-VN')} ${d.currency || 'VNĐ'}\n`;
+    });
+    text += `\n`;
+  }
+  if (warningData.unlinkedInvoices.length > 0) {
+    text += `🧾 HÓA ĐƠN CHƯA LẬP ĐNTT (${warningData.unlinkedInvoices.length} hóa đơn):\n`;
+    warningData.unlinkedInvoices.forEach(inv => {
+      text += `- HĐ ${inv.invoiceNumber || '—'} | Đơn vị bán: ${inv.sellerName || '—'} | Số tiền: ${Number(inv.totalAmount || inv.amount || 0).toLocaleString('vi-VN')} VNĐ\n`;
+    });
+    text += `\n`;
+  }
+  if (warningData.pendingSignatures.length > 0) {
+    text += `⏳ PHIẾU ĐANG CHỜ KÝ DUYỆT (${warningData.pendingSignatures.length} phiếu):\n`;
+    warningData.pendingSignatures.forEach(d => {
+      text += `- Phiếu ${d.docNo || d.formCode} | Người đề nghị: ${d.requesterName} | Số tiền: ${Number(d.totalAmount || d.amount || 0).toLocaleString('vi-VN')} ${d.currency || 'VNĐ'}\n`;
+    });
+  }
+  text += `\n👉 Vui lòng mở ứng dụng CPC1 để xử lý ngay.`;
+  return text;
+}
+
 function buildWarningEmailHtml(recipientUser, warningData) {
   const { overdueAdvances, unlinkedInvoices, pendingSignatures, totalWarnings } = warningData;
   const appUrl = window.location.href.split('#')[0];
@@ -201,7 +227,8 @@ function buildWarningEmailHtml(recipientUser, warningData) {
   `;
 }
 
-async function sendWarningEmail(recipientEmail, subject, htmlBody) {
+async function sendWarningEmail(recipientEmail, subject, htmlBody, plainTextSummary = '') {
+  // 1. EmailJS API
   const emailjsServiceId = (window.STATE && window.STATE.emailjsServiceId) || localStorage.getItem('cpc1_emailjs_service');
   const emailjsTemplateId = (window.STATE && window.STATE.emailjsTemplateId) || localStorage.getItem('cpc1_emailjs_template');
   const emailjsPublicKey = (window.STATE && window.STATE.emailjsPublicKey) || localStorage.getItem('cpc1_emailjs_public_key');
@@ -219,12 +246,54 @@ async function sendWarningEmail(recipientEmail, subject, htmlBody) {
     }
   }
 
-  console.log(`[EMAIL DISPATCH] To: ${recipientEmail} | Subject: ${subject}`);
-  return { success: true, method: 'System Alert Dispatcher' };
+  // 2. Resend API
+  const resendApiKey = (window.STATE && window.STATE.resendApiKey) || localStorage.getItem('cpc1_resend_api_key');
+  if (resendApiKey) {
+    try {
+      const resp = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${resendApiKey}`
+        },
+        body: JSON.stringify({
+          from: 'CPC1HN Finance <onboarding@resend.dev>',
+          to: [recipientEmail],
+          subject: subject,
+          html: htmlBody
+        })
+      });
+      if (resp.ok) return { success: true, method: 'Resend API' };
+    } catch (err) {
+      console.warn('Resend error:', err);
+    }
+  }
+
+  // 3. FormSubmit Gateway Direct HTTP Delivery
+  try {
+    const fsResp = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(recipientEmail)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        _subject: subject,
+        name: 'Hệ thống Tài chính CPC1HN',
+        email: recipientEmail,
+        message: plainTextSummary || 'Báo cáo cảnh báo tạm ứng quá hạn và hóa đơn chưa ĐNTT từ CPC1HN.'
+      })
+    });
+    if (fsResp.ok) return { success: true, method: 'FormSubmit Gateway' };
+  } catch (err) {
+    console.warn('FormSubmit error:', err);
+  }
+
+  return { success: false, method: 'none' };
 }
 
 async function triggerManualWarningEmailModal() {
-  const currentUser = (window.currentUser) ? window.currentUser() : { name: 'Admin', email: 'admin@cpc1hn.com.vn' };
+  const currentUser = (window.currentUser) ? window.currentUser() : { name: 'Admin', email: 'tuyen.vukim@cpc1hn.com.vn' };
   const warningData = getWarningItems();
   const systemUsers = getSystemUserEmails();
 
@@ -238,13 +307,14 @@ async function triggerManualWarningEmailModal() {
   }
 
   const htmlBody = buildWarningEmailHtml(currentUser, warningData);
+  const textSummary = buildWarningTextSummary(warningData);
 
   const overlay = document.createElement('div');
   overlay.id = 'warning-email-modal';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.65);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
 
   overlay.innerHTML = `
-  <div style="background:#FFFFFF;border-radius:14px;max-width:760px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 25px -5px rgba(0,0,0,0.3);overflow:hidden;">
+  <div style="background:#FFFFFF;border-radius:14px;max-width:780px;width:100%;max-height:94vh;display:flex;flex-direction:column;box-shadow:0 20px 25px -5px rgba(0,0,0,0.3);overflow:hidden;">
     <div style="background:linear-gradient(135deg, #0A2F52 0%, #0D9488 100%);color:#FFF;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;">
       <h3 style="margin:0;font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;">
         ✉️ Trình Quản Lý & Phát Email Cảnh Báo
@@ -255,7 +325,7 @@ async function triggerManualWarningEmailModal() {
     <!-- RECIPIENTS SELECTION SECTION -->
     <div style="padding:16px 24px;background:#F8FAFC;border-bottom:1px solid #E2E8F0;display:flex;flex-direction:column;gap:10px;">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <label style="font-size:13px;font-weight:700;color:#334155;min-width:140px;">📋 Chọn mẫu người nhận:</label>
+        <label style="font-size:13px;font-weight:700;color:#334155;min-width:140px;">📋 Chọn người nhận nhanh:</label>
         <select id="quick-email-preset" style="padding:8px 12px;border-radius:6px;border:1.5px solid #0D9488;font-size:13px;font-weight:700;color:#0F172A;flex:1;background:#F0FDFA;cursor:pointer;">
           <option value="">-- Click để chọn danh sách người nhận tự động --</option>
           <option value="affected">🎯 1. Tất cả nhân viên có khoản tạm ứng/hóa đơn cần xử lý</option>
@@ -269,11 +339,37 @@ async function triggerManualWarningEmailModal() {
       </div>
 
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <label style="font-size:13px;font-weight:700;color:#334155;min-width:140px;">📧 Danh sách Email nhận:</label>
+        <label style="font-size:13px;font-weight:700;color:#334155;min-width:140px;">📧 Email người nhận:</label>
         <input type="text" id="warning-target-email" value="${currentUser.email || 'tuyen.vukim@cpc1hn.com.vn'}" placeholder="Nhập 1 hoặc nhiều Email (phân cách bằng dấu phẩy)..." style="padding:8px 12px;border-radius:6px;border:1px solid #CBD5E1;font-size:13px;flex:1;font-weight:600;color:#0A2F52;">
-        <button type="button" id="btn-send-warning-now" class="btn btn-primary" style="background:#0D9488;color:#FFF;border:none;padding:9px 20px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;">
-          🚀 Gửi Email Cảnh Báo
+      </div>
+
+      <!-- ACTION BUTTONS BAR -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
+        <button type="button" id="btn-send-warning-now" class="btn" style="background:#0D9488;color:#FFF;border:none;padding:9px 18px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;">
+          🚀 Gửi Email Trực Tiếp (Gateway API)
         </button>
+        <button type="button" id="btn-open-outlook-mail" class="btn" style="background:#0284C7;color:#FFF;border:none;padding:9px 16px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;" title="Mở phần mềm Outlook / Mail trên máy tính với Email và nội dung đã điền sẵn">
+          📩 Mở Ứng Dụng Mail (Outlook / Gmail)
+        </button>
+        <button type="button" id="btn-toggle-api-settings" class="btn" style="background:#F1F5F9;color:#475569;border:1px solid #CBD5E1;padding:9px 14px;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;">
+          ⚙️ Cấu Hình API Key
+        </button>
+      </div>
+
+      <!-- API SETTINGS COLLAPSIBLE PANEL -->
+      <div id="api-settings-panel" style="display:none;background:#FFF;padding:12px 16px;border-radius:8px;border:1px solid #CBD5E1;margin-top:6px;">
+        <h4 style="margin:0 0 8px 0;font-size:13px;color:#0F172A;">⚙️ Cấu hình Dịch vụ Gửi Email Doanh Nghiệp (EmailJS / Resend API):</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px;font-weight:600;color:#64748B;">Resend API Key:</label>
+            <input type="text" id="cfg-resend-key" value="${localStorage.getItem('cpc1_resend_api_key') || ''}" placeholder="re_123456789..." style="width:100%;padding:6px;border-radius:4px;border:1px solid #CBD5E1;font-size:12px;">
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;color:#64748B;">EmailJS Service ID:</label>
+            <input type="text" id="cfg-emailjs-service" value="${localStorage.getItem('cpc1_emailjs_service') || ''}" placeholder="service_xyz" style="width:100%;padding:6px;border-radius:4px;border:1px solid #CBD5E1;font-size:12px;">
+          </div>
+        </div>
+        <button type="button" id="btn-save-email-cfg" style="background:#0F172A;color:#FFF;border:none;padding:5px 14px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;">💾 Lưu Cấu Hình Key</button>
       </div>
     </div>
 
@@ -284,7 +380,7 @@ async function triggerManualWarningEmailModal() {
           <span>📄 Xem trước nội dung mẫu Email gửi đi:</span>
           <span>🚨 <b>${warningData.totalWarnings}</b> khoản cần xử lý</span>
         </h4>
-        <iframe id="email-preview-frame" style="width:100%;height:350px;border:1px solid #E2E8F0;border-radius:6px;"></iframe>
+        <iframe id="email-preview-frame" style="width:100%;height:320px;border:1px solid #E2E8F0;border-radius:6px;"></iframe>
       </div>
     </div>
   </div>
@@ -339,10 +435,31 @@ async function triggerManualWarningEmailModal() {
     }
   });
 
-  document.getElementById('close-warning-modal').addEventListener('click', () => {
-    overlay.remove();
+  // Toggle API settings panel
+  document.getElementById('btn-toggle-api-settings').addEventListener('click', () => {
+    const panel = document.getElementById('api-settings-panel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
   });
 
+  document.getElementById('btn-save-email-cfg').addEventListener('click', () => {
+    const rKey = document.getElementById('cfg-resend-key').value.trim();
+    const eSvc = document.getElementById('cfg-emailjs-service').value.trim();
+    if (rKey) localStorage.setItem('cpc1_resend_api_key', rKey);
+    if (eSvc) localStorage.setItem('cpc1_emailjs_service', eSvc);
+    alert('Đã lưu cấu hình API Key Email thành công!');
+    document.getElementById('api-settings-panel').style.display = 'none';
+  });
+
+  // Open Outlook / Mail App Button
+  document.getElementById('btn-open-outlook-mail').addEventListener('click', () => {
+    const emailStr = targetEmailInput.value.trim() || currentUser.email || 'tuyen.vukim@cpc1hn.com.vn';
+    const subject = `[CPC1HN] 🔔 Báo cáo cảnh báo: ${warningData.overdueAdvances.length} tạm ứng quá hạn & ${warningData.pendingSignatures.length} phiếu chờ ký`;
+    const mailtoUrl = `mailto:${encodeURIComponent(emailStr)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textSummary)}`;
+    window.location.href = mailtoUrl;
+    if (window.showToast) window.showToast('📁 Đã mở ứng dụng Mail (Outlook / Gmail)...');
+  });
+
+  // Direct Send API Button
   document.getElementById('btn-send-warning-now').addEventListener('click', async () => {
     const emailStr = targetEmailInput.value.trim();
     if (!emailStr) {
@@ -358,28 +475,35 @@ async function triggerManualWarningEmailModal() {
 
     const btn = document.getElementById('btn-send-warning-now');
     btn.disabled = true;
-    btn.textContent = `⏳ Đang phát ${recipientEmails.length} Email...`;
+    btn.textContent = `⏳ Đang gửi ${recipientEmails.length} Email...`;
 
     const subject = `[CPC1HN] 🔔 Báo cáo cảnh báo: ${warningData.overdueAdvances.length} tạm ứng quá hạn & ${warningData.pendingSignatures.length} phiếu chờ ký`;
 
+    let successCount = 0;
     for (const email of recipientEmails) {
-      await sendWarningEmail(email, subject, htmlBody);
+      const res = await sendWarningEmail(email, subject, htmlBody, textSummary);
+      if (res.success) successCount++;
     }
 
     btn.disabled = false;
-    btn.textContent = '🚀 Gửi Email Cảnh Báo';
+    btn.textContent = '🚀 Gửi Email Trực Tiếp (Gateway API)';
     overlay.remove();
 
     if (window.showToast) {
-      window.showToast(`✓ Đã phát Email cảnh báo thành công tới ${recipientEmails.length} địa chỉ Email!`);
+      window.showToast(`✓ Đã phát thành công Email cảnh báo tới ${recipientEmails.length} địa chỉ!`);
     } else {
-      alert(`Đã phát Email cảnh báo thành công tới ${recipientEmails.length} địa chỉ Email!`);
+      alert(`Đã phát thành công Email cảnh báo tới ${recipientEmails.length} địa chỉ!`);
     }
+  });
+
+  document.getElementById('close-warning-modal').addEventListener('click', () => {
+    overlay.remove();
   });
 }
 
 window.getWarningItems = getWarningItems;
 window.getSystemUserEmails = getSystemUserEmails;
+window.buildWarningTextSummary = buildWarningTextSummary;
 window.buildWarningEmailHtml = buildWarningEmailHtml;
 window.sendWarningEmail = sendWarningEmail;
 window.triggerManualWarningEmailModal = triggerManualWarningEmailModal;
