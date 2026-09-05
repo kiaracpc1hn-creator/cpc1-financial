@@ -52,6 +52,16 @@ function getWarningItems(targetUser = null) {
   };
 }
 
+function getSystemUserEmails() {
+  const users = (window.STATE && window.STATE.users) ? window.STATE.users : [];
+  return users.map(u => ({
+    name: u.name,
+    email: u.email || (u.username ? `${u.username}@cpc1hn.com.vn` : ''),
+    role: u.role || 'employee',
+    department: u.department || ''
+  })).filter(u => u.email);
+}
+
 function buildWarningEmailHtml(recipientUser, warningData) {
   const { overdueAdvances, unlinkedInvoices, pendingSignatures, totalWarnings } = warningData;
   const appUrl = window.location.href.split('#')[0];
@@ -212,6 +222,7 @@ async function sendWarningEmail(recipientEmail, subject, htmlBody) {
 async function triggerManualWarningEmailModal() {
   const currentUser = (window.currentUser) ? window.currentUser() : { name: 'Admin', email: 'admin@cpc1hn.com.vn' };
   const warningData = getWarningItems();
+  const systemUsers = getSystemUserEmails();
 
   if (warningData.totalWarnings === 0) {
     if (window.showAlertModal) {
@@ -229,24 +240,47 @@ async function triggerManualWarningEmailModal() {
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.65);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
 
   overlay.innerHTML = `
-  <div style="background:#FFFFFF;border-radius:14px;max-width:740px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 25px -5px rgba(0,0,0,0.3);overflow:hidden;">
+  <div style="background:#FFFFFF;border-radius:14px;max-width:760px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 25px -5px rgba(0,0,0,0.3);overflow:hidden;">
     <div style="background:linear-gradient(135deg, #0A2F52 0%, #0D9488 100%);color:#FFF;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;">
       <h3 style="margin:0;font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;">
-        ✉️ Cảnh Báo & Gửi Email Tự Động
+        ✉️ Trình Quản Lý & Phát Email Cảnh Báo
       </h3>
-      <button type="button" id="close-warning-modal" style="background:transparent;border:none;color:#FFF;font-size:20px;cursor:pointer;line-height:1;">&times;</button>
+      <button type="button" id="close-warning-modal" style="background:transparent;border:none;color:#FFF;font-size:22px;cursor:pointer;line-height:1;">&times;</button>
     </div>
-    <div style="padding:16px 24px;background:#F8FAFC;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <label style="font-size:13px;font-weight:700;color:#334155;">Gửi tới Email:</label>
-      <input type="email" id="warning-target-email" value="${currentUser.email || 'ban.giamdoc@cpc1hn.com.vn'}" style="padding:7px 12px;border-radius:6px;border:1px solid #CBD5E1;font-size:13px;flex:1;min-width:220px;">
-      <button type="button" id="btn-send-warning-now" class="btn btn-primary" style="background:#0D9488;color:#FFF;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;">
-        🚀 Gửi Email Cảnh Báo Ngay
-      </button>
+
+    <!-- RECIPIENTS SELECTION SECTION -->
+    <div style="padding:16px 24px;background:#F8FAFC;border-bottom:1px solid #E2E8F0;display:flex;flex-direction:column;gap:10px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <label style="font-size:13px;font-weight:700;color:#334155;min-width:140px;">📋 Chọn mẫu người nhận:</label>
+        <select id="quick-email-preset" style="padding:8px 12px;border-radius:6px;border:1.5px solid #0D9488;font-size:13px;font-weight:700;color:#0F172A;flex:1;background:#F0FDFA;cursor:pointer;">
+          <option value="">-- Click để chọn danh sách người nhận tự động --</option>
+          <option value="affected">🎯 1. Tất cả nhân viên có khoản tạm ứng/hóa đơn cần xử lý</option>
+          <option value="board">⭐ 2. Ban Giám đốc & Kế toán trưởng</option>
+          <option value="leads">👔 3. Trưởng nhóm & Admin bộ phận</option>
+          <option value="all">📋 4. Tất cả tài khoản trong hệ thống (${systemUsers.length} email)</option>
+          <optgroup label="Tài khoản cá nhân trong hệ thống">
+            ${systemUsers.map(u => `<option value="${u.email}">👤 ${u.name} (${u.role === 'admin' ? 'Admin' : (u.role === 'dept_head' ? 'Trưởng nhóm' : (u.role === 'chief_accountant' ? 'KT Trưởng' : (u.role === 'director' ? 'BGĐ' : 'Nhân viên')))}) - ${u.email}</option>`).join('')}
+          </optgroup>
+        </select>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <label style="font-size:13px;font-weight:700;color:#334155;min-width:140px;">📧 Danh sách Email nhận:</label>
+        <input type="text" id="warning-target-email" value="${currentUser.email || 'tuyen.vukim@cpc1hn.com.vn'}" placeholder="Nhập 1 hoặc nhiều Email (phân cách bằng dấu phẩy)..." style="padding:8px 12px;border-radius:6px;border:1px solid #CBD5E1;font-size:13px;flex:1;font-weight:600;color:#0A2F52;">
+        <button type="button" id="btn-send-warning-now" class="btn btn-primary" style="background:#0D9488;color:#FFF;border:none;padding:9px 20px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;">
+          🚀 Gửi Email Cảnh Báo
+        </button>
+      </div>
     </div>
+
+    <!-- PREVIEW SECTION -->
     <div style="flex:1;overflow-y:auto;padding:20px;background:#F1F5F9;">
       <div style="background:#FFF;border-radius:8px;padding:15px;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
-        <h4 style="margin:0 0 10px 0;font-size:13px;color:#64748B;">Mẫu Email sẽ được tự động tạo và gửi đi:</h4>
-        <iframe id="email-preview-frame" style="width:100%;height:380px;border:1px solid #E2E8F0;border-radius:6px;"></iframe>
+        <h4 style="margin:0 0 10px 0;font-size:13px;color:#64748B;display:flex;justify-content:space-between;">
+          <span>📄 Xem trước nội dung mẫu Email gửi đi:</span>
+          <span>🚨 <b>${warningData.totalWarnings}</b> khoản cần xử lý</span>
+        </h4>
+        <iframe id="email-preview-frame" style="width:100%;height:350px;border:1px solid #E2E8F0;border-radius:6px;"></iframe>
       </div>
     </div>
   </div>
@@ -262,36 +296,86 @@ async function triggerManualWarningEmailModal() {
     doc.close();
   }
 
+  // Handle Quick Presets
+  const presetSelect = document.getElementById('quick-email-preset');
+  const targetEmailInput = document.getElementById('warning-target-email');
+
+  presetSelect.addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (!val) return;
+
+    if (val === 'affected') {
+      const affectedNames = new Set([
+        ...warningData.overdueAdvances.map(d => d.requesterName),
+        ...warningData.unlinkedInvoices.map(inv => inv.uploadedBy || inv.buyerName),
+        ...warningData.pendingSignatures.map(d => d.requesterName)
+      ].filter(Boolean));
+
+      const affectedEmails = systemUsers
+        .filter(u => affectedNames.has(u.name))
+        .map(u => u.email);
+
+      const finalEmails = affectedEmails.length > 0 ? [...new Set(affectedEmails)] : [currentUser.email];
+      targetEmailInput.value = finalEmails.join(', ');
+    } else if (val === 'board') {
+      const boardEmails = systemUsers
+        .filter(u => u.role === 'director' || u.role === 'chief_accountant')
+        .map(u => u.email);
+      targetEmailInput.value = boardEmails.join(', ');
+    } else if (val === 'leads') {
+      const leadEmails = systemUsers
+        .filter(u => u.role === 'dept_head' || u.role === 'admin')
+        .map(u => u.email);
+      targetEmailInput.value = leadEmails.join(', ');
+    } else if (val === 'all') {
+      const allEmails = systemUsers.map(u => u.email);
+      targetEmailInput.value = allEmails.join(', ');
+    } else {
+      targetEmailInput.value = val;
+    }
+  });
+
   document.getElementById('close-warning-modal').addEventListener('click', () => {
     overlay.remove();
   });
 
   document.getElementById('btn-send-warning-now').addEventListener('click', async () => {
-    const emailInput = document.getElementById('warning-target-email').value.trim();
-    if (!emailInput) {
-      alert('Vui lòng nhập địa chỉ email người nhận!');
+    const emailStr = targetEmailInput.value.trim();
+    if (!emailStr) {
+      alert('Vui lòng chọn hoặc nhập ít nhất một địa chỉ Email người nhận!');
       return;
     }
+
+    const recipientEmails = emailStr.split(',').map(e => e.trim()).filter(Boolean);
+    if (recipientEmails.length === 0) {
+      alert('Địa chỉ Email không hợp lệ!');
+      return;
+    }
+
     const btn = document.getElementById('btn-send-warning-now');
     btn.disabled = true;
-    btn.textContent = '⏳ Đang gửi Email...';
+    btn.textContent = `⏳ Đang phát ${recipientEmails.length} Email...`;
 
     const subject = `[CPC1HN] 🔔 Báo cáo cảnh báo: ${warningData.overdueAdvances.length} tạm ứng quá hạn & ${warningData.pendingSignatures.length} phiếu chờ ký`;
-    await sendWarningEmail(emailInput, subject, htmlBody);
+
+    for (const email of recipientEmails) {
+      await sendWarningEmail(email, subject, htmlBody);
+    }
 
     btn.disabled = false;
-    btn.textContent = '🚀 Gửi Email Cảnh Báo Ngay';
+    btn.textContent = '🚀 Gửi Email Cảnh Báo';
     overlay.remove();
 
     if (window.showToast) {
-      window.showToast(`✓ Đã phát Email cảnh báo tới ${emailInput}!`);
+      window.showToast(`✓ Đã phát Email cảnh báo thành công tới ${recipientEmails.length} địa chỉ Email!`);
     } else {
-      alert(`Đã phát Email cảnh báo tới ${emailInput}!`);
+      alert(`Đã phát Email cảnh báo thành công tới ${recipientEmails.length} địa chỉ Email!`);
     }
   });
 }
 
 window.getWarningItems = getWarningItems;
+window.getSystemUserEmails = getSystemUserEmails;
 window.buildWarningEmailHtml = buildWarningEmailHtml;
 window.sendWarningEmail = sendWarningEmail;
 window.triggerManualWarningEmailModal = triggerManualWarningEmailModal;
