@@ -161,11 +161,11 @@ function parseInvoiceText(fullText, lines, filename) {
   // -------------------------------------------------------------
   // 1. Series No (Ký hiệu) & Invoice Number (Số HĐ) from text / filename
   // -------------------------------------------------------------
-  // Ưu tiên 1: Nhận diện nhãn Ký hiệu trực tiếp (Ký hiệu: VC-24E, Ký hiệu (Serial): 1K26TED)
+  // Ưu tiên 1: Nhận diện nhãn Ký hiệu trực tiếp (Ký hiệu: VC-24E, Ký hiệu (Serial): 1K26TED, Ký hiệu: 26T)
   const explicitSerialMatch = fullText.match(/(?:Ký\s*hiệu\s*\([^)]*\)|Mẫu\s*số\s*[-/]?\s*Ký\s*hiệu|Ký\s*hiệu\s*(?:hóa\s*đơn|hoá\s*đơn|biên\s*lai)?|Ký\s*hiệu|Serial\s*No\.?|Serial|Series)\s*[:\s-]+\s*([A-Z0-9][A-Z0-9\-\/]{1,11})/i);
   if (explicitSerialMatch && explicitSerialMatch[1]) {
     const cand = explicitSerialMatch[1].trim().toUpperCase();
-    if (cand && !INVALID_SERIES.has(cand) && cand.length >= 2 && !/^\d{2}[A-Z]$/.test(cand)) {
+    if (cand && !INVALID_SERIES.has(cand) && cand.length >= 2) {
       seriesNo = cand;
     }
   }
@@ -175,25 +175,29 @@ function parseInvoiceText(fullText, lines, filename) {
     const textSeriesMatches = [
       ...fullText.matchAll(/(?:Mẫu\s*số\s*[-/]?\s*Ký\s*hiệu|Ký\s*hiệu\s*(?:hóa\s*đơn|hoá\s*đơn|biên\s*lai)?|Ký\s*hiệu|Serial\s*No\.?|Series)(?:\s*\([^)]*\))?\s*[:\s-]+\s*(?:[1-9]\/[0-9]+\s*[-/]\s*)?([A-Z0-9][A-Z0-9\-\/]{1,11})/gi),
       ...fullText.matchAll(/\b([12]?[A-Z]{1,3}[-\/]?\d{2}[A-Z]{1,3})\b/g),
-      ...fullText.matchAll(/\b([A-Z]{2,4}[-\/]\d{2}[A-Z0-9]{1,3})\b/g)
+      ...fullText.matchAll(/\b([A-Z]{2,4}[-\/]\d{2}[A-Z0-9]{1,3})\b/g),
+      ...fullText.matchAll(/\b(\d{2}[A-Z]{1,3})\b/g)
     ];
 
     for (const m of textSeriesMatches) {
       const val = (m[1] || '').trim().toUpperCase();
-      if (val && !INVALID_SERIES.has(val) && val.length >= 2 && !/^\d{2}[A-Z]$/.test(val)) {
+      if (val && !INVALID_SERIES.has(val) && val.length >= 2) {
         seriesNo = val;
         break;
       }
     }
   }
 
-  // Search text for Invoice Number: e.g. "Số (Invoice No.): 00003992" or "Số (No.): 00003992"
+  // Search text for Invoice Number: e.g. "Số (Invoice No.): 00003992" or "Số (No.): 00003992" or "Số: 0001884"
   const numberMatches = [
-    ...fullText.matchAll(/(?:Số\s*\(Invoice\s*No\.\)|Số\s*\(No\.\)|Số\s*hoá\s*đơn|Số\s*hóa\s*đơn|Số\s*HĐ|Invoice\s*No\.?|Số|No\.?)\s*[:\s]*([0-9]{4,10})/gi)
+    ...fullText.matchAll(/(?:Số\s*\(Invoice\s*No\.\)|Số\s*\(No\.\)|Số\s*hoá\s*đơn|Số\s*hóa\s*đơn|Số\s*HĐ|Invoice\s*No\.?)\s*[:\s]*([0-9]{1,10})/gi),
+    ...fullText.matchAll(/(?:^|\n)[^\n]*\b(?:Số|No\.?)\s*[:\s]+\s*([0-9]{1,10})/gi)
   ];
   for (const m of numberMatches) {
+    const fullMatchText = m[0] || '';
+    if (/Địa\s*chỉ|Address|Điện\s*thoại|Tel\b/i.test(fullMatchText)) continue;
     const val = (m[1] || '').trim();
-    if (val && val.length >= 4) {
+    if (val && val.length >= 3) {
       invoiceNumber = val;
       break;
     }
@@ -286,7 +290,7 @@ function parseInvoiceText(fullText, lines, filename) {
     for (let i = 0; i < Math.min(15, buyerLineIndex); i++) {
       const l = lines[i].trim();
       if (/Mã\s*của\s*Cơ\s*quan\s*thuế|Mã\s*CQT/i.test(l)) continue;
-      if (/^(?:CÔNG\s*TY|DOANH\s*NGHIỆP|TỔNG\s*CÔNG\s*TY|TRUNG\s*TÂM|CHI\s*NHÁNH|CỤC|TỔNG\s*CỤC)\b/i.test(l)) {
+      if (/^(?:CÔNG\s*TY|DOANH\s*NGHIỆP|TỔNG\s*CÔNG\s*TY|TRUNG\s*TÂM|CHI\s*NHÁNH|CỤC|TỔNG\s*CỤC|SỞ)\b/i.test(l)) {
         if (!/CPC1\s*Hà\s*Nội|Dược\s*phẩm\s*CPC1/i.test(l)) {
           const candidate = cleanSellerName(l);
           if (candidate) {
@@ -422,7 +426,7 @@ function parseInvoiceText(fullText, lines, filename) {
   // -------------------------------------------------------------
   // Look for "Thành tiền sau thuế", "Tổng cộng tiền thanh toán (Total payment)", "Tổng tiền thanh toán"
   const totalPaymentRegexes = [
-    /(?:Thành\s*tiền\s*sau\s*thuế|Tổng\s*cộng\s*tiền\s*thanh\s*toán|Total\s*payment|Tổng\s*tiền\s*thanh\s*toán|Tổng\s*thanh\s*toán|Tổng\s*cộng\s*thanh\s*toán)(?:\s*\([^)]*\))?\s*[:\s]*([0-9]{1,3}(?:[\.,][0-9]{3})+(?:[\.,][0-9]{2})?|[0-9]{4,})/gi,
+    /(?:Thành\s*tiền\s*sau\s*thuế|Tổng\s*cộng\s*tiền\s*thanh\s*toán|Total\s*payment|Tổng\s*tiền\s*thanh\s*toán|Tổng\s*thanh\s*toán|Tổng\s*cộng\s*thanh\s*toán|Số\s*tiền)(?:\s*\([^)]*\))?\s*[:\s]*([0-9]{1,3}(?:[\.,][0-9]{3})+(?:[\.,][0-9]{2})?|[0-9]{4,})/gi,
     /(?:Tổng\s*cộng|Total\s*amount)(?:\s*\([^)]*\))?\s*[:\s]*([0-9]{1,3}(?:[\.,][0-9]{3})+(?:[\.,][0-9]{2})?|[0-9]{4,})/gi
   ];
 
