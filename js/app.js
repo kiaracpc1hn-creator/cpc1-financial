@@ -2119,11 +2119,16 @@ function renderOverview() {
       <h1>📊 Tổng quan Quản lý Tài chính & Kho Hoá đơn</h1>
       <p>Theo dõi các khoản tạm ứng quá hạn, bảng tổng hợp hoá đơn theo số Invoice và danh sách hoá đơn chưa làm ĐNTT.</p>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;">
-      <label style="font-weight:600;font-size:13px;color:var(--ink);">Chọn tháng xem tổng hợp:</label>
-      <select id="overview-month-select" style="font-weight:700;padding:6px 12px;border-radius:6px;border:1.5px solid var(--teal);color:var(--teal);background:#F0FDFA;cursor:pointer;">
-        ${allMonths.map(m => `<option value="${m}" ${selectedMonth === m ? 'selected' : ''}>${monthLabel(m)}</option>`).join('')}
-      </select>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      <button type="button" id="btn-open-email-warning-modal" class="btn" style="background:linear-gradient(135deg, #0A2F52 0%, #0D9488 100%);color:#FFF;font-weight:700;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(13,148,136,0.3);" title="Mở trình gửi Email cảnh báo 30 ngày tạm ứng, hoá đơn chưa lập ĐNTT & phiếu chờ ký">
+        ✉️ Cảnh Báo Email Tự Động
+      </button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <label style="font-weight:600;font-size:13px;color:var(--ink);">Tháng:</label>
+        <select id="overview-month-select" style="font-weight:700;padding:6px 12px;border-radius:6px;border:1.5px solid var(--teal);color:var(--teal);background:#F0FDFA;cursor:pointer;">
+          ${allMonths.map(m => `<option value="${m}" ${selectedMonth === m ? 'selected' : ''}>${monthLabel(m)}</option>`).join('')}
+        </select>
+      </div>
     </div>
   </div>
 
@@ -4693,8 +4698,16 @@ function attachHandlers() {
     });
   });
 
+  const ewarnBtn = document.getElementById('btn-open-email-warning-modal');
+  if (ewarnBtn) ewarnBtn.addEventListener('click', () => {
+    if (window.triggerManualWarningEmailModal) window.triggerManualWarningEmailModal();
+  });
+
   const ovEmailBtn = document.getElementById('ov-send-email-btn');
-  if (ovEmailBtn) ovEmailBtn.addEventListener('click', () => sendOverdueAdvanceEmailNotification());
+  if (ovEmailBtn) ovEmailBtn.addEventListener('click', () => {
+    if (window.triggerManualWarningEmailModal) window.triggerManualWarningEmailModal();
+    else sendOverdueAdvanceEmailNotification();
+  });
 
   // Overview Quick Create Voucher from Unlinked Invoice
   document.querySelectorAll('[data-quickcreateinvoice]').forEach(el => {
