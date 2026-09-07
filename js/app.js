@@ -983,7 +983,7 @@ function renderDifferentBeneficiariesBannerHtml(doc) {
   if (rawItems.length < 2) return '';
 
   const matchedInvs = rawItems.map(it => {
-    return STATE.invoices.find(r => matchInvoiceRecordWithDocItem(r, it.invoiceNo));
+    return STATE.invoices.find(r => matchInvoiceRecordWithDocItem(r, it.invoiceNo, it.attachmentId));
   }).filter(Boolean);
 
   if (matchedInvs.length < 2) return '';
@@ -1489,30 +1489,63 @@ function invoiceCombinedNo(rec) {
   return rec.seriesNo ? `${rec.seriesNo}|${rec.invoiceNumber}` : rec.invoiceNumber;
 }
 
-function matchInvoiceRecordWithDocItem(rec, itemInvoiceNo) {
+function matchInvoiceRecordWithDocItem(rec, itemInvoiceNo, itemAttachmentId) {
+  if (itemAttachmentId && rec.attachmentId && itemAttachmentId === rec.attachmentId) {
+    return true;
+  }
   if (!itemInvoiceNo || !itemInvoiceNo.trim()) return false;
+
   const itemStr = itemInvoiceNo.trim().toLowerCase();
   const invNum = (rec.invoiceNumber || '').trim().toLowerCase();
   const sNo = (rec.seriesNo || '').trim().toLowerCase();
-  const combined = sNo ? `${sNo}|${invNum}` : invNum;
 
-  if (itemStr === combined) return true;
-  if (invNum && itemStr === invNum) return true;
-  if (invNum && (itemStr.endsWith(`|${invNum}`) || itemStr.endsWith(`/${invNum}`) || itemStr.endsWith(`-${invNum}`))) return true;
-  if (invNum && itemStr.includes(invNum)) return true;
+  if (!invNum && !sNo) return false;
+
+  // Normalize numbers by stripping leading zeros (e.g. 0000068 -> 68)
+  const normInvNum = invNum ? invNum.replace(/^0+/, '') : '';
+  const normItemStr = itemStr.replace(/(^|[^0-9])0+([1-9][0-9]*)/g, '$1$2');
+
+  // Exact combined series + invoice number matching (e.g. 1C26TYY|68, 1C26TYY-68, 1C26TYY/68)
+  if (sNo && invNum) {
+    const combined = `${sNo}|${invNum}`;
+    const combinedNorm = `${sNo}|${normInvNum}`;
+    if (itemStr === combined || normItemStr === combinedNorm) return true;
+    if (itemStr === `${sNo}-${invNum}` || normItemStr === `${sNo}-${normInvNum}`) return true;
+    if (itemStr === `${sNo}/${invNum}` || normItemStr === `${sNo}/${normInvNum}`) return true;
+  }
+
+  // Exact invoice number match
+  if (invNum) {
+    if (itemStr === invNum || normItemStr === normInvNum) return true;
+  }
+
+  // Boundary-delimited matching: prevents short numbers (e.g. "68") from matching "168" or "680"
+  if (normInvNum && normInvNum.length > 0) {
+    const escaped = normInvNum.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const boundaryRegex = new RegExp(`(?:^|[^0-9])${escaped}(?:$|[^0-9])`, 'i');
+
+    if (boundaryRegex.test(normItemStr)) {
+      // If item string contains a series delimiter '|' or '/', verify seriesNo if rec has one
+      if (sNo && itemStr.includes('|') && !itemStr.includes(sNo)) {
+        return false;
+      }
+      return true;
+    }
+  }
+
   return false;
 }
 
 function getInvoiceRecordStatus(rec) {
   const invNum = (rec.invoiceNumber || '').trim();
-  if (!invNum && !rec.seriesNo) {
+  if (!invNum && !rec.seriesNo && !rec.attachmentId) {
     return { key: 'not_submitted', label: 'Mới nhập', cls: 'b-changes', docId: null };
   }
 
   let matchingDoc = null;
   for (const d of STATE.documents) {
     const arr = [...(d.items || []), ...(d.spentItems || [])];
-    const match = arr.find(it => matchInvoiceRecordWithDocItem(rec, it.invoiceNo));
+    const match = arr.find(it => matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId));
     if (match) {
       matchingDoc = d;
       if (d.status === 'signed') break;
@@ -1616,7 +1649,7 @@ async function removeInvoiceFromDraftVouchers(rec) {
 
     if (d.items && d.items.length > 0) {
       const origLen = d.items.length;
-      d.items = d.items.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo) && it.attachmentId !== rec.attachmentId);
+      d.items = d.items.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId) && it.attachmentId !== rec.attachmentId);
       if (d.items.length !== origLen) {
         modified = true;
         d.items.forEach((it, idx) => { it.stt = idx + 1; });
@@ -1628,7 +1661,7 @@ async function removeInvoiceFromDraftVouchers(rec) {
 
     if (d.spentItems && d.spentItems.length > 0) {
       const origLen = d.spentItems.length;
-      d.spentItems = d.spentItems.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo) && it.attachmentId !== rec.attachmentId);
+      d.spentItems = d.spentItems.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId) && it.attachmentId !== rec.attachmentId);
       if (d.spentItems.length !== origLen) modified = true;
     }
 
@@ -4765,17 +4798,6 @@ function attachHandlers() {
       e.stopPropagation();
       sendOverdueAdvanceEmailNotification();
     });
-  });
-
-  const ewarnBtn = document.getElementById('btn-open-email-warning-modal');
-  if (ewarnBtn) ewarnBtn.addEventListener('click', () => {
-    if (window.triggerManualWarningEmailModal) window.triggerManualWarningEmailModal();
-  });
-
-  const ovEmailBtn = document.getElementById('ov-send-email-btn');
-  if (ovEmailBtn) ovEmailBtn.addEventListener('click', () => {
-    if (window.triggerManualWarningEmailModal) window.triggerManualWarningEmailModal();
-    else sendOverdueAdvanceEmailNotification();
   });
 
   // Overview Quick Create Voucher from Unlinked Invoice
