@@ -570,21 +570,21 @@ function extractStatementRefs(fullText) {
   const refs = new Set();
 
   const patterns = [
-    /(?:HĐ|Hóa đơn|Hoá đơn|Invoice|Inv|Ref|B\/L|BL|Tờ khai|Số|Bảng kê)\s*[:#\.-]?\s*([A-Z0-9\/_-]{4,20})/gi,
-    /\b(VIBR\d+|NTP\d+|SAFA[A-Z0-9_-]*|\d{7,8})\b/gi
+    /(?:HĐ|Hóa đơn|Hoá đơn|Invoice|Inv|Ref|B\/L|BL|Tờ khai|Số|Bảng kê|Waybill|Bill)\s*[:#\.-]?\s*([A-Z0-9\/_-]{4,25})/gi,
+    /\b(VIBR\d+|NTP\d+|SAFA[A-Z0-9_-]*|[A-Z]{2,5}\d{5,10}|\d{7,12})\b/gi
   ];
 
   patterns.forEach(regex => {
     let match;
     while ((match = regex.exec(fullText)) !== null) {
       const val = match[1] || match[0];
-      if (val && val.length >= 4 && !/^(công|tnhh|dịch|vụ|thương|mại|bảng|kê|chi|tiết|tổng|tiền)$/i.test(val)) {
+      if (val && val.length >= 4 && !/^(công|tnhh|dịch|vụ|thương|mại|bảng|kê|chi|tiết|tổng|tiền|phần|trang)$/i.test(val)) {
         refs.add(val.trim());
       }
     }
   });
 
-  return Array.from(refs).slice(0, 10).join(', ');
+  return Array.from(refs).slice(0, 15).join(', ');
 }
 
 async function callClaudeExtractInvoiceFull(base64Data, apiKey, mimeType = "application/pdf") {

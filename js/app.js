@@ -753,30 +753,200 @@ function cancelSignature(doc) {
   });
 }
 
-async function uploadSignedCopy(doc, file) {
-  if (!file) return;
-  const isValid = file.type === 'application/pdf' || file.type.startsWith('image/') || /\.(pdf|jpg|jpeg|png|webp|bmp)$/i.test(file.name);
-  if (!isValid) { showAlertModal('Sai định dạng', 'Vui lòng chọn file PDF hoặc Ảnh scan (.jpg, .png, .pdf).'); return; }
-  if (file.size > MAX_ATTACH_BYTES) { showAlertModal('File quá lớn', 'File vượt quá dung lượng cho phép (>3.5MB).'); return; }
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function openSignedUploadModal(doc) {
+  if (!doc) return;
+  const existing = document.getElementById('signed-upload-modal-overlay');
+  if (existing) existing.remove();
+
+  let selectedFiles = [];
+
+  const overlay = document.createElement('div');
+  overlay.id = 'signed-upload-modal-overlay';
+  overlay.className = 'modal-overlay active';
+  overlay.style.zIndex = '99999';
+  overlay.style.background = 'rgba(15, 23, 42, 0.65)';
+  overlay.style.backdropFilter = 'blur(4px)';
+
+  function renderModalInner() {
+    const totalSize = selectedFiles.reduce((sum, f) => sum + f.size, 0);
+    const sizeMb = (totalSize / (1024 * 1024)).toFixed(2);
+
+    overlay.innerHTML = `
+      <div class="modal-card" style="background:#FFFFFF !important;border-radius:18px;padding:24px 28px;max-width:580px;width:92%;box-shadow:0 25px 60px rgba(15,23,42,0.4);border:1px solid #CBD5E1;color:#0F172A;animation:modalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid #E2E8F0;padding-bottom:12px;">
+          <h3 style="margin:0;font-size:17px;font-weight:700;color:#0F172A;display:flex;align-items:center;gap:8px;">
+            <span>📤 Tải lên bản đã ký (PDF / Ảnh)</span>
+          </h3>
+          <button type="button" class="btn-signed-modal-close" style="background:none;border:none;font-size:20px;color:#64748B;cursor:pointer;line-height:1;">✕</button>
+        </div>
+
+        <p style="font-size:13px;color:#475569;margin:0 0 14px;line-height:1.5;">
+          Bạn có thể chọn <b>nhiều file cùng một lúc</b> (VD: scan từng trang ảnh hoặc nhiều file PDF bản ký). Kiểm tra danh sách bên dưới rồi ấn <b>Hoàn tất & Gửi tất cả</b>.
+        </p>
+
+        <!-- Drop area / Pick file -->
+        <div id="signed-drop-zone" style="border:2px dashed #0D9488;border-radius:12px;padding:20px;text-align:center;background:#F0FDFA;cursor:pointer;transition:all 0.2s ease;margin-bottom:16px;">
+          <input type="file" id="signed-modal-file-input" multiple accept=".pdf,image/*" style="display:none;">
+          <div style="font-size:28px;margin-bottom:6px;">📄📸</div>
+          <div style="font-size:13.5px;font-weight:700;color:#0F172A;">Bấm vào đây hoặc kéo thả file để chọn nhiều tệp cùng lúc</div>
+          <div style="font-size:12px;color:#64748B;margin-top:4px;">Chấp nhận file PDF hoặc Ảnh scan (.jpg, .png, .pdf) &le; 3.5MB/file</div>
+        </div>
+
+        <!-- Selected files list -->
+        <div style="max-height:220px;overflow-y:auto;margin-bottom:16px;border:1px solid #E2E8F0;border-radius:10px;padding:8px;background:#FAFAFA;">
+          ${selectedFiles.length === 0 ? `
+            <div style="text-align:center;padding:18px;color:#94A3B8;font-size:13px;font-style:italic;">Chưa có file nào được chọn</div>
+          ` : `
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              ${selectedFiles.map((f, idx) => {
+                const isPdf = f.type === 'application/pdf' || f.name.endsWith('.pdf');
+                const fileSizeFormatted = f.size > 1024 * 1024 ? (f.size / (1024 * 1024)).toFixed(2) + ' MB' : (f.size / 1024).toFixed(0) + ' KB';
+                return `
+                  <div style="display:flex;align-items:center;justify-content:space-between;background:#FFFFFF;padding:8px 12px;border-radius:8px;border:1px solid #E2E8F0;font-size:13px;">
+                    <div style="display:flex;align-items:center;gap:10px;overflow:hidden;margin-right:10px;">
+                      <span style="font-size:16px;">${isPdf ? '🔴' : '🖼️'}</span>
+                      <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                        <div style="font-weight:600;color:#1E293B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(f.name)}</div>
+                        <div style="font-size:11px;color:#64748B;">${fileSizeFormatted}</div>
+                      </div>
+                    </div>
+                    <button type="button" class="btn-signed-modal-remove" data-idx="${idx}" style="background:none;border:none;color:#EF4444;font-size:15px;cursor:pointer;padding:4px;" title="Xoá file này">🗑️</button>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `}
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:1px solid #E2E8F0;">
+          <div style="font-size:12.5px;color:#475569;">
+            ${selectedFiles.length > 0 ? `Tổng cộng: <b style="color:#0D9488;">${selectedFiles.length} file</b> (${sizeMb} MB)` : ''}
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button type="button" class="btn btn-ghost btn-signed-modal-close" style="padding:8px 16px;">Huỷ</button>
+            <button type="button" class="btn btn-stamp" id="btn-signed-modal-submit" ${selectedFiles.length === 0 ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>
+              ✓ Hoàn tất & Gửi tất cả ${selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Event listeners
+    overlay.querySelectorAll('.btn-signed-modal-close').forEach(b => b.addEventListener('click', () => overlay.remove()));
+
+    const dropZone = overlay.querySelector('#signed-drop-zone');
+    const fileInput = overlay.querySelector('#signed-modal-file-input');
+    if (dropZone && fileInput) {
+      dropZone.addEventListener('click', () => fileInput.click());
+      dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#0D9488'; dropZone.style.background = '#CCFBF1'; });
+      dropZone.addEventListener('dragleave', e => { e.preventDefault(); dropZone.style.borderColor = '#0D9488'; dropZone.style.background = '#F0FDFA'; });
+      dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.style.borderColor = '#0D9488';
+        dropZone.style.background = '#F0FDFA';
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          addFiles(Array.from(e.dataTransfer.files));
+        }
+      });
+      fileInput.addEventListener('change', e => {
+        if (e.target.files && e.target.files.length > 0) {
+          addFiles(Array.from(e.target.files));
+        }
+      });
+    }
+
+    overlay.querySelectorAll('.btn-signed-modal-remove').forEach(b => b.addEventListener('click', e => {
+      const idx = parseInt(e.currentTarget.dataset.idx, 10);
+      selectedFiles.splice(idx, 1);
+      renderModalInner();
+    }));
+
+    const submitBtn = overlay.querySelector('#btn-signed-modal-submit');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', async () => {
+        if (selectedFiles.length === 0) return;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '⏳ Đang tải lên...';
+        await uploadMultipleSignedCopies(doc, selectedFiles);
+        overlay.remove();
+      });
+    }
+  }
+
+  function addFiles(newFiles) {
+    for (const file of newFiles) {
+      const isValid = file.type === 'application/pdf' || file.type.startsWith('image/') || /\.(pdf|jpg|jpeg|png|webp|bmp)$/i.test(file.name);
+      if (!isValid) {
+        showAlertModal('Sai định dạng', `File "${file.name}" không hợp lệ. Vui lòng chọn PDF hoặc Ảnh scan.`);
+        continue;
+      }
+      if (file.size > MAX_ATTACH_BYTES) {
+        showAlertModal('File quá lớn', `File "${file.name}" vượt quá dung lượng cho phép (>3.5MB).`);
+        continue;
+      }
+      if (!selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
+        selectedFiles.push(file);
+      }
+    }
+    renderModalInner();
+  }
+
+  document.body.appendChild(overlay);
+  renderModalInner();
+}
+
+async function uploadMultipleSignedCopies(doc, files) {
+  if (!files || files.length === 0) return;
   try {
-    if (doc.signedAttachmentId) { await removeAttachmentSilent(doc, doc.signedAttachmentId); }
-    const dataUrl = await readFileAsDataURL(file);
-    const attId = uid('att');
-    await window.storage.set('attachment:' + attId, dataUrl, true);
-    doc.attachments.push({
-      id: attId,
-      fileName: file.name,
-      mimeType: file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
-      size: file.size,
-      uploadedAt: new Date().toISOString(),
-      uploadedBy: currentUser().name
-    });
-    doc.signedAttachmentId = attId;
+    doc.signedAttachmentIds = doc.signedAttachmentIds || [];
+    doc.attachments = doc.attachments || [];
+
+    const newSignedIds = [];
+    for (const file of files) {
+      const dataUrl = await readFileAsDataURL(file);
+      const attId = uid('att');
+      await window.storage.set('attachment:' + attId, dataUrl, true);
+      const attObj = {
+        id: attId,
+        fileName: file.name,
+        mimeType: file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: currentUser().name,
+        isSignedCopy: true
+      };
+      doc.attachments.push(attObj);
+      doc.signedAttachmentIds.push(attId);
+      newSignedIds.push(attId);
+    }
+
+    if (!doc.signedAttachmentId && doc.signedAttachmentIds.length > 0) {
+      doc.signedAttachmentId = doc.signedAttachmentIds[0];
+    }
+
     doc.status = 'signed';
-    doc.history.push({ at: new Date().toISOString(), action: 'Tải lên bản đã ký — Hoàn tất', by: currentUser().name });
+    doc.history.push({
+      at: new Date().toISOString(),
+      action: `Tải lên ${files.length} bản đã ký — Hoàn tất`,
+      by: currentUser().name
+    });
+
     await saveDocuments();
-    showToast('✓ Đã cập nhật bản ký — Phiếu hoàn tất');
-    STATE.previewAttachmentId = attId;
+    showToast(`✓ Đã cập nhật ${files.length} bản ký — Phiếu hoàn tất`);
+    if (newSignedIds.length > 0) {
+      STATE.previewAttachmentId = newSignedIds[0];
+    }
     render();
   } catch (e) {
     console.error(e);
@@ -784,10 +954,22 @@ async function uploadSignedCopy(doc, file) {
   }
 }
 
+async function uploadSignedCopy(doc, file) {
+  if (!file) return;
+  await uploadMultipleSignedCopies(doc, [file]);
+}
+
 function removeSignedCopy(doc) {
-  showConfirmModal('Gỡ bản đã ký?', 'Gỡ bản đã ký hiện tại? Phiếu sẽ quay về trạng thái Chờ ký.', async () => {
-    if (doc.signedAttachmentId) { await removeAttachmentSilent(doc, doc.signedAttachmentId); }
+  const signedIds = (doc.signedAttachmentIds && doc.signedAttachmentIds.length > 0)
+    ? [...doc.signedAttachmentIds]
+    : (doc.signedAttachmentId ? [doc.signedAttachmentId] : []);
+
+  showConfirmModal('Gỡ bản đã ký?', `Bạn có chắc muốn gỡ toàn bộ ${signedIds.length || 1} bản đã ký? Phiếu sẽ quay về trạng thái Chờ ký.`, async () => {
+    for (const attId of signedIds) {
+      await removeAttachmentSilent(doc, attId);
+    }
     doc.signedAttachmentId = null;
+    doc.signedAttachmentIds = [];
     doc.status = 'pending_signature';
     doc.history.push({ at: new Date().toISOString(), action: 'Gỡ bản đã ký, chờ tải lại', by: currentUser().name });
     await saveDocuments();
@@ -3496,6 +3678,8 @@ function renderList() {
       const summary = docSummaryText(d);
       const ben = getBeneficiaryName(d);
       const total = computeTotal(d);
+      const attText = (d.attachments || []).map(a => (a.fileName || '') + ' ' + (a.rawText || '') + ' ' + (a.statementRefs || '')).join(' ');
+      const itemInvText = (d.items || []).concat(d.spentItems || []).map(i => (i.invoiceNo || '') + ' ' + (i.description || '')).join(' ');
       const haystack = [
         d.docNo || '',
         d.requesterName,
@@ -3507,7 +3691,9 @@ function renderList() {
         String(total),
         fmtMoney(total, d.currency),
         DOC_TYPES[d.type].label,
-        DOC_TYPES[d.type].formCode
+        DOC_TYPES[d.type].formCode,
+        attText,
+        itemInvText
       ].join(' ').toLowerCase();
       return haystack.includes(listSearch);
     });
@@ -3972,7 +4158,6 @@ function renderDetail() {
     <div class="action-bar">
       <p style="margin:0 0 8px;font-weight:700;color:var(--amber);">⏳ Đang chờ ký duyệt</p>
       <p style="margin:0 0 14px;color:var(--ink-soft);font-size:13px;">In phiếu này ra, xin đầy đủ chữ ký trên bản giấy, sau đó scan hoặc chụp ảnh / file PDF bản đã ký và tải lên đây để hoàn tất hồ sơ.</p>
-      <input type="file" id="signed-upload-input" style="display:none;">
       <button class="btn btn-stamp" id="signed-upload-btn">📤 Tải lên bản đã ký (PDF / Ảnh)</button>
       ${isOwner ? `<button class="btn btn-ghost btn-sm" data-cancelsign="${doc.id}" style="margin-left:8px;">Huỷ trình ký, quay về nháp</button>` : ''}
     </div>` : ''}
@@ -3980,8 +4165,24 @@ function renderDetail() {
     ${doc.status === 'signed' ? `
     <div class="action-bar">
       <p style="margin:0 0 10px;font-weight:700;color:var(--green);">✓ Đã ký duyệt — Hồ sơ hoàn tất</p>
-      ${doc.signedAttachmentId ? `<button class="btn btn-outline btn-sm" data-viewsigned="${doc.signedAttachmentId}">👁 Xem bản đã ký</button>` : ''}
-      <button class="btn btn-ghost btn-sm" data-removesigned="${doc.id}" style="margin-left:8px;color:var(--stamp);">Gỡ bản đã ký để tải lại</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        ${(() => {
+          const signedIds = (doc.signedAttachmentIds && doc.signedAttachmentIds.length > 0)
+            ? doc.signedAttachmentIds
+            : (doc.signedAttachmentId ? [doc.signedAttachmentId] : []);
+          const signedAtts = (doc.attachments || []).filter(a => signedIds.includes(a.id));
+          if (signedAtts.length === 0 && signedIds.length > 0) {
+            return `<button class="btn btn-outline btn-sm" data-viewmodal="${signedIds[0]}" data-attname="Bản đã ký">👁 Xem bản đã ký</button>`;
+          }
+          return signedAtts.map((att, idx) => `
+            <button class="btn btn-outline btn-sm" data-viewmodal="${att.id}" data-attname="${escapeHtml(att.fileName || `Bản ký #${idx+1}`)}" title="${escapeHtml(att.fileName || '')}">
+              👁 Bản ký #${idx + 1} (${escapeHtml(att.fileName || 'PDF/Ảnh')})
+            </button>
+          `).join('');
+        })()}
+        <button class="btn btn-teal btn-sm" id="btn-add-more-signed" style="background:var(--teal);color:#fff;">➕ Tải thêm bản ký</button>
+        <button class="btn btn-ghost btn-sm" data-removesigned="${doc.id}" style="margin-left:4px;color:var(--stamp);">Gỡ bản đã ký</button>
+      </div>
     </div>` : ''}
 
     <div class="detail-attach-section">
@@ -5144,13 +5345,18 @@ function attachHandlers() {
   }));
 
   // Signed PDF Upload
-  const signedInput = document.getElementById('signed-upload-input');
   const signedBtn = document.getElementById('signed-upload-btn');
-  if (signedBtn && signedInput) {
-    signedBtn.addEventListener('click', () => signedInput.click());
-    signedInput.addEventListener('change', e => {
+  if (signedBtn) {
+    signedBtn.addEventListener('click', () => {
       const doc = STATE.documents.find(d => d.id === STATE.selectedId);
-      uploadSignedCopy(doc, e.target.files[0]);
+      if (doc) openSignedUploadModal(doc);
+    });
+  }
+  const addMoreSignedBtn = document.getElementById('btn-add-more-signed');
+  if (addMoreSignedBtn) {
+    addMoreSignedBtn.addEventListener('click', () => {
+      const doc = STATE.documents.find(d => d.id === STATE.selectedId);
+      if (doc) openSignedUploadModal(doc);
     });
   }
   document.querySelectorAll('[data-viewsigned]').forEach(el => el.addEventListener('click', () => {
