@@ -556,7 +556,35 @@ async function extractInvoiceDataFromPdfFile(file, dataUrl = null) {
     }
   }
 
+  parsed.rawText = fullText || '';
+  parsed.statementRefs = extractStatementRefs(fullText);
+  if (!parsed.invoiceRef && parsed.statementRefs) {
+    parsed.invoiceRef = parsed.statementRefs;
+  }
+
   return parsed;
+}
+
+function extractStatementRefs(fullText) {
+  if (!fullText) return '';
+  const refs = new Set();
+
+  const patterns = [
+    /(?:HĐ|Hóa đơn|Hoá đơn|Invoice|Inv|Ref|B\/L|BL|Tờ khai|Số|Bảng kê)\s*[:#\.-]?\s*([A-Z0-9\/_-]{4,20})/gi,
+    /\b(VIBR\d+|NTP\d+|SAFA[A-Z0-9_-]*|\d{7,8})\b/gi
+  ];
+
+  patterns.forEach(regex => {
+    let match;
+    while ((match = regex.exec(fullText)) !== null) {
+      const val = match[1] || match[0];
+      if (val && val.length >= 4 && !/^(công|tnhh|dịch|vụ|thương|mại|bảng|kê|chi|tiết|tổng|tiền)$/i.test(val)) {
+        refs.add(val.trim());
+      }
+    }
+  });
+
+  return Array.from(refs).slice(0, 10).join(', ');
 }
 
 async function callClaudeExtractInvoiceFull(base64Data, apiKey, mimeType = "application/pdf") {
