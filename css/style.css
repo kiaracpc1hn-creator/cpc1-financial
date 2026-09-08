@@ -1281,6 +1281,31 @@ table {
   box-shadow: 0 0 0 2px var(--teal-soft);
 }
 
+.inv-beneficiary-area {
+  width: 100%;
+  min-width: 170px;
+  max-width: 270px;
+  min-height: 46px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+  line-height: 1.45;
+  box-sizing: border-box;
+  display: block;
+  background: #FFFFFF;
+  color: var(--ink);
+  transition: border-color .2s, box-shadow .2s;
+}
+
+.inv-beneficiary-area:focus {
+  border-color: var(--teal);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--teal-soft);
+}
+
 /* Sticky top horizontal scrollbar */
 .top-scrollbar {
   overflow-x: auto;
