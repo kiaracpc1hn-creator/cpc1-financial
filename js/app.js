@@ -172,20 +172,93 @@ async function loadAll() {
     STATE.currentUserId = null;
   }
 
-  // Khởi chạy đồng bộ thời gian thực đa người dùng qua Firebase Firestore
+  // Khởi chạy đồng bộ thời gian thực đa người dùng qua Firebase Firestore Collection (100% Dứt điểm)
+  if (window.storage && window.storage.listenVouchersRealtime && !STATE._vouchersRealtimeBound) {
+    STATE._vouchersRealtimeBound = true;
+    window.storage.listenVouchersRealtime((cloudVouchers) => {
+      try {
+        if (!cloudVouchers) return;
+        let changed = false;
+
+        if (cloudVouchers.length === 0 && STATE.documents && STATE.documents.length > 0) {
+          // Tự động Migrate toàn bộ phiếu từ local lên Firestore collection doc-by-doc khi khởi chạy lần đầu
+          STATE.documents.forEach(d => window.storage.saveVoucherCloud(d));
+          return;
+        }
+
+        if (cloudVouchers.length > 0) {
+          const cloudMap = new Map(cloudVouchers.map(d => [d.id, d]));
+          const newDocList = [];
+
+          // Danh sách ID phiếu đã nằm trong Thùng rác
+          const trashIds = new Set((STATE.trash || []).map(t => t.id));
+
+          // 1. Duyệt phiếu từ Cloud & Bảo vệ trạng thái đã ký
+          const localMap = new Map((STATE.documents || []).map(d => [d.id, d]));
+
+          cloudVouchers.forEach(incDoc => {
+            // Nếu phiếu nằm trong thùng rác -> Bỏ qua không đưa vào danh sách phiếu active và xóa sạch trên Cloud
+            if (trashIds.has(incDoc.id)) {
+              window.storage.deleteVoucherCloud(incDoc.id);
+              return;
+            }
+
+            const localDoc = localMap.get(incDoc.id);
+            if (localDoc) {
+              if (localDoc.status === 'signed' && incDoc.status !== 'signed' && localDoc.signedAttachmentId) {
+                incDoc.status = 'signed';
+                incDoc.signedAttachmentId = localDoc.signedAttachmentId;
+                window.storage.saveVoucherCloud(incDoc); // Tự động chữa lành Cloud
+              }
+            }
+            newDocList.push(incDoc);
+          });
+
+          // 2. Giữ lại các phiếu mới tạo ở máy local (< 2 phút) chưa kịp sync lên snapshot
+          localMap.forEach((localDoc, id) => {
+            if (!cloudMap.has(id) && localDoc.createdAt) {
+              const ageMs = Date.now() - new Date(localDoc.createdAt).getTime();
+              if (ageMs < 120000) {
+                newDocList.unshift(localDoc);
+                window.storage.saveVoucherCloud(localDoc);
+              }
+            }
+          });
+
+          // Sắp xếp danh sách phiếu theo thời gian tạo mới nhất lên trên
+          newDocList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+          const newStr = JSON.stringify(newDocList);
+          if (STATE._rawStrDocuments !== newStr) {
+            STATE._rawStrDocuments = newStr;
+            STATE.documents = newDocList;
+            STATE._previousDocIds = new Set(newDocList.map(d => d.id));
+            window.storage._setLocal('documents', newStr).catch(() => {});
+            changed = true;
+          }
+        }
+
+        const activeTag = document.activeElement ? document.activeElement.tagName : '';
+        const isEditing = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT';
+
+        if (changed && !isEditing) {
+          render();
+        }
+      } catch (err) {
+        console.warn('Vouchers realtime parse err:', err);
+      }
+    });
+  }
+
+  // Khởi chạy đồng bộ các bảng khác (invoices, payees, trash) qua listenRealtime
   if (window.storage && window.storage.listenRealtime && !STATE._realtimeBound) {
     STATE._realtimeBound = true;
-    window.storage.listenRealtime(['documents', 'invoices', 'payees', 'trash'], (key, val) => {
+    window.storage.listenRealtime(['invoices', 'payees', 'trash'], (key, val) => {
       try {
         if (!val) return;
         let changed = false;
 
-        if (key === 'documents') {
-          if (STATE._rawStrDocuments === val) return;
-          STATE._rawStrDocuments = val;
-          STATE.documents = JSON.parse(val) || [];
-          changed = true;
-        } else if (key === 'invoices') {
+        if (key === 'invoices') {
           if (STATE._rawStrInvoices === val) return;
           STATE._rawStrInvoices = val;
           STATE.invoices = JSON.parse(val) || [];
@@ -202,7 +275,6 @@ async function loadAll() {
           changed = true;
         }
 
-        // Không re-render lại DOM khi người dùng đang active gõ chữ trong các ô input/textarea/select để tránh giật lag, nháy màn hình và mất con trỏ
         const activeTag = document.activeElement ? document.activeElement.tagName : '';
         const isEditing = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT';
 
@@ -236,7 +308,16 @@ async function isFreshInstall() {
 
 async function saveDocuments() {
   try {
-    // Sanitize documents to remove any accidental inline Base64 dataUrls, ensuring lightweight <100KB JSON payload
+    const currentDocIds = new Set((STATE.documents || []).map(d => d.id));
+    if (STATE._previousDocIds) {
+      STATE._previousDocIds.forEach(oldId => {
+        if (!currentDocIds.has(oldId)) {
+          window.storage.deleteVoucherCloud(oldId);
+        }
+      });
+    }
+    STATE._previousDocIds = currentDocIds;
+
     const sanitizedDocs = (STATE.documents || []).map(d => {
       const copy = Object.assign({}, d);
       if (Array.isArray(copy.attachments)) {
@@ -246,11 +327,14 @@ async function saveDocuments() {
           return rest;
         });
       }
+      // Lưu từng phiếu đơn lẻ lên Cloud Firestore collection để đảm bảo tuyệt đối không bị ghi đè chéo giữa các tài khoản
+      window.storage.saveVoucherCloud(copy);
       return copy;
     });
+
     const str = JSON.stringify(sanitizedDocs);
     STATE._rawStrDocuments = str;
-    await window.storage.set('documents', str);
+    await window.storage._setLocal('documents', str);
   } catch (e) { showToast('Lỗi lưu danh sách phiếu'); }
 }
 async function savePayees() {
@@ -259,6 +343,59 @@ async function savePayees() {
     STATE._rawStrPayees = str;
     await window.storage.set('payees', str);
   } catch (e) { showToast('Lỗi lưu danh bạ'); }
+}
+
+function normalizePayeeNameForMatch(str) {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\b(công ty|cty|tnhh|cp|cổ phần|co phan|tmdv|tm dv|xnk|dịch vụ|dich vu|thuong mai|thương mại|doanh nghiệp|dn|chi nhánh|cn|một thành viên|1tv|1 thành viên)\b/gi, '')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findBestPayeeMatch(rawName) {
+  if (!rawName || !rawName.trim()) return rawName;
+  const trimmed = rawName.trim();
+  if (!STATE.payees || STATE.payees.length === 0) return trimmed;
+
+  // 1. Khớp chính xác (không phân biệt hoa thường)
+  const exact = STATE.payees.find(p => p.name && p.name.trim().toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact.name;
+
+  // 2. Khớp thông minh tên cốt lõi doanh nghiệp theo danh bạ
+  const normRaw = normalizePayeeNameForMatch(trimmed);
+  if (!normRaw || normRaw.length < 2) return trimmed;
+
+  for (const p of STATE.payees) {
+    if (!p.name) continue;
+    const normP = normalizePayeeNameForMatch(p.name);
+    if (normP && (normP === normRaw || (normP.length >= 3 && normRaw.length >= 3 && (normP.includes(normRaw) || normRaw.includes(normP))))) {
+      return p.name; // Chuẩn hoá theo tên người nhận trong Danh Bạ!
+    }
+  }
+
+  return trimmed;
+}
+
+function autoSyncPayeeToDirectory(name) {
+  if (!name || !name.trim()) return;
+  const trimmed = name.trim();
+  if (!STATE.payees) STATE.payees = [];
+  const exists = STATE.payees.some(p => p.name && p.name.trim().toLowerCase() === trimmed.toLowerCase());
+  if (!exists) {
+    STATE.payees.push({
+      id: uid('p'),
+      name: trimmed,
+      accountNumber: '',
+      bankName: '',
+      isInternal: false
+    });
+    savePayees();
+  }
 }
 async function saveInvoices() {
   try {
@@ -1647,12 +1784,16 @@ async function uploadInvoiceFiles(fileList) {
         }
       }
 
+      const rawSeller = extracted.sellerName || '';
+      const stdSeller = findBestPayeeMatch(rawSeller);
+      if (stdSeller) autoSyncPayeeToDirectory(stdSeller);
+
       const record = mkInvoiceRecord({
         date: extracted.date || '',
         seriesNo: extracted.seriesNo || '',
         invoiceNumber: extracted.invoiceNumber || '',
         note: extracted.description || '',
-        beneficiaryName: extracted.sellerName || '',
+        beneficiaryName: stdSeller || rawSeller,
         amount: Number(extracted.amount) || 0,
         currency: extracted.currency === 'USD' ? 'USD' : 'VND',
         attachmentId: attId,
@@ -1849,7 +1990,7 @@ function openManualInvoiceModal(initialData = {}) {
 
         <div class="field" style="margin-bottom:14px;">
           <label style="font-weight:600;font-size:12px;color:var(--ink);margin-bottom:5px;display:block;">🏢 Người / Đơn vị thụ hưởng (Người bán / Cơ quan thu)</label>
-          <input type="text" id="mim-beneficiary" value="${(initialData.beneficiaryName || '').replace(/"/g, '&quot;')}" placeholder="VD: CỤC XUẤT NHẬP KHẨU, CÔNG TY TNHH..." style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;box-sizing:border-box;">
+          <textarea id="mim-beneficiary" rows="2" placeholder="VD: CỤC XUẤT NHẬP KHẨU, CÔNG TY TNHH..." style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;line-height:1.45;font-family:inherit;resize:vertical;box-sizing:border-box;">${initialData.beneficiaryName || ''}</textarea>
         </div>
 
         <div class="field" style="margin-bottom:14px;">
@@ -1949,7 +2090,9 @@ function openManualInvoiceModal(initialData = {}) {
     const currency = document.getElementById('mim-currency').value;
     const note = document.getElementById('mim-note').value.trim();
     const invoiceRef = document.getElementById('mim-ref').value.trim();
-    const beneficiaryName = document.getElementById('mim-beneficiary').value.trim();
+    const rawBen = document.getElementById('mim-beneficiary').value.trim();
+    const beneficiaryName = findBestPayeeMatch(rawBen);
+    if (beneficiaryName) autoSyncPayeeToDirectory(beneficiaryName);
 
     if (!invoiceNumber) {
       showAlertModal('Thiếu thông tin', 'Vui lòng nhập Số hoá đơn / Số biên lai.');
@@ -2658,6 +2801,9 @@ async function purgeTrashItem(id) {
       }
     }
 
+    if (item.itemType === 'document' || !item.itemType) {
+      await window.storage.deleteVoucherCloud(id);
+    }
     STATE.trash = STATE.trash.filter(i => i.id !== id);
     await saveTrash();
     render();
@@ -2674,6 +2820,9 @@ async function emptyAllTrash() {
   if (!STATE.trash || STATE.trash.length === 0) return;
   showConfirmModal('❌ Xoá sạch Thùng rác?', `Bạn có chắc chắn muốn xoá vĩnh viễn toàn bộ ${STATE.trash.length} mục trong Thùng rác? Hành động này không thể hoàn tác.`, async () => {
     for (const item of STATE.trash) {
+      if (item.itemType === 'document' || !item.itemType) {
+        await window.storage.deleteVoucherCloud(item.id);
+      }
       if (item.attachmentId) {
         try { await window.storage.delete('attachment:' + item.attachmentId, true); } catch (e) {}
       }
@@ -2765,14 +2914,17 @@ function getFilteredInvoices() {
 
 function renderInvoiceTableHtml(records, selected) {
   const allSelectedOnPage = records.length > 0 && records.every(r => selected.includes(r.id));
+  const payeeOptionsHtml = (STATE.payees || []).map(p => `<option value="${(p.name || '').replace(/"/g, '&quot;')}">`).join('');
   if (records.length === 0) {
     return `
+      <datalist id="payee-autocomplete-list">${payeeOptionsHtml}</datalist>
       <div class="empty-state" style="padding:32px 16px;">
         <div class="big">🧾</div>
         <p style="font-size:14px;color:var(--ink-soft);margin-top:6px;">Không tìm thấy hoá đơn nào phù hợp với bộ lọc hoặc từ khoá tìm kiếm.</p>
       </div>`;
   }
   return `
+    <datalist id="payee-autocomplete-list">${payeeOptionsHtml}</datalist>
     <table class="invoice-table" style="min-width:1260px;">
       <thead>
         <tr>
@@ -2792,33 +2944,44 @@ function renderInvoiceTableHtml(records, selected) {
       <tbody>
         ${records.map(r => {
           const st = getInvoiceRecordStatus(r);
+          const isLocked = r.isLocked !== false;
+          const lockAttr = isLocked ? 'readonly tabindex="-1"' : '';
+          const lockInputStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:600;' : '';
+          const lockTextareaStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;line-height:1.45;' : '';
+          const lockTitle = isLocked ? 'title="🔒 Hoá đơn đang được khoá để tránh chỉnh sửa nhầm. Bấm 🔓 Mở khoá ở cột Thao tác nếu cần chỉnh sửa."' : '';
+
           return `
           <tr>
             <td><input type="checkbox" class="inv-select" data-invsel="${r.id}" ${selected.includes(r.id) ? 'checked' : ''}></td>
             <td>
-              <input type="date" data-invdate="${r.id}" value="${r.date || ''}" style="width:115px;padding:5px 4px;border:1px solid var(--line);border-radius:4px;font-size:12px;font-family:inherit;">
+              <input type="date" data-invdate="${r.id}" value="${r.date || ''}" ${lockAttr} style="width:115px;padding:5px 4px;border:1px solid var(--line);border-radius:4px;font-size:12px;font-family:inherit;${isLocked ? lockInputStyle : ''}" ${lockTitle}>
             </td>
             <td>
-              <input type="text" data-invseries="${r.id}" value="${r.seriesNo || ''}" placeholder="Ký hiệu" style="width:85px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;font-weight:700;text-transform:uppercase;">
+              <input type="text" data-invseries="${r.id}" value="${r.seriesNo || ''}" placeholder="Ký hiệu" ${lockAttr} style="width:85px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;font-weight:700;text-transform:uppercase;${isLocked ? lockInputStyle : ''}" ${lockTitle}>
             </td>
             <td>
-              <input type="text" data-invnum="${r.id}" value="${r.invoiceNumber || ''}" placeholder="Số HĐ" style="width:95px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;font-weight:700;">
+              <input type="text" data-invnum="${r.id}" value="${r.invoiceNumber || ''}" placeholder="Số HĐ" ${lockAttr} style="width:95px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;font-weight:700;${isLocked ? lockInputStyle : ''}" ${lockTitle}>
             </td>
             <td>
-              <input type="text" inputmode="numeric" data-invamount="${r.id}" value="${r.amount ? Number(r.amount).toLocaleString('vi-VN') : ''}" placeholder="Số tiền" style="width:105px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;font-family:var(--font-mono);text-align:right;font-weight:600;">
+              <input type="text" inputmode="numeric" data-invamount="${r.id}" value="${r.amount ? Number(r.amount).toLocaleString('vi-VN') : ''}" placeholder="Số tiền" ${lockAttr} style="width:105px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;font-family:var(--font-mono);text-align:right;font-weight:600;${isLocked ? lockInputStyle : ''}" ${lockTitle}>
               <span style="font-size:11px;color:var(--ink-soft);margin-left:2px;">${r.currency === 'USD' ? 'USD' : 'VNĐ'}</span>
             </td>
-            <td style="min-width:230px;max-width:360px;">
-              <textarea class="inv-note-area" data-invnote="${r.id}" rows="2" placeholder="Nội dung hàng hoá/dịch vụ" title="${(r.note || '').replace(/"/g, '&quot;')}">${r.note || ''}</textarea>
+            <td style="min-width:250px;max-width:380px;">
+              <textarea class="inv-note-area" data-invnote="${r.id}" rows="3" placeholder="Nội dung hàng hoá/dịch vụ" ${lockAttr} style="${isLocked ? lockTextareaStyle : ''}" ${lockTitle}>${r.note || ''}</textarea>
             </td>
-            <td><input data-invref="${r.id}" value="${r.invoiceRef || ''}" placeholder="Số Invoice" style="width:95px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;"></td>
+            <td><input data-invref="${r.id}" value="${r.invoiceRef || ''}" placeholder="Số Invoice" ${lockAttr} style="width:95px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;${isLocked ? lockInputStyle : ''}" ${lockTitle}></td>
             <td>${r.requesterName}</td>
-            <td>
-              <input type="text" data-invbeneficiary="${r.id}" value="${(r.beneficiaryName || '').replace(/"/g, '&quot;')}" placeholder="Người thụ hưởng / Đơn vị bán" style="width:100%;min-width:140px;max-width:210px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;" title="${(r.beneficiaryName || '').replace(/"/g, '&quot;')}">
+            <td style="min-width:220px;max-width:320px;">
+              <textarea class="inv-beneficiary-area" list="payee-autocomplete-list" data-invbeneficiary="${r.id}" rows="3" placeholder="Người thụ hưởng / Đơn vị bán" ${lockAttr} style="${isLocked ? lockTextareaStyle : ''}" ${lockTitle}>${r.beneficiaryName || ''}</textarea>
             </td>
             <td><span class="badge ${st.cls} badge-pill" title="${st.label}">${st.label}</span></td>
             <td style="white-space:nowrap;">
-              <div class="icon-actions">
+              <div class="icon-actions" style="display:flex;gap:4px;align-items:center;">
+                ${isLocked ? `
+                  <button class="btn btn-outline btn-sm" data-lockinv="${r.id}" style="padding:2px 7px;font-size:11.5px;color:#0D9488;border-color:#99F6E4;background:#F0FDFA;font-weight:600;" title="Bấm để mở khoá và cho phép chỉnh sửa dòng hoá đơn này">🔓 Mở khoá</button>
+                ` : `
+                  <button class="btn btn-sm" data-lockinv="${r.id}" style="padding:2px 7px;font-size:11.5px;color:#FFFFFF;background:#059669;border:none;font-weight:700;" title="Bấm để hoàn tất chỉnh sửa, lưu và khoá hoá đơn này lại">🔒 Lưu & Khoá</button>
+                `}
                 ${r.attachmentId ? `
                   <button class="icon-btn" data-viewinvoice="${r.attachmentId}" data-invoicename="${(r.fileName || '').replace(/"/g, '&quot;')}" title="Xem PDF/Ảnh">👁</button>
                 ` : `
@@ -3220,7 +3383,16 @@ function getBeneficiaryName(doc) {
     const p = STATE.payees.find(pp => pp.id === doc.payeeId);
     if (p) return p.name;
   }
-  return doc.requesterName;
+  if (doc.type === 'payment' || doc.type === 'reimbursement') {
+    const items = doc.type === 'reimbursement' ? (doc.spentItems || []) : (doc.items || []);
+    for (const it of items) {
+      if (it.invoiceNo) {
+        const inv = STATE.invoices.find(r => matchInvoiceRecordWithDocItem(r, it.invoiceNo, it.attachmentId));
+        if (inv && inv.beneficiaryName) return inv.beneficiaryName;
+      }
+    }
+  }
+  return doc.requesterName || '—';
 }
 
 function docSummaryText(d) {
@@ -5472,6 +5644,20 @@ function formatVoucherItemNote(note, invoiceRef) {
 }
 
 function attachInvoiceTableHandlers() {
+  document.querySelectorAll('[data-lockinv]').forEach(el => el.addEventListener('click', async () => {
+    const rec = STATE.invoices.find(r => r.id === el.dataset.lockinv);
+    if (!rec) return;
+    const currentlyLocked = rec.isLocked !== false;
+    rec.isLocked = !currentlyLocked;
+    await saveInvoices();
+    if (rec.isLocked) {
+      showToast(`🔒 Đã lưu & khoá chứng từ ${rec.invoiceNumber ? 'số ' + rec.invoiceNumber : ''}`);
+    } else {
+      showToast(`🔓 Đã mở khoá chứng từ ${rec.invoiceNumber ? 'số ' + rec.invoiceNumber : ''} — Anh/chị có thể chỉnh sửa`);
+    }
+    updateInvoiceTableView();
+  }));
+
   document.querySelectorAll('[data-invdate]').forEach(el => el.addEventListener('change', async () => {
     const rec = STATE.invoices.find(r => r.id === el.dataset.invdate);
     if (rec) { rec.date = el.value; await saveInvoices(); showToast('Đã lưu ngày lập'); }
@@ -5512,7 +5698,15 @@ function attachInvoiceTableHandlers() {
 
   document.querySelectorAll('[data-invbeneficiary]').forEach(el => el.addEventListener('change', async () => {
     const rec = STATE.invoices.find(r => r.id === el.dataset.invbeneficiary);
-    if (rec) { rec.beneficiaryName = el.value.trim(); await saveInvoices(); showToast('Đã lưu người thụ hưởng'); }
+    if (rec) {
+      const typed = el.value.trim();
+      const stdName = findBestPayeeMatch(typed);
+      rec.beneficiaryName = stdName;
+      el.value = stdName;
+      if (stdName) autoSyncPayeeToDirectory(stdName);
+      await saveInvoices();
+      showToast('Đã lưu & chuẩn hoá người thụ hưởng theo Danh bạ');
+    }
   }));
 
   document.querySelectorAll('[data-invnote]').forEach(el => el.addEventListener('change', async () => {
@@ -5828,7 +6022,11 @@ async function reparseAllExistingInvoices() {
             if (extracted.amount) r.amount = Number(extracted.amount) || r.amount;
             if (extracted.currency) r.currency = extracted.currency;
             if (extracted.description) r.note = extracted.description;
-            if (extracted.sellerName) r.beneficiaryName = extracted.sellerName;
+            if (extracted.sellerName) {
+              const stdSeller = findBestPayeeMatch(extracted.sellerName);
+              r.beneficiaryName = stdSeller;
+              if (stdSeller) autoSyncPayeeToDirectory(stdSeller);
+            }
           }
         } catch (err) {
           console.warn('Lỗi reparse invoice:', r.fileName, err);
