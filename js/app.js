@@ -519,36 +519,43 @@ async function printDoc(doc) {
   const A5W = 148 * MM_PX, A5H = 210 * MM_PX;
   const A4W = 210 * MM_PX, A4H = 297 * MM_PX;
 
+  // Auto-select paper size: A5 for <=3 items (few invoices), A4 for >3 items (many invoices)
+  const itemCount = (doc.items || doc.spentItems || []).length;
+  let pageFormat = itemCount > 3 ? 'a4' : 'a5';
+  let pageWpx = pageFormat === 'a4' ? A4W : A5W;
+  let pageHpx = pageFormat === 'a4' ? A4H : A5H;
+  let pageWmm = pageFormat === 'a4' ? 210 : 148;
+  let pageHmm = pageFormat === 'a4' ? 297 : 210;
+
   const printCSS = `
     .pdf-render-root{background:#fff;font-family:'Source Serif 4', Georgia, serif;}
     .pdf-render-root .doc-preview{padding:16px 20px;max-width:100%;border:none;box-shadow:none;}
-    .pdf-render-root .doc-title-red{font-size:16px;margin:4px 0 10px;}
-    .pdf-render-root .doc-subject{font-size:11px;margin-bottom:12px;}
-    .pdf-render-root .doc-meta-line{font-size:11px;margin-bottom:4px;}
-    .pdf-render-root .doc-meta-indent{font-size:11px;padding-left:18px;margin-bottom:2px;}
+    .pdf-render-root .doc-title-red{font-size:${pageFormat === 'a4' ? '18px' : '16px'};margin:4px 0 10px;}
+    .pdf-render-root .doc-subject{font-size:${pageFormat === 'a4' ? '12px' : '11px'};margin-bottom:12px;}
+    .pdf-render-root .doc-meta-line{font-size:${pageFormat === 'a4' ? '12px' : '11px'};margin-bottom:4px;}
+    .pdf-render-root .doc-meta-indent{font-size:${pageFormat === 'a4' ? '12px' : '11px'};padding-left:18px;margin-bottom:2px;}
     .pdf-render-root .items-table{margin:10px 0;}
-    .pdf-render-root .items-table td, .pdf-render-root .items-table th{font-size:10px;padding:5px 6px;}
-    .pdf-render-root .doc-date-line{font-size:10.5px;margin:12px 0 4px;}
-    .pdf-render-root .letterhead-code{font-size:9px;}
-    .pdf-render-root .logo-img{height:36px;}
-    .pdf-render-root .sign-grid{margin-top:14px;display:flex;border:none;}
-    .pdf-render-root .sign-box{flex:1;font-size:9px;padding:6px 4px 10px;border:none;}
-    .pdf-render-root .sign-box .role{font-size:9px;margin-bottom:6px;}
-    .pdf-render-root .sign-box .name{font-size:9px;}
-    .pdf-render-root .sign-space{height:60px;}
-    .pdf-render-root .stamp-mark{width:36px;height:36px;font-size:7px;border-width:2px;margin:0 auto;}
-    .pdf-render-root .diff-box{font-size:10px;padding:8px 10px;}
+    .pdf-render-root .items-table td, .pdf-render-root .items-table th{font-size:${pageFormat === 'a4' ? '11px' : '10px'};padding:${pageFormat === 'a4' ? '6px 8px' : '5px 6px'};}
+    .pdf-render-root .doc-date-line{font-size:${pageFormat === 'a4' ? '11px' : '10.5px'};margin:12px 0 4px;}
+    .pdf-render-root .letterhead-code{font-size:${pageFormat === 'a4' ? '10px' : '9px'};}
+    .pdf-render-root .logo-img{height:${pageFormat === 'a4' ? '42px' : '36px'};}
+    .pdf-render-root .sign-grid{margin-top:${pageFormat === 'a4' ? '20px' : '14px'};display:flex;border:none;}
+    .pdf-render-root .sign-box{flex:1;font-size:${pageFormat === 'a4' ? '10.5px' : '9px'};padding:6px 4px 10px;border:none;}
+    .pdf-render-root .sign-box .role{font-size:${pageFormat === 'a4' ? '10.5px' : '9px'};margin-bottom:6px;}
+    .pdf-render-root .sign-box .name{font-size:${pageFormat === 'a4' ? '10.5px' : '9px'};}
+    .pdf-render-root .sign-space{height:${pageFormat === 'a4' ? '75px' : '60px'};}
+    .pdf-render-root .stamp-mark{width:${pageFormat === 'a4' ? '42px' : '36px'};height:${pageFormat === 'a4' ? '42px' : '36px'};font-size:${pageFormat === 'a4' ? '8px' : '7px'};border-width:2px;margin:0 auto;}
+    .pdf-render-root .diff-box{font-size:${pageFormat === 'a4' ? '11px' : '10px'};padding:8px 10px;}
   `;
 
   const container = document.createElement('div');
   container.className = 'pdf-render-root';
-  container.style.cssText = `position:fixed;left:-9999px;top:0;width:${A5W}px;background:#fff;`;
+  container.style.cssText = `position:fixed;left:-9999px;top:0;width:${pageWpx}px;background:#fff;`;
   container.innerHTML = `<style>${printCSS}</style>` + renderPaperPreview(doc);
   document.body.appendChild(container);
   await new Promise(r => setTimeout(r, 80));
 
-  let pageFormat = 'a5', pageWpx = A5W, pageHpx = A5H, pageWmm = 148, pageHmm = 210;
-  if (container.scrollHeight > A5H) {
+  if (pageFormat === 'a5' && container.scrollHeight > A5H) {
     pageFormat = 'a4'; pageWpx = A4W; pageHpx = A4H; pageWmm = 210; pageHmm = 297;
     container.style.width = pageWpx + 'px';
     await new Promise(r => setTimeout(r, 80));
@@ -3761,7 +3768,7 @@ function renderDetail() {
   <div class="page-header">
     <div>
       <h1>${t.label}</h1>
-      <p>${t.formCode} · Lập ngày ${fmtDate(doc.documentDate)} · <span class="badge ${STATUS_BADGE[doc.status]}">${STATUS_LABEL[doc.status]}</span></p>
+      <p>${t.formCode} · Lập ngày ${fmtDate(doc.documentDate)} · <span class="badge ${STATUS_BADGE[doc.status]}">${STATUS_LABEL[doc.status]}</span> · <span class="badge" style="background:#F0FDFA;color:#0D9488;border:1px solid #99F6E4;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11.5px;" title="Hệ thống tự động chọn khổ A5 khi phiếu có 1-3 hóa đơn, và tự động chọn khổ A4 khi phiếu có từ 4 hóa đơn trở lên">📄 Khổ in tự động: ${((doc.items || doc.spentItems || []).length > 3) ? 'A4 (Phiếu > 3 HĐ)' : 'A5 (Phiếu ≤ 3 HĐ)'}</span></p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       ${doc.status === 'draft' && isOwner ? `<button class="btn btn-outline btn-sm" data-editdoc="${doc.id}">✏ Sửa</button>` : ''}
