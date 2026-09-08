@@ -236,7 +236,19 @@ async function isFreshInstall() {
 
 async function saveDocuments() {
   try {
-    const str = JSON.stringify(STATE.documents);
+    // Sanitize documents to remove any accidental inline Base64 dataUrls, ensuring lightweight <100KB JSON payload
+    const sanitizedDocs = (STATE.documents || []).map(d => {
+      const copy = Object.assign({}, d);
+      if (Array.isArray(copy.attachments)) {
+        copy.attachments = copy.attachments.map(a => {
+          if (!a) return a;
+          const { dataUrl, fileDataUrl, content, ...rest } = a;
+          return rest;
+        });
+      }
+      return copy;
+    });
+    const str = JSON.stringify(sanitizedDocs);
     STATE._rawStrDocuments = str;
     await window.storage.set('documents', str);
   } catch (e) { showToast('Lỗi lưu danh sách phiếu'); }
@@ -3333,9 +3345,12 @@ function renderList() {
       <option value="all">Tất cả người thụ hưởng</option>
       ${allPayees.map(p => `<option value="${p}" ${payeeFilter === p ? 'selected' : ''}>${p}</option>`).join('')}
     </select>
-    <div class="search-box" style="margin-left:auto;">
+    <div class="search-box" style="margin-left:auto;display:flex;gap:8px;align-items:center;">
       <span class="search-ic">🔍</span>
       <input type="text" id="filter-list-search" placeholder="Tìm kiếm phiếu..." value="${STATE._listSearch || ''}">
+      <button type="button" id="btn-reset-list-filters" class="btn btn-outline btn-sm" style="font-size:12px;padding:6px 10px;white-space:nowrap;cursor:pointer;" title="Bấm để xóa sạch tất cả bộ lọc và hiện lại toàn bộ phiếu">
+        🔄 Đặt lại bộ lọc
+      </button>
     </div>
   </div>
   ${renderDocTable(docs)}
@@ -4942,6 +4957,19 @@ function attachHandlers() {
   const fm = document.getElementById('filter-month'); if (fm) fm.addEventListener('change', e => { STATE._listMonthFilter = e.target.value; render(); });
   const fr = document.getElementById('filter-requester'); if (fr) fr.addEventListener('change', e => { STATE._listRequesterFilter = e.target.value; render(); });
   const fp = document.getElementById('filter-payee'); if (fp) fp.addEventListener('change', e => { STATE._listPayeeFilter = e.target.value; render(); });
+  const resetListBtn = document.getElementById('btn-reset-list-filters');
+  if (resetListBtn) {
+    resetListBtn.addEventListener('click', () => {
+      STATE._listTypeFilter = 'all';
+      STATE._listStatusFilter = 'all';
+      STATE._listMonthFilter = 'all';
+      STATE._listRequesterFilter = 'all';
+      STATE._listPayeeFilter = 'all';
+      STATE._listSearch = '';
+      STATE._listStatusCategory = 'all';
+      render();
+    });
+  }
   const fls = document.getElementById('filter-list-search');
   if (fls) {
     let listSearchTimer = null;
