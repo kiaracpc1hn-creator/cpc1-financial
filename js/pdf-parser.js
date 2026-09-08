@@ -570,21 +570,24 @@ function extractStatementRefs(fullText) {
   const refs = new Set();
 
   const patterns = [
-    /(?:HĐ|Hóa đơn|Hoá đơn|Invoice|Inv|Ref|B\/L|BL|Tờ khai|Số|Bảng kê|Waybill|Bill)\s*[:#\.-]?\s*([A-Z0-9\/_-]{4,25})/gi,
-    /\b(VIBR\d+|NTP\d+|SAFA[A-Z0-9_-]*|[A-Z]{2,5}\d{5,10}|\d{7,12})\b/gi
+    /(?:Invoice|Inv|HĐ|Hóa đơn|Hoá đơn|Ref|B\/L|BL|Tờ khai|Số|Bảng kê|Waybill|Bill)\s*[:#\.-]?\s*([A-Z0-9\/_-]{4,25})/gi,
+    /\b([A-Z]{2,6}\d{5,10}|VIBR\d+|NTP\d+|SAFA[A-Z0-9_-]*|\d{7,12})\b/gi
   ];
 
   patterns.forEach(regex => {
     let match;
     while ((match = regex.exec(fullText)) !== null) {
-      const val = match[1] || match[0];
-      if (val && val.length >= 4 && !/^(công|tnhh|dịch|vụ|thương|mại|bảng|kê|chi|tiết|tổng|tiền|phần|trang)$/i.test(val)) {
-        refs.add(val.trim());
+      let val = match[1] || match[0];
+      if (val) {
+        val = val.replace(/^[:#\.-]+/, '').trim();
+        if (val.length >= 4 && !/^(công|tnhh|dịch|vụ|thương|mại|bảng|kê|chi|tiết|tổng|tiền|phần|trang|invoice)$/i.test(val)) {
+          refs.add(val);
+        }
       }
     }
   });
 
-  return Array.from(refs).slice(0, 15).join(', ');
+  return Array.from(refs).slice(0, 20).join(', ');
 }
 
 async function callClaudeExtractInvoiceFull(base64Data, apiKey, mimeType = "application/pdf") {
