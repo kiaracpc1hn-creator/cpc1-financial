@@ -1797,7 +1797,10 @@ async function uploadInvoiceFiles(fileList) {
         amount: Number(extracted.amount) || 0,
         currency: extracted.currency === 'USD' ? 'USD' : 'VND',
         attachmentId: attId,
-        fileName: file.name
+        fileName: file.name,
+        invoiceRef: extracted.invoiceRef || extracted.statementRefs || '',
+        statementRefs: extracted.statementRefs || '',
+        rawText: extracted.rawText || ''
       });
       STATE.invoices.unshift(record);
       await saveInvoices();
@@ -2897,6 +2900,8 @@ function getFilteredInvoices() {
         r.invoiceNumber,
         combined,
         r.invoiceRef,
+        r.statementRefs,
+        r.rawText,
         r.beneficiaryName,
         r.requesterName,
         r.fileName,
@@ -6027,6 +6032,9 @@ async function reparseAllExistingInvoices() {
               r.beneficiaryName = stdSeller;
               if (stdSeller) autoSyncPayeeToDirectory(stdSeller);
             }
+            if (extracted.rawText) r.rawText = extracted.rawText;
+            if (extracted.statementRefs) r.statementRefs = extracted.statementRefs;
+            if (!r.invoiceRef && extracted.statementRefs) r.invoiceRef = extracted.statementRefs;
           }
         } catch (err) {
           console.warn('Lỗi reparse invoice:', r.fileName, err);
