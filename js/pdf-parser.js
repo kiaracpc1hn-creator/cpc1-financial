@@ -42,6 +42,41 @@ async function extractInvoiceDataFromPdfFile(file, dataUrl = null) {
     }
   }
 
+  // 1.5 Client-Side Tesseract OCR fallback if PDF has no text layer or file is an Image
+  if (fullText.trim().length <= 30 && window.Tesseract) {
+    try {
+      if (file && (file.type.startsWith('image/') || /\.(png|jpg|jpeg|webp|bmp)$/i.test(file.name))) {
+        const res = await Tesseract.recognize(dataUrl || file, 'eng+vie');
+        if (res && res.data && res.data.text) {
+          fullText += "\n" + res.data.text;
+          lines = lines.concat(res.data.text.split('\n').filter(l => l.trim()));
+        }
+      } else if (window.pdfjsLib && file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        if (pdf.numPages > 0) {
+          const maxPages = Math.min(pdf.numPages, 3);
+          for (let p = 1; p <= maxPages; p++) {
+            const page = await pdf.getPage(p);
+            const viewport = page.getViewport({ scale: 2 });
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const ctx = canvas.getContext('2d');
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            const res = await Tesseract.recognize(canvas, 'eng+vie');
+            if (res && res.data && res.data.text) {
+              fullText += "\n" + res.data.text;
+              lines = lines.concat(res.data.text.split('\n').filter(l => l.trim()));
+            }
+          }
+        }
+      }
+    } catch (ocrErr) {
+      console.warn("Tesseract OCR fallback error:", ocrErr);
+    }
+  }
+
   // 2. Parse text lines offline
   const parsed = parseInvoiceText(fullText, lines, file ? file.name : "");
 

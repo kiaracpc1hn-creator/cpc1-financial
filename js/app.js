@@ -6460,12 +6460,45 @@ async function executePersistForm(goSubmit) {
   showToast(goSubmit ? 'Đã trình ký thành công' : 'Đã lưu nháp');
 }
 
+async function autoIndexUnscannedInvoices() {
+  if (!STATE.invoices || STATE.invoices.length === 0) return;
+  const unscanned = STATE.invoices.filter(r => r.attachmentId && (!r.rawText || !r.statementRefs));
+  if (unscanned.length === 0) return;
+
+  let changed = false;
+  for (const r of unscanned) {
+    try {
+      const stored = await window.storage.get('attachment:' + r.attachmentId, true);
+      if (!stored || !stored.value) continue;
+      const dataUrl = stored.value;
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const mime = dataUrl.startsWith('data:image/') ? 'image/jpeg' : 'application/pdf';
+      const file = new File([blob], r.fileName || 'invoice.pdf', { type: mime });
+      const extracted = await extractInvoiceDataFromPdfFile(file, dataUrl);
+      if (extracted) {
+        if (extracted.rawText) r.rawText = extracted.rawText;
+        if (extracted.statementRefs) r.statementRefs = extracted.statementRefs;
+        if (!r.invoiceRef && extracted.statementRefs) r.invoiceRef = extracted.statementRefs;
+        changed = true;
+      }
+    } catch (e) {
+      console.warn('Auto index invoice error:', r.fileName, e);
+    }
+  }
+  if (changed) {
+    await saveInvoices();
+    render();
+  }
+}
+
 /* ===================== INIT ===================== */
 async function initApp() {
   const app = document.getElementById('app');
   if (app) app.innerHTML = '<div style="padding:40px;font-family:Inter,sans-serif;color:#0A2F52;font-weight:600;">Đang khởi động hệ thống CPC1...</div>';
   await loadAll();
   await autoPurgeExpiredTrash();
+  autoIndexUnscannedInvoices();
   checkAndDispatchWeeklyOverdueAdvanceEmails();
   render();
 }
