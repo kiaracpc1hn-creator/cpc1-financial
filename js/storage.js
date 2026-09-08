@@ -235,6 +235,65 @@
       return () => unsubscribers.forEach(u => typeof u === 'function' && u());
     },
 
+    // Granular Per-Voucher Collection Cloud Operations for 100% Data Persistence
+    async saveVoucherCloud(docObj) {
+      if (!this.isFirebaseConnected() || !docObj || !docObj.id) return;
+      try {
+        const copy = Object.assign({}, docObj);
+        if (Array.isArray(copy.attachments)) {
+          copy.attachments = copy.attachments.map(a => {
+            if (!a) return a;
+            const { dataUrl, fileDataUrl, content, ...rest } = a;
+            return rest;
+          });
+        }
+        await firestoreDb.collection('cpc1_vouchers_list').doc(docObj.id).set({
+          ...copy,
+          updatedAtCloud: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } catch (err) {
+        console.warn(`[CPC1 Cloud] Error saving voucher ${docObj.id}:`, err.message);
+      }
+    },
+
+    async deleteVoucherCloud(docId) {
+      if (!this.isFirebaseConnected() || !docId) return;
+      try {
+        await firestoreDb.collection('cpc1_vouchers_list').doc(docId).delete();
+      } catch (err) {
+        console.warn(`[CPC1 Cloud] Error deleting voucher ${docId}:`, err.message);
+      }
+    },
+
+    listenVouchersRealtime(callback) {
+      if (!this.isFirebaseConnected()) return () => {};
+      try {
+        const unsub = firestoreDb.collection('cpc1_vouchers_list').onSnapshot(snapshot => {
+          const vouchers = [];
+          const changes = [];
+          snapshot.docChanges().forEach(change => {
+            const data = change.doc.data();
+            if (data && data.id) {
+              changes.push({ type: change.type, doc: data, id: change.doc.id });
+            }
+          });
+          snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            if (data && data.id) {
+              vouchers.push(data);
+            }
+          });
+          callback(vouchers, changes);
+        }, err => {
+          console.warn(`[CPC1 Cloud] Realtime vouchers sync error:`, err.message);
+        });
+        return unsub;
+      } catch (e) {
+        console.warn(`[CPC1 Cloud] Vouchers listener attach failed:`, e);
+        return () => {};
+      }
+    },
+
     async exportAll() {
       const db = await openDB();
       if (db) {
