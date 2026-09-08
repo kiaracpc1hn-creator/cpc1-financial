@@ -269,7 +269,18 @@ async function saveInvoices() {
 }
 async function saveTrash() {
   try {
-    const str = JSON.stringify(STATE.trash || []);
+    const sanitizedTrash = (STATE.trash || []).map(item => {
+      const copy = Object.assign({}, item);
+      if (Array.isArray(copy.attachments)) {
+        copy.attachments = copy.attachments.map(a => {
+          if (!a) return a;
+          const { dataUrl, fileDataUrl, content, ...rest } = a;
+          return rest;
+        });
+      }
+      return copy;
+    });
+    const str = JSON.stringify(sanitizedTrash);
     STATE._rawStrTrash = str;
     await window.storage.set('trash', str);
   } catch (e) { showToast('Lỗi lưu thùng rác'); }
@@ -2968,15 +2979,23 @@ function renderForm() {
   let itemsCols = [], itemsRows = '';
   if (type === 'payment') {
     itemsCols = ['STT', 'Ngày', 'Hoá đơn/Chứng từ', 'Số tiền', 'Ghi chú', ''];
-    itemsRows = doc.items.map((it, i) => `
+    itemsRows = doc.items.map((it, i) => {
+      const isLocked = !!(it.fromRepo || it.attachmentId || (it.invoiceNo && it.invoiceNo.trim()) || (STATE.invoices && STATE.invoices.some(r => matchInvoiceRecordWithDocItem(r, it.invoiceNo, it.attachmentId))));
+      const lockAttr = isLocked ? 'readonly tabindex="-1"' : '';
+      const lockStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:600;' : '';
+      const lockTextareaStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;line-height:1.4;' : '';
+      const lockTitle = isLocked ? 'title="🔒 Thông tin hoá đơn được khoá đồng bộ từ Kho Hoá Đơn. Vui lòng chỉnh sửa tại Kho Hoá Đơn nếu cần thay đổi."' : '';
+
+      return `
       <tr>
         <td style="width:34px;text-align:center;">${i + 1}</td>
-        <td style="width:130px;"><input type="date" data-item="${i}" data-field="date" value="${it.date || ''}"></td>
-        <td style="width:150px;"><input class="${findDuplicateInvoiceUsage(it.invoiceNo, doc.id) ? 'dup-warning' : ''}" data-item="${i}" data-field="invoiceNo" value="${it.invoiceNo || ''}" placeholder="Ký hiệu|Số HĐ"></td>
-        <td class="col-amount" style="width:140px;"><input type="number" data-item="${i}" data-field="amount" value="${it.amount || ''}"></td>
-        <td><textarea data-item="${i}" data-field="description" rows="2" placeholder="Ghi chú (Nội dung - Invoice: ...)" style="width:100%;min-height:42px;padding:6px 8px;font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;resize:vertical;line-height:1.4;">${it.description || ''}</textarea></td>
-        <td class="col-del"><button class="del-row" data-delitem="${i}">✕</button></td>
-      </tr>`).join('');
+        <td style="width:130px;"><input type="date" data-item="${i}" data-field="date" value="${it.date || ''}" ${lockAttr} style="${lockStyle}" ${lockTitle}></td>
+        <td style="width:150px;"><input class="${findDuplicateInvoiceUsage(it.invoiceNo, doc.id) ? 'dup-warning' : ''}" data-item="${i}" data-field="invoiceNo" value="${it.invoiceNo || ''}" placeholder="Ký hiệu|Số HĐ" ${lockAttr} style="${isLocked ? 'background:#F0FDFA;color:#0D9488;border:1.5px solid #99F6E4;cursor:not-allowed;font-weight:700;' : ''}" ${lockTitle}></td>
+        <td class="col-amount" style="width:140px;"><input type="number" data-item="${i}" data-field="amount" value="${it.amount || ''}" ${lockAttr} style="${isLocked ? 'background:#F8FAFC;color:#0F172A;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:700;' : ''}" ${lockTitle}></td>
+        <td><textarea data-item="${i}" data-field="description" rows="2" placeholder="Ghi chú (Nội dung - Invoice: ...)" ${lockAttr} style="width:100%;min-height:42px;padding:6px 8px;font-family:inherit;font-size:13px;resize:vertical;${lockTextareaStyle}" ${lockTitle}>${it.description || ''}</textarea></td>
+        <td class="col-del"><button class="del-row" data-delitem="${i}" title="Xoá dòng này khỏi phiếu">✕</button></td>
+      </tr>`;
+    }).join('');
   } else if (type === 'submission') {
     itemsCols = ['STT', 'Hàng hoá / Nội dung', 'Số tiền', ''];
     itemsRows = doc.items.map((it, i) => `
@@ -3036,16 +3055,24 @@ function renderForm() {
       <table class="items-table">
         <thead><tr><th style="width:34px;">STT</th><th style="width:130px;">Ngày</th><th style="width:150px;">Số hoá đơn</th><th>Nội dung</th><th style="width:130px;">Số tiền</th><th style="width:120px;">Số Invoice</th><th></th></tr></thead>
         <tbody>
-          ${(doc.spentItems || []).map((it, i) => `
+          ${(doc.spentItems || []).map((it, i) => {
+            const isLocked = !!(it.fromRepo || it.attachmentId || (it.invoiceNo && it.invoiceNo.trim()) || (STATE.invoices && STATE.invoices.some(r => matchInvoiceRecordWithDocItem(r, it.invoiceNo, it.attachmentId))));
+            const lockAttr = isLocked ? 'readonly tabindex="-1"' : '';
+            const lockStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:600;' : '';
+            const lockTextareaStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;line-height:1.4;' : '';
+            const lockTitle = isLocked ? 'title="🔒 Thông tin hoá đơn được khoá đồng bộ từ Kho Hoá Đơn. Vui lòng chỉnh sửa tại Kho Hoá Đơn nếu cần thay đổi."' : '';
+
+            return `
             <tr>
               <td style="text-align:center;">${i + 1}</td>
-              <td><input type="date" data-spent="${i}" data-field="date" value="${it.date || ''}"></td>
-              <td><input class="${findDuplicateInvoiceUsage(it.invoiceNo, doc.id) ? 'dup-warning' : ''}" data-spent="${i}" data-field="invoiceNo" value="${it.invoiceNo || ''}" placeholder="Số HĐ"></td>
-              <td><textarea data-spent="${i}" data-field="description" rows="2" placeholder="Nội dung / Diễn giải chi tiết..." style="width:100%;min-height:42px;padding:6px 8px;font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;resize:vertical;line-height:1.4;">${it.description || ''}</textarea></td>
-              <td class="col-amount"><input type="number" data-spent="${i}" data-field="amount" value="${it.amount || ''}"></td>
-              <td><input data-spent="${i}" data-field="invoiceRef" value="${it.invoiceRef || ''}" placeholder="Số Invoice"></td>
+              <td><input type="date" data-spent="${i}" data-field="date" value="${it.date || ''}" ${lockAttr} style="${lockStyle}" ${lockTitle}></td>
+              <td><input class="${findDuplicateInvoiceUsage(it.invoiceNo, doc.id) ? 'dup-warning' : ''}" data-spent="${i}" data-field="invoiceNo" value="${it.invoiceNo || ''}" placeholder="Số HĐ" ${lockAttr} style="${isLocked ? 'background:#F0FDFA;color:#0D9488;border:1.5px solid #99F6E4;cursor:not-allowed;font-weight:700;' : ''}" ${lockTitle}></td>
+              <td><textarea data-spent="${i}" data-field="description" rows="2" placeholder="Nội dung / Diễn giải chi tiết..." ${lockAttr} style="width:100%;min-height:42px;padding:6px 8px;font-family:inherit;font-size:13px;resize:vertical;${lockTextareaStyle}" ${lockTitle}>${it.description || ''}</textarea></td>
+              <td class="col-amount"><input type="number" data-spent="${i}" data-field="amount" value="${it.amount || ''}" ${lockAttr} style="${isLocked ? 'background:#F8FAFC;color:#0F172A;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:700;' : ''}" ${lockTitle}></td>
+              <td><input data-spent="${i}" data-field="invoiceRef" value="${it.invoiceRef || ''}" placeholder="Số Invoice" ${lockAttr} style="${lockStyle}" ${lockTitle}></td>
               <td class="col-del"><button class="del-row" data-delspent="${i}">✕</button></td>
-            </tr>`).join('')}
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;">
