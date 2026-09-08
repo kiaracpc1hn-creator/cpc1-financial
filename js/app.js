@@ -915,6 +915,12 @@ async function uploadMultipleSignedCopies(doc, files) {
     const newSignedIds = [];
     for (const file of files) {
       const dataUrl = await readFileAsDataURL(file);
+      let extracted = {};
+      try {
+        extracted = await extractInvoiceDataFromPdfFile(file, dataUrl);
+      } catch (e) {
+        console.warn('Lỗi đọc bản ký:', e);
+      }
       const attId = uid('att');
       await window.storage.set('attachment:' + attId, dataUrl, true);
       const attObj = {
@@ -924,7 +930,9 @@ async function uploadMultipleSignedCopies(doc, files) {
         size: file.size,
         uploadedAt: new Date().toISOString(),
         uploadedBy: currentUser().name,
-        isSignedCopy: true
+        isSignedCopy: true,
+        rawText: extracted.rawText || '',
+        statementRefs: extracted.statementRefs || ''
       };
       doc.attachments.push(attObj);
       doc.signedAttachmentIds.push(attId);
@@ -1716,6 +1724,7 @@ function showCashLimitPopupModal(doc) {
 /* ===================== ATTACHMENTS ===================== */
 async function uploadAttachments(doc, fileList) {
   const files = Array.from(fileList || []);
+  doc.attachments = doc.attachments || [];
   for (const file of files) {
     const isValid = file.type === 'application/pdf' || file.type.startsWith('image/') || /\.(pdf|jpg|jpeg|png|webp|bmp)$/i.test(file.name);
     if (!isValid) {
@@ -1728,6 +1737,12 @@ async function uploadAttachments(doc, fileList) {
     }
     try {
       const dataUrl = await readFileAsDataURL(file);
+      let extracted = {};
+      try {
+        extracted = await extractInvoiceDataFromPdfFile(file, dataUrl);
+      } catch (e) {
+        console.warn('Lỗi trích xuất file đính kèm:', e);
+      }
       const id = uid('att');
       await window.storage.set('attachment:' + id, dataUrl, true);
       doc.attachments.push({
@@ -1736,12 +1751,15 @@ async function uploadAttachments(doc, fileList) {
         mimeType: file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
         size: file.size,
         uploadedAt: new Date().toISOString(),
-        uploadedBy: currentUser().name
+        uploadedBy: currentUser().name,
+        rawText: extracted.rawText || '',
+        statementRefs: extracted.statementRefs || ''
       });
     } catch (e) {
       showAlertModal('Lỗi tải file', `Lỗi khi tải file "${file.name}".`);
     }
   }
+  if (STATE.documents.find(d => d.id === doc.id)) await saveDocuments();
   render();
 }
 
@@ -6461,35 +6479,65 @@ async function executePersistForm(goSubmit) {
 }
 
 async function autoIndexUnscannedInvoices() {
-  if (!STATE.invoices || STATE.invoices.length === 0) return;
-  const unscanned = STATE.invoices.filter(r => r.attachmentId && (!r.rawText || !r.statementRefs));
-  if (unscanned.length === 0) return;
+  let changedInvoices = false;
+  let changedDocs = false;
 
-  let changed = false;
-  for (const r of unscanned) {
-    try {
-      const stored = await window.storage.get('attachment:' + r.attachmentId, true);
-      if (!stored || !stored.value) continue;
-      const dataUrl = stored.value;
-      const res = await fetch(dataUrl);
-      const blob = await res.blob();
-      const mime = dataUrl.startsWith('data:image/') ? 'image/jpeg' : 'application/pdf';
-      const file = new File([blob], r.fileName || 'invoice.pdf', { type: mime });
-      const extracted = await extractInvoiceDataFromPdfFile(file, dataUrl);
-      if (extracted) {
-        if (extracted.rawText) r.rawText = extracted.rawText;
-        if (extracted.statementRefs) r.statementRefs = extracted.statementRefs;
-        if (!r.invoiceRef && extracted.statementRefs) r.invoiceRef = extracted.statementRefs;
-        changed = true;
+  // 1. Invoices in Repo
+  if (STATE.invoices && STATE.invoices.length > 0) {
+    const unscannedInvoices = STATE.invoices.filter(r => r.attachmentId && (!r.rawText || !r.statementRefs));
+    for (const r of unscannedInvoices) {
+      try {
+        const stored = await window.storage.get('attachment:' + r.attachmentId, true);
+        if (!stored || !stored.value) continue;
+        const dataUrl = stored.value;
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        const mime = dataUrl.startsWith('data:image/') ? 'image/jpeg' : 'application/pdf';
+        const file = new File([blob], r.fileName || 'invoice.pdf', { type: mime });
+        const extracted = await extractInvoiceDataFromPdfFile(file, dataUrl);
+        if (extracted) {
+          if (extracted.rawText) r.rawText = extracted.rawText;
+          if (extracted.statementRefs) r.statementRefs = extracted.statementRefs;
+          if (!r.invoiceRef && extracted.statementRefs) r.invoiceRef = extracted.statementRefs;
+          changedInvoices = true;
+        }
+      } catch (e) {
+        console.warn('Auto index invoice error:', r.fileName, e);
       }
-    } catch (e) {
-      console.warn('Auto index invoice error:', r.fileName, e);
     }
   }
-  if (changed) {
-    await saveInvoices();
-    render();
+
+  // 2. Attachments on Documents
+  if (STATE.documents && STATE.documents.length > 0) {
+    for (const doc of STATE.documents) {
+      if (!doc.attachments || doc.attachments.length === 0) continue;
+      for (const att of doc.attachments) {
+        if (att.id && (!att.rawText || !att.statementRefs)) {
+          try {
+            const stored = await window.storage.get('attachment:' + att.id, true);
+            if (!stored || !stored.value) continue;
+            const dataUrl = stored.value;
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+            const mime = dataUrl.startsWith('data:image/') ? 'image/jpeg' : 'application/pdf';
+            const file = new File([blob], att.fileName || 'file.pdf', { type: mime });
+            const extracted = await extractInvoiceDataFromPdfFile(file, dataUrl);
+            if (extracted) {
+              if (extracted.rawText) att.rawText = extracted.rawText;
+              if (extracted.statementRefs) att.statementRefs = extracted.statementRefs;
+              changedDocs = true;
+            }
+          } catch (e) {
+            console.warn('Auto index doc att error:', att.fileName, e);
+          }
+        }
+      }
+    }
   }
+
+  if (changedInvoices) await saveInvoices();
+  if (changedDocs) await saveDocuments();
+  if (changedInvoices || changedDocs) render();
 }
 
 /* ===================== INIT ===================== */
