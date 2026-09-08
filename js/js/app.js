@@ -68,6 +68,7 @@ let STATE = {
   documents: [],
   payees: [],
   selectedInvoiceIds: [],
+  trash: [],
   isLoggedIn: false,
   loginStep: 1,
   pendingUser: null,
@@ -111,6 +112,11 @@ async function loadAll() {
   } catch (e) { STATE.invoices = []; }
 
   try {
+    const r = await window.storage.get('trash');
+    STATE.trash = r ? JSON.parse(r.value) : [];
+  } catch (e) { STATE.trash = []; }
+
+  try {
     const r = await window.storage.get('users');
     STATE.users = r ? JSON.parse(r.value) : [];
   } catch (e) { STATE.users = []; }
@@ -135,34 +141,137 @@ async function loadAll() {
     await savePayees();
   }
 
+  // Parse Deep Link URL parameters (e.g. ?docId=123 or ?page=settings)
   try {
-    const r = await window.storage.get('current-user-id');
-    STATE.currentUserId = r ? r.value : STATE.users[0].id;
-  } catch (e) {
-    STATE.currentUserId = STATE.users[0].id;
-  }
+    const urlParams = new URLSearchParams(window.location.search);
+    const deepDocId = urlParams.get('docId') || urlParams.get('id');
+    const deepPage = urlParams.get('page');
 
+    if (deepDocId) {
+      STATE.pendingRedirect = { page: 'detail', docId: deepDocId };
+    } else if (deepPage) {
+      STATE.pendingRedirect = { page: deepPage };
+    }
+  } catch (e) {}
+
+  // Session check: ALWAYS require login for fresh tabs / new Chrome profiles / new devices!
+  // MUST use sessionStorage for 100% isolated authentication per Chrome profile & device.
   try {
-    const r = await window.storage.get('is-logged-in');
-    STATE.isLoggedIn = r ? r.value === 'true' : false;
+    const sessionFlag = sessionStorage.getItem('CPC1_SESSION_LOGGED_IN');
+    const sessionUserId = sessionStorage.getItem('CPC1_SESSION_USER_ID');
+
+    if (sessionFlag === 'true' && sessionUserId && STATE.users.some(u => u.id === sessionUserId)) {
+      STATE.isLoggedIn = true;
+      STATE.currentUserId = sessionUserId;
+    } else {
+      STATE.isLoggedIn = false;
+      STATE.currentUserId = null;
+    }
   } catch (e) {
     STATE.isLoggedIn = false;
+    STATE.currentUserId = null;
   }
 
-  // Khởi chạy đồng bộ thời gian thực đa người dùng qua Firebase Firestore
+  // Khởi chạy đồng bộ thời gian thực đa người dùng qua Firebase Firestore Collection (100% Dứt điểm)
+  if (window.storage && window.storage.listenVouchersRealtime && !STATE._vouchersRealtimeBound) {
+    STATE._vouchersRealtimeBound = true;
+    window.storage.listenVouchersRealtime((cloudVouchers) => {
+      try {
+        if (!cloudVouchers) return;
+        let changed = false;
+
+        if (cloudVouchers.length === 0 && STATE.documents && STATE.documents.length > 0) {
+          // Tự động Migrate toàn bộ phiếu từ local lên Firestore collection doc-by-doc khi khởi chạy lần đầu
+          STATE.documents.forEach(d => window.storage.saveVoucherCloud(d));
+          return;
+        }
+
+        if (cloudVouchers.length > 0) {
+          const cloudMap = new Map(cloudVouchers.map(d => [d.id, d]));
+          const newDocList = [];
+
+          // 1. Duyệt phiếu từ Cloud & Bảo vệ trạng thái đã ký
+          const localMap = new Map((STATE.documents || []).map(d => [d.id, d]));
+
+          cloudVouchers.forEach(incDoc => {
+            const localDoc = localMap.get(incDoc.id);
+            if (localDoc) {
+              if (localDoc.status === 'signed' && incDoc.status !== 'signed' && localDoc.signedAttachmentId) {
+                incDoc.status = 'signed';
+                incDoc.signedAttachmentId = localDoc.signedAttachmentId;
+                window.storage.saveVoucherCloud(incDoc); // Tự động chữa lành Cloud
+              }
+            }
+            newDocList.push(incDoc);
+          });
+
+          // 2. Giữ lại các phiếu mới tạo ở máy local (< 2 phút) chưa kịp sync lên snapshot
+          localMap.forEach((localDoc, id) => {
+            if (!cloudMap.has(id) && localDoc.createdAt) {
+              const ageMs = Date.now() - new Date(localDoc.createdAt).getTime();
+              if (ageMs < 120000) {
+                newDocList.unshift(localDoc);
+                window.storage.saveVoucherCloud(localDoc);
+              }
+            }
+          });
+
+          // Sắp xếp danh sách phiếu theo thời gian tạo mới nhất lên trên
+          newDocList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+          const newStr = JSON.stringify(newDocList);
+          if (STATE._rawStrDocuments !== newStr) {
+            STATE._rawStrDocuments = newStr;
+            STATE.documents = newDocList;
+            STATE._previousDocIds = new Set(newDocList.map(d => d.id));
+            window.storage._setLocal('documents', newStr).catch(() => {});
+            changed = true;
+          }
+        }
+
+        const activeTag = document.activeElement ? document.activeElement.tagName : '';
+        const isEditing = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT';
+
+        if (changed && !isEditing) {
+          render();
+        }
+      } catch (err) {
+        console.warn('Vouchers realtime parse err:', err);
+      }
+    });
+  }
+
+  // Khởi chạy đồng bộ các bảng khác (invoices, payees, trash) qua listenRealtime
   if (window.storage && window.storage.listenRealtime && !STATE._realtimeBound) {
     STATE._realtimeBound = true;
-    window.storage.listenRealtime(['documents', 'invoices', 'payees'], (key, val) => {
+    window.storage.listenRealtime(['invoices', 'payees', 'trash'], (key, val) => {
       try {
         if (!val) return;
-        if (key === 'documents') {
-          STATE.documents = JSON.parse(val) || [];
-        } else if (key === 'invoices') {
+        let changed = false;
+
+        if (key === 'invoices') {
+          if (STATE._rawStrInvoices === val) return;
+          STATE._rawStrInvoices = val;
           STATE.invoices = JSON.parse(val) || [];
+          changed = true;
         } else if (key === 'payees') {
+          if (STATE._rawStrPayees === val) return;
+          STATE._rawStrPayees = val;
           STATE.payees = JSON.parse(val) || [];
+          changed = true;
+        } else if (key === 'trash') {
+          if (STATE._rawStrTrash === val) return;
+          STATE._rawStrTrash = val;
+          STATE.trash = JSON.parse(val) || [];
+          changed = true;
         }
-        render();
+
+        const activeTag = document.activeElement ? document.activeElement.tagName : '';
+        const isEditing = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT';
+
+        if (changed && !isEditing) {
+          render();
+        }
       } catch (err) {
         console.warn('Realtime parse err:', err);
       }
@@ -189,16 +298,67 @@ async function isFreshInstall() {
 }
 
 async function saveDocuments() {
-  try { await window.storage.set('documents', JSON.stringify(STATE.documents)); }
-  catch (e) { showToast('Lỗi lưu danh sách phiếu'); }
+  try {
+    const currentDocIds = new Set((STATE.documents || []).map(d => d.id));
+    if (STATE._previousDocIds) {
+      STATE._previousDocIds.forEach(oldId => {
+        if (!currentDocIds.has(oldId)) {
+          window.storage.deleteVoucherCloud(oldId);
+        }
+      });
+    }
+    STATE._previousDocIds = currentDocIds;
+
+    const sanitizedDocs = (STATE.documents || []).map(d => {
+      const copy = Object.assign({}, d);
+      if (Array.isArray(copy.attachments)) {
+        copy.attachments = copy.attachments.map(a => {
+          if (!a) return a;
+          const { dataUrl, fileDataUrl, content, ...rest } = a;
+          return rest;
+        });
+      }
+      // Lưu từng phiếu đơn lẻ lên Cloud Firestore collection để đảm bảo tuyệt đối không bị ghi đè chéo giữa các tài khoản
+      window.storage.saveVoucherCloud(copy);
+      return copy;
+    });
+
+    const str = JSON.stringify(sanitizedDocs);
+    STATE._rawStrDocuments = str;
+    await window.storage._setLocal('documents', str);
+  } catch (e) { showToast('Lỗi lưu danh sách phiếu'); }
 }
 async function savePayees() {
-  try { await window.storage.set('payees', JSON.stringify(STATE.payees)); }
-  catch (e) { showToast('Lỗi lưu danh bạ'); }
+  try {
+    const str = JSON.stringify(STATE.payees);
+    STATE._rawStrPayees = str;
+    await window.storage.set('payees', str);
+  } catch (e) { showToast('Lỗi lưu danh bạ'); }
 }
 async function saveInvoices() {
-  try { await window.storage.set('invoices', JSON.stringify(STATE.invoices)); }
-  catch (e) { showToast('Lỗi lưu kho hoá đơn'); }
+  try {
+    const str = JSON.stringify(STATE.invoices);
+    STATE._rawStrInvoices = str;
+    await window.storage.set('invoices', str);
+  } catch (e) { showToast('Lỗi lưu kho hoá đơn'); }
+}
+async function saveTrash() {
+  try {
+    const sanitizedTrash = (STATE.trash || []).map(item => {
+      const copy = Object.assign({}, item);
+      if (Array.isArray(copy.attachments)) {
+        copy.attachments = copy.attachments.map(a => {
+          if (!a) return a;
+          const { dataUrl, fileDataUrl, content, ...rest } = a;
+          return rest;
+        });
+      }
+      return copy;
+    });
+    const str = JSON.stringify(sanitizedTrash);
+    STATE._rawStrTrash = str;
+    await window.storage.set('trash', str);
+  } catch (e) { showToast('Lỗi lưu thùng rác'); }
 }
 async function saveUsers() {
   try { await window.storage.set('users', JSON.stringify(STATE.users)); }
@@ -376,7 +536,36 @@ function showConfirmModal(title, message, onConfirm) {
 function readFileAsDataURL(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
-    r.onload = () => resolve(r.result);
+    r.onload = (e) => {
+      const dataUrl = e.target.result;
+      if (file.type && file.type.startsWith('image/')) {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1600;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.8));
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+      } else {
+        resolve(dataUrl);
+      }
+    };
     r.onerror = () => reject(r.error);
     r.readAsDataURL(file);
   });
@@ -405,36 +594,43 @@ async function printDoc(doc) {
   const A5W = 148 * MM_PX, A5H = 210 * MM_PX;
   const A4W = 210 * MM_PX, A4H = 297 * MM_PX;
 
+  // Auto-select paper size: A5 for <=3 items (few invoices), A4 for >3 items (many invoices)
+  const itemCount = (doc.items || doc.spentItems || []).length;
+  let pageFormat = itemCount > 3 ? 'a4' : 'a5';
+  let pageWpx = pageFormat === 'a4' ? A4W : A5W;
+  let pageHpx = pageFormat === 'a4' ? A4H : A5H;
+  let pageWmm = pageFormat === 'a4' ? 210 : 148;
+  let pageHmm = pageFormat === 'a4' ? 297 : 210;
+
   const printCSS = `
     .pdf-render-root{background:#fff;font-family:'Source Serif 4', Georgia, serif;}
     .pdf-render-root .doc-preview{padding:16px 20px;max-width:100%;border:none;box-shadow:none;}
-    .pdf-render-root .doc-title-red{font-size:16px;margin:4px 0 10px;}
-    .pdf-render-root .doc-subject{font-size:11px;margin-bottom:12px;}
-    .pdf-render-root .doc-meta-line{font-size:11px;margin-bottom:4px;}
-    .pdf-render-root .doc-meta-indent{font-size:11px;padding-left:18px;margin-bottom:2px;}
+    .pdf-render-root .doc-title-red{font-size:${pageFormat === 'a4' ? '18px' : '16px'};margin:4px 0 10px;}
+    .pdf-render-root .doc-subject{font-size:${pageFormat === 'a4' ? '12px' : '11px'};margin-bottom:12px;}
+    .pdf-render-root .doc-meta-line{font-size:${pageFormat === 'a4' ? '12px' : '11px'};margin-bottom:4px;}
+    .pdf-render-root .doc-meta-indent{font-size:${pageFormat === 'a4' ? '12px' : '11px'};padding-left:18px;margin-bottom:2px;}
     .pdf-render-root .items-table{margin:10px 0;}
-    .pdf-render-root .items-table td, .pdf-render-root .items-table th{font-size:10px;padding:5px 6px;}
-    .pdf-render-root .doc-date-line{font-size:10.5px;margin:12px 0 4px;}
-    .pdf-render-root .letterhead-code{font-size:9px;}
-    .pdf-render-root .logo-img{height:36px;}
-    .pdf-render-root .sign-grid{margin-top:14px;display:flex;border:none;}
-    .pdf-render-root .sign-box{flex:1;font-size:9px;padding:6px 4px 10px;border:none;}
-    .pdf-render-root .sign-box .role{font-size:9px;margin-bottom:6px;}
-    .pdf-render-root .sign-box .name{font-size:9px;}
-    .pdf-render-root .sign-space{height:60px;}
-    .pdf-render-root .stamp-mark{width:36px;height:36px;font-size:7px;border-width:2px;margin:0 auto;}
-    .pdf-render-root .diff-box{font-size:10px;padding:8px 10px;}
+    .pdf-render-root .items-table td, .pdf-render-root .items-table th{font-size:${pageFormat === 'a4' ? '11px' : '10px'};padding:${pageFormat === 'a4' ? '6px 8px' : '5px 6px'};}
+    .pdf-render-root .doc-date-line{font-size:${pageFormat === 'a4' ? '11px' : '10.5px'};margin:12px 0 4px;}
+    .pdf-render-root .letterhead-code{font-size:${pageFormat === 'a4' ? '10px' : '9px'};}
+    .pdf-render-root .logo-img{height:${pageFormat === 'a4' ? '42px' : '36px'};}
+    .pdf-render-root .sign-grid{margin-top:${pageFormat === 'a4' ? '20px' : '14px'};display:flex;border:none;}
+    .pdf-render-root .sign-box{flex:1;font-size:${pageFormat === 'a4' ? '10.5px' : '9px'};padding:6px 4px 10px;border:none;}
+    .pdf-render-root .sign-box .role{font-size:${pageFormat === 'a4' ? '10.5px' : '9px'};margin-bottom:6px;}
+    .pdf-render-root .sign-box .name{font-size:${pageFormat === 'a4' ? '10.5px' : '9px'};}
+    .pdf-render-root .sign-space{height:${pageFormat === 'a4' ? '75px' : '60px'};}
+    .pdf-render-root .stamp-mark{width:${pageFormat === 'a4' ? '42px' : '36px'};height:${pageFormat === 'a4' ? '42px' : '36px'};font-size:${pageFormat === 'a4' ? '8px' : '7px'};border-width:2px;margin:0 auto;}
+    .pdf-render-root .diff-box{font-size:${pageFormat === 'a4' ? '11px' : '10px'};padding:8px 10px;}
   `;
 
   const container = document.createElement('div');
   container.className = 'pdf-render-root';
-  container.style.cssText = `position:fixed;left:-9999px;top:0;width:${A5W}px;background:#fff;`;
+  container.style.cssText = `position:fixed;left:-9999px;top:0;width:${pageWpx}px;background:#fff;`;
   container.innerHTML = `<style>${printCSS}</style>` + renderPaperPreview(doc);
   document.body.appendChild(container);
   await new Promise(r => setTimeout(r, 80));
 
-  let pageFormat = 'a5', pageWpx = A5W, pageHpx = A5H, pageWmm = 148, pageHmm = 210;
-  if (container.scrollHeight > A5H) {
+  if (pageFormat === 'a5' && container.scrollHeight > A5H) {
     pageFormat = 'a4'; pageWpx = A4W; pageHpx = A4H; pageWmm = 210; pageHmm = 297;
     container.style.width = pageWpx + 'px';
     await new Promise(r => setTimeout(r, 80));
@@ -539,12 +735,31 @@ function removeSignedCopy(doc) {
 }
 
 function deleteDoc(id) {
-  showConfirmModal('Xoá phiếu?', 'Bạn có chắc chắn muốn xoá phiếu này? Hành động không thể hoàn tác.', async () => {
+  const doc = STATE.documents.find(d => d.id === id);
+  if (!doc) return;
+  const isAuthorizedAdmin = ['admin', 'dept_head', 'chief_accountant', 'director'].includes(currentUser().role);
+  const isOwner = doc.requesterId === currentUser().id;
+
+  if (!isAuthorizedAdmin && !(doc.status === 'draft' && isOwner)) {
+    showAlertModal('Quyền Hạn Hạn Chế', 'Chỉ Trưởng nhóm hoặc Admin mới được phép xóa phiếu đang chờ ký!');
+    return;
+  }
+
+  showConfirmModal('Chuyển phiếu vào Thùng rác?', `Bạn có chắc chắn muốn xoá phiếu ${doc.docNo || doc.formCode}? Phiếu sẽ được chuyển vào Thùng rác và có thể khôi phục lại bất kỳ lúc nào.`, async () => {
+    const trashDoc = JSON.parse(JSON.stringify(doc));
+    trashDoc.deletedAt = new Date().toISOString();
+    trashDoc.deletedBy = currentUser().name;
+    trashDoc.itemType = 'document';
+
+    if (!STATE.trash) STATE.trash = [];
+    STATE.trash.unshift(trashDoc);
+    await saveTrash();
+
     STATE.documents = STATE.documents.filter(d => d.id !== id);
     await saveDocuments();
     STATE.page = 'list';
     render();
-    showToast('Đã xoá phiếu');
+    showToast('✓ Đã chuyển phiếu vào Thùng rác thành công!');
   });
 }
 
@@ -873,7 +1088,7 @@ function renderDifferentBeneficiariesBannerHtml(doc) {
   if (rawItems.length < 2) return '';
 
   const matchedInvs = rawItems.map(it => {
-    return STATE.invoices.find(r => matchInvoiceRecordWithDocItem(r, it.invoiceNo));
+    return STATE.invoices.find(r => matchInvoiceRecordWithDocItem(r, it.invoiceNo, it.attachmentId));
   }).filter(Boolean);
 
   if (matchedInvs.length < 2) return '';
@@ -1379,30 +1594,63 @@ function invoiceCombinedNo(rec) {
   return rec.seriesNo ? `${rec.seriesNo}|${rec.invoiceNumber}` : rec.invoiceNumber;
 }
 
-function matchInvoiceRecordWithDocItem(rec, itemInvoiceNo) {
+function matchInvoiceRecordWithDocItem(rec, itemInvoiceNo, itemAttachmentId) {
+  if (itemAttachmentId && rec.attachmentId && itemAttachmentId === rec.attachmentId) {
+    return true;
+  }
   if (!itemInvoiceNo || !itemInvoiceNo.trim()) return false;
+
   const itemStr = itemInvoiceNo.trim().toLowerCase();
   const invNum = (rec.invoiceNumber || '').trim().toLowerCase();
   const sNo = (rec.seriesNo || '').trim().toLowerCase();
-  const combined = sNo ? `${sNo}|${invNum}` : invNum;
 
-  if (itemStr === combined) return true;
-  if (invNum && itemStr === invNum) return true;
-  if (invNum && (itemStr.endsWith(`|${invNum}`) || itemStr.endsWith(`/${invNum}`) || itemStr.endsWith(`-${invNum}`))) return true;
-  if (invNum && itemStr.includes(invNum)) return true;
+  if (!invNum && !sNo) return false;
+
+  // Normalize numbers by stripping leading zeros (e.g. 0000068 -> 68)
+  const normInvNum = invNum ? invNum.replace(/^0+/, '') : '';
+  const normItemStr = itemStr.replace(/(^|[^0-9])0+([1-9][0-9]*)/g, '$1$2');
+
+  // Exact combined series + invoice number matching (e.g. 1C26TYY|68, 1C26TYY-68, 1C26TYY/68)
+  if (sNo && invNum) {
+    const combined = `${sNo}|${invNum}`;
+    const combinedNorm = `${sNo}|${normInvNum}`;
+    if (itemStr === combined || normItemStr === combinedNorm) return true;
+    if (itemStr === `${sNo}-${invNum}` || normItemStr === `${sNo}-${normInvNum}`) return true;
+    if (itemStr === `${sNo}/${invNum}` || normItemStr === `${sNo}/${normInvNum}`) return true;
+  }
+
+  // Exact invoice number match
+  if (invNum) {
+    if (itemStr === invNum || normItemStr === normInvNum) return true;
+  }
+
+  // Boundary-delimited matching: prevents short numbers (e.g. "68") from matching "168" or "680"
+  if (normInvNum && normInvNum.length > 0) {
+    const escaped = normInvNum.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const boundaryRegex = new RegExp(`(?:^|[^0-9])${escaped}(?:$|[^0-9])`, 'i');
+
+    if (boundaryRegex.test(normItemStr)) {
+      // If item string contains a series delimiter '|' or '/', verify seriesNo if rec has one
+      if (sNo && itemStr.includes('|') && !itemStr.includes(sNo)) {
+        return false;
+      }
+      return true;
+    }
+  }
+
   return false;
 }
 
 function getInvoiceRecordStatus(rec) {
   const invNum = (rec.invoiceNumber || '').trim();
-  if (!invNum && !rec.seriesNo) {
+  if (!invNum && !rec.seriesNo && !rec.attachmentId) {
     return { key: 'not_submitted', label: 'Mới nhập', cls: 'b-changes', docId: null };
   }
 
   let matchingDoc = null;
   for (const d of STATE.documents) {
     const arr = [...(d.items || []), ...(d.spentItems || [])];
-    const match = arr.find(it => matchInvoiceRecordWithDocItem(rec, it.invoiceNo));
+    const match = arr.find(it => matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId));
     if (match) {
       matchingDoc = d;
       if (d.status === 'signed') break;
@@ -1506,7 +1754,7 @@ async function removeInvoiceFromDraftVouchers(rec) {
 
     if (d.items && d.items.length > 0) {
       const origLen = d.items.length;
-      d.items = d.items.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo) && it.attachmentId !== rec.attachmentId);
+      d.items = d.items.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId) && it.attachmentId !== rec.attachmentId);
       if (d.items.length !== origLen) {
         modified = true;
         d.items.forEach((it, idx) => { it.stt = idx + 1; });
@@ -1518,7 +1766,7 @@ async function removeInvoiceFromDraftVouchers(rec) {
 
     if (d.spentItems && d.spentItems.length > 0) {
       const origLen = d.spentItems.length;
-      d.spentItems = d.spentItems.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo) && it.attachmentId !== rec.attachmentId);
+      d.spentItems = d.spentItems.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId) && it.attachmentId !== rec.attachmentId);
       if (d.spentItems.length !== origLen) modified = true;
     }
 
@@ -1565,15 +1813,21 @@ function deleteInvoiceRecord(id) {
     return;
   }
 
-  showConfirmModal('Xoá hoá đơn?', 'Xoá hoá đơn này khỏi kho chứng từ và tự động gỡ khỏi các phiếu Nháp liên quan?', async () => {
-    if (rec.attachmentId) {
-      try { await window.storage.delete('attachment:' + rec.attachmentId, true); } catch (e) {}
-    }
+  showConfirmModal('Chuyển hoá đơn vào Thùng rác?', 'Chuyển hoá đơn này vào Thùng rác (có thể khôi phục lại) và tự động gỡ khỏi các phiếu Nháp liên quan?', async () => {
+    const trashInv = JSON.parse(JSON.stringify(rec));
+    trashInv.deletedAt = new Date().toISOString();
+    trashInv.deletedBy = currentUser().name;
+    trashInv.itemType = 'invoice';
+
+    if (!STATE.trash) STATE.trash = [];
+    STATE.trash.unshift(trashInv);
+    await saveTrash();
+
     await removeInvoiceFromDraftVouchers(rec);
     STATE.invoices = STATE.invoices.filter(r => r.id !== id);
     await saveInvoices();
     render();
-    showToast('✓ Đã xoá hoá đơn khỏi Kho và tự động gỡ khỏi các phiếu Nháp!');
+    showToast('✓ Đã chuyển hoá đơn vào Thùng rác thành công!');
   });
 }
 
@@ -1670,7 +1924,7 @@ function openManualInvoiceModal(initialData = {}) {
 
         <div class="field" style="margin-bottom:14px;">
           <label style="font-weight:600;font-size:12px;color:var(--ink);margin-bottom:5px;display:block;">🏢 Người / Đơn vị thụ hưởng (Người bán / Cơ quan thu)</label>
-          <input type="text" id="mim-beneficiary" value="${(initialData.beneficiaryName || '').replace(/"/g, '&quot;')}" placeholder="VD: CỤC XUẤT NHẬP KHẨU, CÔNG TY TNHH..." style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;box-sizing:border-box;">
+          <textarea id="mim-beneficiary" rows="2" placeholder="VD: CỤC XUẤT NHẬP KHẨU, CÔNG TY TNHH..." style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;line-height:1.45;font-family:inherit;resize:vertical;box-sizing:border-box;">${initialData.beneficiaryName || ''}</textarea>
         </div>
 
         <div class="field" style="margin-bottom:14px;">
@@ -1857,9 +2111,12 @@ function openManualInvoiceModal(initialData = {}) {
 function canUserAccessDoc(doc, user = currentUser()) {
   if (!doc) return false;
   if (!user) return true;
+  // Admin toàn hệ thống, Trưởng nhóm / Phụ trách bộ phận (dept_head), Kế toán trưởng, Giám đốc:
+  // Xem TOÀN BỘ 100% tất cả Hóa đơn và các loại phiếu (ĐNTT, ĐNTƯ, ĐNHƯ, Phiếu trình, Phiếu thu) của tất cả thành viên trong công ty!
   if (['admin', 'director', 'chief_accountant', 'dept_head'].includes(user.role)) {
     return true;
   }
+  // Nhân viên thường (employee): Chỉ xem được phiếu do chính mình lập
   const isOwnDoc = (
     (doc.employeeCode && user.employeeCode && doc.employeeCode === user.employeeCode) ||
     (doc.requesterId && user.id && doc.requesterId === user.id) ||
@@ -1884,15 +2141,14 @@ function renderSidebar() {
     chief_accountant: 'Kế toán trưởng',
     director: 'Thủ trưởng đơn vị'
   };
-  const items = [
-    { key: 'overview', label: 'Tổng quan', icon: '📊' },
-    { key: 'invoices', label: 'Kho Hoá đơn', icon: '🧾' },
-    { key: 'create-select', label: 'Tạo phiếu mới', icon: '＋' },
-    { key: 'list', label: 'Danh sách phiếu', icon: '☰' },
-    { key: 'inbox', label: 'Chờ ký', icon: '✓', badge: pendingSignatureCount() },
-    { key: 'payees', label: 'Danh bạ người nhận', icon: '☎' },
-    { key: 'settings', label: 'Cài đặt & Sao lưu', icon: '⚙' }
-  ];
+
+  const accessibleDocs = getAccessibleDocuments();
+  const draftCount = accessibleDocs.filter(d => d.status === 'draft').length;
+  const pendingCount = accessibleDocs.filter(d => d.status === 'pending_signature').length;
+  const signedCount = accessibleDocs.filter(d => d.status === 'signed' || d.status === 'completed').length;
+
+  const isListActive = STATE.page === 'list' || STATE.page === 'detail';
+  const currentCategory = STATE._listStatusCategory || 'all';
 
   return `
   <div class="sidebar">
@@ -1900,12 +2156,62 @@ function renderSidebar() {
       <img class="brand-seal" src="${LOGO_DATA_URI}" alt="CPC1HN">
       <div class="brand-text">CPC1<span>Phiếu tài chính</span></div>
     </div>
-    ${items.map(it => `
-      <button class="nav-item ${STATE.page === it.key || (it.key === 'list' && STATE.page === 'detail') ? 'active' : ''}" data-nav="${it.key}">
-        <span class="nav-icon">${it.icon}</span>
-        <span>${it.label}</span>
-        ${it.badge ? `<span class="nav-badge">${it.badge}</span>` : ''}
-      </button>`).join('')}
+
+    <button class="nav-item ${STATE.page === 'overview' ? 'active' : ''}" data-nav="overview">
+      <span class="nav-icon">📊</span>
+      <span>Tổng quan</span>
+    </button>
+
+    <button class="nav-item ${STATE.page === 'invoices' ? 'active' : ''}" data-nav="invoices">
+      <span class="nav-icon">🧾</span>
+      <span>Kho Hoá đơn</span>
+    </button>
+
+    <button class="nav-item ${STATE.page === 'create-select' ? 'active' : ''}" data-nav="create-select">
+      <span class="nav-icon">＋</span>
+      <span>Tạo phiếu mới</span>
+    </button>
+
+    <div style="margin:2px 0;">
+      <button class="nav-item ${isListActive && currentCategory === 'all' ? 'active' : ''}" data-nav="list" data-statuscat="all">
+        <span class="nav-icon">☰</span>
+        <span>Danh sách phiếu</span>
+        <span class="nav-badge">${accessibleDocs.length}</span>
+      </button>
+      <div class="nav-sub-menu" style="padding-left:22px;margin:3px 0 6px 0;display:flex;flex-direction:column;gap:3px;">
+        <button type="button" class="nav-sub-item ${isListActive && currentCategory === 'draft' ? 'active' : ''}" data-nav="list" data-statuscat="draft" style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-radius:6px;font-size:12px;color:${isListActive && currentCategory === 'draft' ? '#FFFFFF' : '#CBD5E1'};background:${isListActive && currentCategory === 'draft' ? 'rgba(255,255,255,0.18)' : 'transparent'};border:none;cursor:pointer;font-weight:600;width:100%;text-align:left;">
+          <span>📝 Nháp</span>
+          <span class="badge b-draft" style="font-size:10px;padding:1px 5px;">${draftCount}</span>
+        </button>
+        <button type="button" class="nav-sub-item ${isListActive && currentCategory === 'pending_signature' ? 'active' : ''}" data-nav="list" data-statuscat="pending_signature" style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-radius:6px;font-size:12px;color:${isListActive && currentCategory === 'pending_signature' ? '#FFFFFF' : '#CBD5E1'};background:${isListActive && currentCategory === 'pending_signature' ? 'rgba(255,255,255,0.18)' : 'transparent'};border:none;cursor:pointer;font-weight:600;width:100%;text-align:left;">
+          <span>⏳ Chờ ký</span>
+          <span class="badge b-pending" style="font-size:10px;padding:1px 5px;">${pendingCount}</span>
+        </button>
+        <button type="button" class="nav-sub-item ${isListActive && currentCategory === 'signed' ? 'active' : ''}" data-nav="list" data-statuscat="signed" style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-radius:6px;font-size:12px;color:${isListActive && currentCategory === 'signed' ? '#FFFFFF' : '#CBD5E1'};background:${isListActive && currentCategory === 'signed' ? 'rgba(255,255,255,0.18)' : 'transparent'};border:none;cursor:pointer;font-weight:600;width:100%;text-align:left;">
+          <span>✍️ Đã ký</span>
+          <span class="badge b-approved" style="font-size:10px;padding:1px 5px;">${signedCount}</span>
+        </button>
+      </div>
+    </div>
+
+    <button class="nav-item ${STATE.page === 'payees' ? 'active' : ''}" data-nav="payees">
+      <span class="nav-icon">☎</span>
+      <span>Danh bạ người nhận</span>
+    </button>
+
+    ${['admin', 'dept_head', 'chief_accountant', 'director'].includes(u.role) ? `
+    <button class="nav-item ${STATE.page === 'trash' ? 'active' : ''}" data-nav="trash">
+      <span class="nav-icon">🗑️</span>
+      <span>Thùng rác</span>
+      ${(STATE.trash && STATE.trash.length > 0) ? `<span class="nav-badge">${STATE.trash.length}</span>` : ''}
+    </button>
+    ` : ''}
+
+    <button class="nav-item ${STATE.page === 'settings' ? 'active' : ''}" data-nav="settings">
+      <span class="nav-icon">⚙</span>
+      <span>Cài đặt & Sao lưu</span>
+    </button>
+
     <div class="nav-sep"></div>
     <div class="sidebar-footer">
       <div style="padding:8px 12px;margin-bottom:10px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;font-size:11px;color:#166534;display:flex;align-items:center;gap:6px;">
@@ -1941,7 +2247,11 @@ function renderOverview() {
   const unlinkedInvoices = STATE.invoices.filter(r => getInvoiceRecordStatus(r).key === 'not_submitted');
   const unlinkedTotalAmount = unlinkedInvoices.reduce((sum, r) => sum + (r.amount || 0), 0);
 
-  // 3. Month invoices summary
+  // 3. Pending signature documents
+  const pendingDocs = getAccessibleDocuments().filter(d => d.status === 'pending_signature');
+  const pendingTotalAmount = pendingDocs.reduce((sum, d) => sum + computeTotal(d), 0);
+
+  // 4. Month invoices summary
   const monthInvoices = STATE.invoices.filter(r => monthKey(r.date || r.uploadedAt) === selectedMonth);
   const monthTotalAmount = monthInvoices.reduce((sum, r) => sum + (r.amount || 0), 0);
 
@@ -1949,18 +2259,20 @@ function renderOverview() {
   <div class="page-header">
     <div>
       <h1>📊 Tổng quan Quản lý Tài chính & Kho Hoá đơn</h1>
-      <p>Theo dõi các khoản tạm ứng quá hạn, bảng tổng hợp hoá đơn theo số Invoice và danh sách hoá đơn chưa làm ĐNTT.</p>
+      <p>Theo dõi các khoản tạm ứng quá hạn, phiếu đang chờ ký, danh sách hoá đơn chưa làm ĐNTT và bảng tổng hợp.</p>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;">
-      <label style="font-weight:600;font-size:13px;color:var(--ink);">Chọn tháng xem tổng hợp:</label>
-      <select id="overview-month-select" style="font-weight:700;padding:6px 12px;border-radius:6px;border:1.5px solid var(--teal);color:var(--teal);background:#F0FDFA;cursor:pointer;">
-        ${allMonths.map(m => `<option value="${m}" ${selectedMonth === m ? 'selected' : ''}>${monthLabel(m)}</option>`).join('')}
-      </select>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      <div style="display:flex;gap:6px;align-items:center;">
+        <label style="font-weight:600;font-size:13px;color:var(--ink);">Tháng:</label>
+        <select id="overview-month-select" style="font-weight:700;padding:6px 12px;border-radius:6px;border:1.5px solid var(--teal);color:var(--teal);background:#F0FDFA;cursor:pointer;">
+          ${allMonths.map(m => `<option value="${m}" ${selectedMonth === m ? 'selected' : ''}>${monthLabel(m)}</option>`).join('')}
+        </select>
+      </div>
     </div>
   </div>
 
   <!-- KPI SUMMARY CARDS -->
-  <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(230px, 1fr));gap:16px;margin-bottom:24px;">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:16px;margin-bottom:24px;">
     
     <div style="background:#FFF1F2;border:1px solid #FECDD3;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(244,63,94,0.06);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -1969,6 +2281,15 @@ function renderOverview() {
       </div>
       <div style="font-size:22px;font-weight:800;color:#E11D48;">${overdues.length} khoản</div>
       <div style="font-size:12.5px;color:#BE123C;margin-top:4px;">Tổng nợ: <b>${fmtMoney(overdueTotalAmount, 'VND')}</b></div>
+    </div>
+
+    <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(217,119,6,0.06);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:12px;color:#92400E;font-weight:700;letter-spacing:0.5px;">⏳ PHIẾU ĐANG CHỜ KÝ DUYỆT</span>
+        <span style="font-size:20px;">⏳</span>
+      </div>
+      <div style="font-size:22px;font-weight:800;color:#D97706;">${pendingDocs.length} phiếu</div>
+      <div style="font-size:12.5px;color:#B45309;margin-top:4px;">Tổng tiền: <b>${fmtMoney(pendingTotalAmount, 'VND')}</b></div>
     </div>
 
     <div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(2,132,199,0.06);">
@@ -2035,6 +2356,65 @@ function renderOverview() {
                   </td>
                   <td style="text-align:center;">
                     <button class="icon-btn" data-open="${o.doc.id}" title="Xem chi tiết phiếu">👁</button>
+                  </td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `}
+  </div>
+
+  <!-- SECTION 2: PENDING SIGNATURES -->
+  <div class="form-card" style="margin-bottom:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+      <h3 style="font-size:15.5px;color:#D97706;display:flex;align-items:center;gap:8px;margin:0;">
+        <span>⏳ List Phiếu Tài chính & ĐNTT Đang Chờ Ký duyệt</span>
+        <span class="badge" style="background:#FEF3C7;color:#D97706;font-weight:700;">${pendingDocs.length} phiếu</span>
+      </h3>
+      <div style="font-size:13px;color:var(--ink-soft);">
+        Tổng giá trị chờ ký: <b style="color:#D97706;font-size:14px;">${fmtMoney(pendingTotalAmount, 'VND')}</b>
+      </div>
+    </div>
+
+    ${pendingDocs.length === 0 ? `
+      <div style="text-align:center;padding:24px 10px;color:#15803D;background:#F0FDF4;border-radius:8px;border:1px dashed #86EFAC;">
+        🎉 Không có phiếu nào đang ở trạng thái chờ ký duyệt!
+      </div>
+    ` : `
+      <div style="overflow-x:auto;">
+        <table class="items-table" style="font-size:12.5px;width:100%;">
+          <thead>
+            <tr>
+              <th style="width:36px;text-align:center;">STT</th>
+              <th style="width:140px;text-align:center;">Mã phiếu</th>
+              <th style="width:140px;">Loại biểu mẫu</th>
+              <th>Người đề nghị</th>
+              <th>Bộ phận</th>
+              <th style="width:100px;text-align:center;">Ngày lập</th>
+              <th style="width:130px;text-align:right;">Số tiền</th>
+              <th style="width:100px;text-align:center;">Trạng thái</th>
+              <th style="width:70px;text-align:center;">Phiếu</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pendingDocs.map((d, i) => {
+              const code = d.docNo || d.formCode;
+              const typeLabel = DOC_TYPES[d.type] ? DOC_TYPES[d.type].label : (d.title || d.type);
+              return `
+                <tr>
+                  <td style="text-align:center;">${i + 1}</td>
+                  <td style="text-align:center;font-weight:700;color:var(--teal);">${code}</td>
+                  <td>${typeLabel}</td>
+                  <td style="font-weight:600;">${d.requesterName}</td>
+                  <td>${d.department || ''}</td>
+                  <td style="text-align:center;">${fmtDate(d.documentDate || d.createdAt)}</td>
+                  <td style="text-align:right;font-weight:700;color:#D97706;">${fmtMoney(computeTotal(d), d.currency)}</td>
+                  <td style="text-align:center;">
+                    <span class="badge b-pending" style="font-size:11px;">Chờ ký</span>
+                  </td>
+                  <td style="text-align:center;">
+                    <button class="icon-btn" data-open="${d.id}" title="Xem chi tiết phiếu">👁</button>
                   </td>
                 </tr>`;
             }).join('')}
@@ -2178,8 +2558,247 @@ function renderPage() {
   if (STATE.page === 'inbox') return renderInbox();
   if (STATE.page === 'detail') return renderDetail();
   if (STATE.page === 'payees') return renderPayees();
+  if (STATE.page === 'trash') return renderTrash();
   if (STATE.page === 'settings') return renderSettings();
   return renderOverview();
+}
+
+/* ===================== VIEW: TRASH (THÙNG RÁC) ===================== */
+function renderTrash() {
+  const user = currentUser();
+  const isAuthorizedAdmin = ['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role);
+  if (!isAuthorizedAdmin) {
+    return `
+    <div class="empty-state" style="padding:60px 20px;background:var(--card);border-radius:12px;border:1px solid var(--line);text-align:center;margin-top:20px;">
+      <div class="big" style="font-size:48px;">🔒</div>
+      <p style="font-size:18px;font-weight:700;color:var(--danger);margin-top:12px;">Quyền truy cập bị hạn chế</p>
+      <p style="font-size:14px;color:var(--ink-soft);margin-top:6px;max-width:480px;margin-left:auto;margin-right:auto;">
+        Chỉ <strong>Admin</strong> và <strong>Trưởng nhóm / Quản lý</strong> mới có quyền xem và thao tác dữ liệu trong Thùng rác.
+      </p>
+    </div>
+    `;
+  }
+
+  const trashItems = STATE.trash || [];
+  const selectedType = STATE._trashTypeFilter || 'all';
+
+  let filtered = [...trashItems];
+  if (selectedType === 'document') filtered = filtered.filter(i => i.itemType === 'document');
+  if (selectedType === 'invoice') filtered = filtered.filter(i => i.itemType === 'invoice');
+
+  return `
+  <div class="page-header">
+    <div>
+      <h1>🗑️ Thùng rác (Mục đã xoá)</h1>
+      <p>Danh sách các phiếu tài chính và hoá đơn đã xoá. <strong style="color:var(--danger);">Tất cả mục trong thùng rác sẽ tự động xoá vĩnh viễn sau 30 ngày.</strong></p>
+    </div>
+    ${trashItems.length > 0 ? `
+      <button type="button" class="btn btn-outline btn-sm" id="empty-trash-btn" style="color:var(--danger);border-color:var(--danger);" title="Xoá vĩnh viễn tất cả mục trong thùng rác">
+        ❌ Xoá sạch thùng rác (${trashItems.length})
+      </button>` : ''}
+  </div>
+
+  <div class="filters" style="margin-top:0;margin-bottom:14px;">
+    <select id="filter-trash-type">
+      <option value="all" ${selectedType === 'all' ? 'selected' : ''}>Tất cả loại mục (${trashItems.length})</option>
+      <option value="document" ${selectedType === 'document' ? 'selected' : ''}>Phiếu tài chính (${trashItems.filter(i => i.itemType === 'document').length})</option>
+      <option value="invoice" ${selectedType === 'invoice' ? 'selected' : ''}>Hoá đơn điện tử (${trashItems.filter(i => i.itemType === 'invoice').length})</option>
+    </select>
+  </div>
+
+  ${filtered.length === 0 ? `
+    <div class="empty-state" style="padding:48px 16px;background:var(--card);border-radius:12px;border:1px solid var(--line);text-align:center;">
+      <div class="big" style="font-size:42px;">🗑️</div>
+      <p style="font-size:15px;font-weight:600;color:var(--ink);margin-top:10px;">Thùng rác trống</p>
+      <p style="font-size:13px;color:var(--ink-soft);margin-top:4px;">Chưa có phiếu hay hoá đơn nào bị xoá.</p>
+    </div>
+  ` : `
+    <div class="doc-table" style="overflow-x:auto;">
+      <table class="invoice-table" style="min-width:960px;">
+        <thead>
+          <tr>
+            <th style="width:100px;">Loại mục</th>
+            <th style="width:160px;">Mã / Số hoá đơn</th>
+            <th style="width:150px;">Người đề nghị</th>
+            <th>Nội dung / Diễn giải</th>
+            <th style="width:140px;text-align:right;">Số tiền</th>
+            <th style="width:180px;">Ngày xoá & Thời hạn</th>
+            <th style="width:160px;text-align:center;">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.map(item => {
+            const isDoc = item.itemType === 'document';
+            const code = isDoc ? (item.docNo || item.formCode) : (item.invoiceNumber ? `HĐ ${item.invoiceNumber}${item.seriesNo ? ` (${item.seriesNo})` : ''}` : 'Hoá đơn');
+            const owner = item.requesterName || item.deletedBy || '—';
+            const amt = item.totalAmount || item.amount || 0;
+            const amtFormatted = amt ? `${Number(amt).toLocaleString('vi-VN')} ${item.currency || 'VNĐ'}` : '—';
+            const deletedTime = item.deletedAt ? new Date(item.deletedAt).getTime() : Date.now();
+            const deletedDateStr = item.deletedAt ? new Date(item.deletedAt).toLocaleString('vi-VN') : '—';
+            const daysElapsed = Math.floor((Date.now() - deletedTime) / (24 * 60 * 60 * 1000));
+            const daysRemaining = Math.max(0, 30 - daysElapsed);
+            const noteText = item.description || item.note || item.reason || '—';
+
+            return `
+            <tr>
+              <td>
+                <span class="badge ${isDoc ? 'badge-blue' : 'badge-purple'}">
+                  ${isDoc ? '📄 Phiếu' : '🧾 Hoá đơn'}
+                </span>
+              </td>
+              <td style="font-weight:700;">${code}</td>
+              <td>${owner}</td>
+              <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${noteText.replace(/"/g, '&quot;')}">${noteText}</td>
+              <td style="font-weight:600;font-family:var(--font-mono);text-align:right;">${amtFormatted}</td>
+              <td style="font-size:12px;color:var(--ink-soft);">
+                <div>📅 ${deletedDateStr}</div>
+                <div>👤 Bởi: ${item.deletedBy || 'N/A'}</div>
+                <div style="margin-top:3px;font-size:11px;font-weight:700;color:${daysRemaining <= 5 ? '#EF4444' : '#D97706'};">
+                  ⏳ Tự động xoá: còn ${daysRemaining} ngày
+                </div>
+              </td>
+              <td style="text-align:center;white-space:nowrap;">
+                <button type="button" class="btn btn-outline btn-sm" data-restoretrash="${item.id}" style="font-size:12px;padding:3px 8px;color:var(--teal);border-color:var(--teal);" title="Khôi phục lại mục này quay lại danh sách chính">
+                  🔄 Khôi phục
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" data-purgetrash="${item.id}" style="font-size:12px;padding:3px 6px;color:var(--danger);" title="Xoá vĩnh viễn mục này">
+                  ❌ Xoá
+                </button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `}
+  `;
+}
+
+async function restoreTrashItem(id) {
+  const user = currentUser();
+  if (!['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role)) {
+    showAlertModal('Không có quyền', 'Chỉ Admin và Trưởng nhóm mới có quyền thao tác trên Thùng rác!');
+    return;
+  }
+  if (!STATE.trash) return;
+  const item = STATE.trash.find(i => i.id === id);
+  if (!item) return;
+
+  const isDoc = item.itemType === 'document';
+  const code = isDoc ? (item.docNo || item.formCode) : (item.invoiceNumber || 'Hoá đơn');
+
+  showConfirmModal('Khôi phục mục này?', `Khôi phục ${isDoc ? 'phiếu' : 'hoá đơn'} "${code}" quay lại danh sách chính?`, async () => {
+    const itemType = item.itemType || 'document';
+    delete item.deletedAt;
+    delete item.deletedBy;
+    delete item.itemType;
+
+    if (itemType === 'document') {
+      if (!STATE.documents) STATE.documents = [];
+      STATE.documents.unshift(item);
+      await saveDocuments();
+    } else {
+      if (!STATE.invoices) STATE.invoices = [];
+      STATE.invoices.unshift(item);
+      await saveInvoices();
+    }
+
+    STATE.trash = STATE.trash.filter(i => i.id !== id);
+    await saveTrash();
+    render();
+    showToast('✓ Đã khôi phục mục thành công!');
+  });
+}
+
+async function purgeTrashItem(id) {
+  const user = currentUser();
+  if (!['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role)) {
+    showAlertModal('Không có quyền', 'Chỉ Admin và Trưởng nhóm mới có quyền thao tác trên Thùng rác!');
+    return;
+  }
+  if (!STATE.trash) return;
+  const item = STATE.trash.find(i => i.id === id);
+  if (!item) return;
+
+  showConfirmModal('Xoá vĩnh viễn?', `Bạn có chắc muốn xoá VĨNH VIỄN mục này? Dữ liệu và file đính kèm sẽ không thể phục hồi lại.`, async () => {
+    if (item.attachmentId) {
+      try { await window.storage.delete('attachment:' + item.attachmentId, true); } catch (e) {}
+    }
+    if (item.signedAttachmentId) {
+      try { await window.storage.delete('attachment:' + item.signedAttachmentId, true); } catch (e) {}
+    }
+    if (item.attachments && item.attachments.length > 0) {
+      for (const a of item.attachments) {
+        try { await window.storage.delete('attachment:' + a.id, true); } catch (e) {}
+      }
+    }
+
+    STATE.trash = STATE.trash.filter(i => i.id !== id);
+    await saveTrash();
+    render();
+    showToast('Đã xoá vĩnh viễn mục khỏi Thùng rác!');
+  });
+}
+
+async function emptyAllTrash() {
+  const user = currentUser();
+  if (!['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role)) {
+    showAlertModal('Không có quyền', 'Chỉ Admin và Trưởng nhóm mới có quyền thao tác trên Thùng rác!');
+    return;
+  }
+  if (!STATE.trash || STATE.trash.length === 0) return;
+  showConfirmModal('❌ Xoá sạch Thùng rác?', `Bạn có chắc chắn muốn xoá vĩnh viễn toàn bộ ${STATE.trash.length} mục trong Thùng rác? Hành động này không thể hoàn tác.`, async () => {
+    for (const item of STATE.trash) {
+      if (item.attachmentId) {
+        try { await window.storage.delete('attachment:' + item.attachmentId, true); } catch (e) {}
+      }
+      if (item.signedAttachmentId) {
+        try { await window.storage.delete('attachment:' + item.signedAttachmentId, true); } catch (e) {}
+      }
+      if (item.attachments && item.attachments.length > 0) {
+        for (const a of item.attachments) {
+          try { await window.storage.delete('attachment:' + a.id, true); } catch (e) {}
+        }
+      }
+    }
+    STATE.trash = [];
+    await saveTrash();
+    render();
+    showToast('Đã xoá sạch toàn bộ Thùng rác!');
+  });
+}
+
+async function autoPurgeExpiredTrash() {
+  if (!STATE.trash || STATE.trash.length === 0) return;
+  const now = Date.now();
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  const expired = STATE.trash.filter(item => {
+    if (!item.deletedAt) return false;
+    return (now - new Date(item.deletedAt).getTime()) > thirtyDaysMs;
+  });
+
+  if (expired.length === 0) return;
+
+  for (const item of expired) {
+    if (item.attachmentId) {
+      try { await window.storage.delete('attachment:' + item.attachmentId, true); } catch (e) {}
+    }
+    if (item.signedAttachmentId) {
+      try { await window.storage.delete('attachment:' + item.signedAttachmentId, true); } catch (e) {}
+    }
+    if (item.attachments && item.attachments.length > 0) {
+      for (const a of item.attachments) {
+        try { await window.storage.delete('attachment:' + a.id, true); } catch (e) {}
+      }
+    }
+  }
+
+  STATE.trash = STATE.trash.filter(item => {
+    if (!item.deletedAt) return true;
+    return (now - new Date(item.deletedAt).getTime()) <= thirtyDaysMs;
+  });
+
+  await saveTrash();
 }
 
 /* ===================== VIEW: INVOICES ===================== */
@@ -2269,8 +2888,8 @@ function renderInvoiceTableHtml(records, selected) {
             </td>
             <td><input data-invref="${r.id}" value="${r.invoiceRef || ''}" placeholder="Số Invoice" style="width:95px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;"></td>
             <td>${r.requesterName}</td>
-            <td>
-              <input type="text" data-invbeneficiary="${r.id}" value="${(r.beneficiaryName || '').replace(/"/g, '&quot;')}" placeholder="Người thụ hưởng / Đơn vị bán" style="width:100%;min-width:140px;max-width:210px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;" title="${(r.beneficiaryName || '').replace(/"/g, '&quot;')}">
+            <td style="min-width:170px;max-width:270px;">
+              <textarea class="inv-beneficiary-area" data-invbeneficiary="${r.id}" rows="2" placeholder="Người thụ hưởng / Đơn vị bán" title="${(r.beneficiaryName || '').replace(/"/g, '&quot;')}">${r.beneficiaryName || ''}</textarea>
             </td>
             <td><span class="badge ${st.cls} badge-pill" title="${st.label}">${st.label}</span></td>
             <td style="white-space:nowrap;">
@@ -2442,15 +3061,23 @@ function renderForm() {
   let itemsCols = [], itemsRows = '';
   if (type === 'payment') {
     itemsCols = ['STT', 'Ngày', 'Hoá đơn/Chứng từ', 'Số tiền', 'Ghi chú', ''];
-    itemsRows = doc.items.map((it, i) => `
+    itemsRows = doc.items.map((it, i) => {
+      const isLocked = !!(it.fromRepo || it.attachmentId || (it.invoiceNo && it.invoiceNo.trim()) || (STATE.invoices && STATE.invoices.some(r => matchInvoiceRecordWithDocItem(r, it.invoiceNo, it.attachmentId))));
+      const lockAttr = isLocked ? 'readonly tabindex="-1"' : '';
+      const lockStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:600;' : '';
+      const lockTextareaStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;line-height:1.4;' : '';
+      const lockTitle = isLocked ? 'title="🔒 Thông tin hoá đơn được khoá đồng bộ từ Kho Hoá Đơn. Vui lòng chỉnh sửa tại Kho Hoá Đơn nếu cần thay đổi."' : '';
+
+      return `
       <tr>
         <td style="width:34px;text-align:center;">${i + 1}</td>
-        <td style="width:130px;"><input type="date" data-item="${i}" data-field="date" value="${it.date || ''}"></td>
-        <td style="width:150px;"><input class="${findDuplicateInvoiceUsage(it.invoiceNo, doc.id) ? 'dup-warning' : ''}" data-item="${i}" data-field="invoiceNo" value="${it.invoiceNo || ''}" placeholder="Ký hiệu|Số HĐ"></td>
-        <td class="col-amount" style="width:140px;"><input type="number" data-item="${i}" data-field="amount" value="${it.amount || ''}"></td>
-        <td><textarea data-item="${i}" data-field="description" rows="2" placeholder="Ghi chú (Nội dung - Invoice: ...)" style="width:100%;min-height:42px;padding:6px 8px;font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;resize:vertical;line-height:1.4;">${it.description || ''}</textarea></td>
-        <td class="col-del"><button class="del-row" data-delitem="${i}">✕</button></td>
-      </tr>`).join('');
+        <td style="width:130px;"><input type="date" data-item="${i}" data-field="date" value="${it.date || ''}" ${lockAttr} style="${lockStyle}" ${lockTitle}></td>
+        <td style="width:150px;"><input class="${findDuplicateInvoiceUsage(it.invoiceNo, doc.id) ? 'dup-warning' : ''}" data-item="${i}" data-field="invoiceNo" value="${it.invoiceNo || ''}" placeholder="Ký hiệu|Số HĐ" ${lockAttr} style="${isLocked ? 'background:#F0FDFA;color:#0D9488;border:1.5px solid #99F6E4;cursor:not-allowed;font-weight:700;' : ''}" ${lockTitle}></td>
+        <td class="col-amount" style="width:140px;"><input type="number" data-item="${i}" data-field="amount" value="${it.amount || ''}" ${lockAttr} style="${isLocked ? 'background:#F8FAFC;color:#0F172A;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:700;' : ''}" ${lockTitle}></td>
+        <td><textarea data-item="${i}" data-field="description" rows="2" placeholder="Ghi chú (Nội dung - Invoice: ...)" ${lockAttr} style="width:100%;min-height:42px;padding:6px 8px;font-family:inherit;font-size:13px;resize:vertical;${lockTextareaStyle}" ${lockTitle}>${it.description || ''}</textarea></td>
+        <td class="col-del"><button class="del-row" data-delitem="${i}" title="Xoá dòng này khỏi phiếu">✕</button></td>
+      </tr>`;
+    }).join('');
   } else if (type === 'submission') {
     itemsCols = ['STT', 'Hàng hoá / Nội dung', 'Số tiền', ''];
     itemsRows = doc.items.map((it, i) => `
@@ -2510,16 +3137,24 @@ function renderForm() {
       <table class="items-table">
         <thead><tr><th style="width:34px;">STT</th><th style="width:130px;">Ngày</th><th style="width:150px;">Số hoá đơn</th><th>Nội dung</th><th style="width:130px;">Số tiền</th><th style="width:120px;">Số Invoice</th><th></th></tr></thead>
         <tbody>
-          ${(doc.spentItems || []).map((it, i) => `
+          ${(doc.spentItems || []).map((it, i) => {
+            const isLocked = !!(it.fromRepo || it.attachmentId || (it.invoiceNo && it.invoiceNo.trim()) || (STATE.invoices && STATE.invoices.some(r => matchInvoiceRecordWithDocItem(r, it.invoiceNo, it.attachmentId))));
+            const lockAttr = isLocked ? 'readonly tabindex="-1"' : '';
+            const lockStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:600;' : '';
+            const lockTextareaStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;line-height:1.4;' : '';
+            const lockTitle = isLocked ? 'title="🔒 Thông tin hoá đơn được khoá đồng bộ từ Kho Hoá Đơn. Vui lòng chỉnh sửa tại Kho Hoá Đơn nếu cần thay đổi."' : '';
+
+            return `
             <tr>
               <td style="text-align:center;">${i + 1}</td>
-              <td><input type="date" data-spent="${i}" data-field="date" value="${it.date || ''}"></td>
-              <td><input class="${findDuplicateInvoiceUsage(it.invoiceNo, doc.id) ? 'dup-warning' : ''}" data-spent="${i}" data-field="invoiceNo" value="${it.invoiceNo || ''}" placeholder="Số HĐ"></td>
-              <td><textarea data-spent="${i}" data-field="description" rows="2" placeholder="Nội dung / Diễn giải chi tiết..." style="width:100%;min-height:42px;padding:6px 8px;font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;resize:vertical;line-height:1.4;">${it.description || ''}</textarea></td>
-              <td class="col-amount"><input type="number" data-spent="${i}" data-field="amount" value="${it.amount || ''}"></td>
-              <td><input data-spent="${i}" data-field="invoiceRef" value="${it.invoiceRef || ''}" placeholder="Số Invoice"></td>
+              <td><input type="date" data-spent="${i}" data-field="date" value="${it.date || ''}" ${lockAttr} style="${lockStyle}" ${lockTitle}></td>
+              <td><input class="${findDuplicateInvoiceUsage(it.invoiceNo, doc.id) ? 'dup-warning' : ''}" data-spent="${i}" data-field="invoiceNo" value="${it.invoiceNo || ''}" placeholder="Số HĐ" ${lockAttr} style="${isLocked ? 'background:#F0FDFA;color:#0D9488;border:1.5px solid #99F6E4;cursor:not-allowed;font-weight:700;' : ''}" ${lockTitle}></td>
+              <td><textarea data-spent="${i}" data-field="description" rows="2" placeholder="Nội dung / Diễn giải chi tiết..." ${lockAttr} style="width:100%;min-height:42px;padding:6px 8px;font-family:inherit;font-size:13px;resize:vertical;${lockTextareaStyle}" ${lockTitle}>${it.description || ''}</textarea></td>
+              <td class="col-amount"><input type="number" data-spent="${i}" data-field="amount" value="${it.amount || ''}" ${lockAttr} style="${isLocked ? 'background:#F8FAFC;color:#0F172A;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:700;' : ''}" ${lockTitle}></td>
+              <td><input data-spent="${i}" data-field="invoiceRef" value="${it.invoiceRef || ''}" placeholder="Số Invoice" ${lockAttr} style="${lockStyle}" ${lockTitle}></td>
               <td class="col-del"><button class="del-row" data-delspent="${i}">✕</button></td>
-            </tr>`).join('')}
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;">
@@ -2687,14 +3322,20 @@ function renderDocTable(docs) {
         <th>Ngày lập</th>
         <th style="text-align:right;">Số tiền</th>
         <th>Trạng thái</th>
+        <th style="text-align:center;">Thao tác</th>
       </tr>
     </thead>
     <tbody>
-      ${docs.map(d => `
+      ${docs.map(d => {
+        const isAuthorizedAdmin = ['admin', 'dept_head', 'chief_accountant', 'director'].includes(currentUser().role);
+        const isOwner = d.requesterId === currentUser().id;
+        const canEdit = (d.status === 'draft' || d.status === 'pending_signature') && (isOwner || isAuthorizedAdmin);
+        const canDelete = isAuthorizedAdmin || (d.status === 'draft' && isOwner);
+        return `
         <tr class="row-click" data-open="${d.id}">
           <td><span style="font-weight:700;color:var(--teal);font-family:var(--font-mono);">${d.docNo || d.formCode}</span></td>
           <td><b>${DOC_TYPES[d.type].label}</b></td>
-          <td style="max-width:280px;">${docSummaryText(d)}</td>
+          <td style="max-width:240px;">${docSummaryText(d)}</td>
           <td>${d.requesterName}</td>
           <td>${getBeneficiaryName(d)}</td>
           <td>${fmtDate(d.documentDate)}</td>
@@ -2707,7 +3348,12 @@ function renderDocTable(docs) {
                 : `<span class="badge ${STATUS_BADGE[d.status]}">${STATUS_LABEL[d.status]}</span>`;
             })()}
           </td>
-        </tr>`).join('')}
+          <td style="text-align:center;white-space:nowrap;" onclick="event.stopPropagation();">
+            ${canEdit ? `<button class="btn btn-ghost btn-sm" data-editdoc="${d.id}" style="padding:3px 7px;font-size:12px;" title="Sửa phiếu">✏️ Sửa</button>` : ''}
+            ${canDelete ? `<button class="btn btn-ghost btn-sm" data-deldoc="${d.id}" style="padding:3px 7px;font-size:12px;color:#E11D48;" title="Chỉ Admin & Trưởng nhóm có quyền xóa">🗑️ Xoá</button>` : ''}
+          </td>
+        </tr>`;
+      }).join('')}
     </tbody>
   </table>`;
 }
@@ -2718,9 +3364,26 @@ function renderList() {
   const monthFilter = STATE._listMonthFilter || 'all';
   const requesterFilter = STATE._listRequesterFilter || 'all';
   const payeeFilter = STATE._listPayeeFilter || 'all';
+  const category = STATE._listStatusCategory || 'all';
   const listSearch = (STATE._listSearch || '').trim().toLowerCase();
 
-  let docs = getAccessibleDocuments();
+  const accessibleDocs = getAccessibleDocuments();
+  const draftCount = accessibleDocs.filter(d => d.status === 'draft').length;
+  const pendingCount = accessibleDocs.filter(d => d.status === 'pending_signature').length;
+  const signedCount = accessibleDocs.filter(d => d.status === 'signed' || d.status === 'completed').length;
+
+  let docs = [...accessibleDocs];
+
+  // Status Category Filtering (Nháp, Chờ ký, Đã ký)
+  if (category === 'draft') {
+    docs = docs.filter(d => d.status === 'draft');
+  } else if (category === 'pending_signature') {
+    docs = docs.filter(d => d.status === 'pending_signature');
+  } else if (category === 'signed') {
+    docs = docs.filter(d => d.status === 'signed' || d.status === 'completed');
+  }
+
+  // Dropdown Filtering
   if (typeFilter !== 'all') docs = docs.filter(d => d.type === typeFilter);
   if (statusFilter !== 'all') docs = docs.filter(d => d.status === statusFilter);
   if (monthFilter !== 'all') docs = docs.filter(d => monthKey(d.documentDate || d.createdAt) === monthFilter);
@@ -2753,11 +3416,18 @@ function renderList() {
   const allRequesters = [...new Set(STATE.documents.map(d => d.requesterName))].sort((a, b) => a.localeCompare(b));
   const allPayees = [...new Set(STATE.documents.map(d => getBeneficiaryName(d)))].sort((a, b) => a.localeCompare(b));
 
+  const categoryTitleMap = {
+    all: 'Danh sách phiếu tài chính',
+    draft: 'Danh sách phiếu Nháp',
+    pending_signature: 'Danh sách phiếu Chờ ký',
+    signed: 'Danh sách phiếu Đã ký'
+  };
+
   return `
   <div class="page-header">
     <div>
-      <h1>Danh sách phiếu tài chính</h1>
-      <p>Tổng cộng ${docs.length} phiếu trong hệ thống.</p>
+      <h1>${categoryTitleMap[category] || 'Danh sách phiếu tài chính'}</h1>
+      <p>Tổng cộng ${docs.length} phiếu (${category === 'all' ? 'tất cả trạng thái' : (category === 'draft' ? 'phiếu Nháp chưa trình' : (category === 'pending_signature' ? 'phiếu Đang trình ký' : 'phiếu Đã ký hoàn tất'))}).</p>
     </div>
   </div>
 
@@ -2784,9 +3454,12 @@ function renderList() {
       <option value="all">Tất cả người thụ hưởng</option>
       ${allPayees.map(p => `<option value="${p}" ${payeeFilter === p ? 'selected' : ''}>${p}</option>`).join('')}
     </select>
-    <div class="search-box" style="margin-left:auto;">
+    <div class="search-box" style="margin-left:auto;display:flex;gap:8px;align-items:center;">
       <span class="search-ic">🔍</span>
       <input type="text" id="filter-list-search" placeholder="Tìm kiếm phiếu..." value="${STATE._listSearch || ''}">
+      <button type="button" id="btn-reset-list-filters" class="btn btn-outline btn-sm" style="font-size:12px;padding:6px 10px;white-space:nowrap;cursor:pointer;" title="Bấm để xóa sạch tất cả bộ lọc và hiện lại toàn bộ phiếu">
+        🔄 Đặt lại bộ lọc
+      </button>
     </div>
   </div>
   ${renderDocTable(docs)}
@@ -3170,7 +3843,7 @@ function renderDetail() {
   <div class="page-header">
     <div>
       <h1>${t.label}</h1>
-      <p>${t.formCode} · Lập ngày ${fmtDate(doc.documentDate)} · <span class="badge ${STATUS_BADGE[doc.status]}">${STATUS_LABEL[doc.status]}</span></p>
+      <p>${t.formCode} · Lập ngày ${fmtDate(doc.documentDate)} · <span class="badge ${STATUS_BADGE[doc.status]}">${STATUS_LABEL[doc.status]}</span> · <span class="badge" style="background:#F0FDFA;color:#0D9488;border:1px solid #99F6E4;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11.5px;" title="Hệ thống tự động chọn khổ A5 khi phiếu có 1-3 hóa đơn, và tự động chọn khổ A4 khi phiếu có từ 4 hóa đơn trở lên">📄 Khổ in tự động: ${((doc.items || doc.spentItems || []).length > 3) ? 'A4 (Phiếu > 3 HĐ)' : 'A5 (Phiếu ≤ 3 HĐ)'}</span></p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       ${doc.status === 'draft' && isOwner ? `<button class="btn btn-outline btn-sm" data-editdoc="${doc.id}">✏ Sửa</button>` : ''}
@@ -3612,8 +4285,10 @@ function renderLoginScreen() {
               <input type="password" maxlength="1" class="pin-digit-input" data-idx="1" inputmode="numeric" style="width:48px;height:52px;font-size:22px;text-align:center;border:2px solid #CBD5E1;border-radius:10px;outline:none;font-weight:800;background:#F8FAFC;">
               <input type="password" maxlength="1" class="pin-digit-input" data-idx="2" inputmode="numeric" style="width:48px;height:52px;font-size:22px;text-align:center;border:2px solid #CBD5E1;border-radius:10px;outline:none;font-weight:800;background:#F8FAFC;">
               <input type="password" maxlength="1" class="pin-digit-input" data-idx="3" inputmode="numeric" style="width:48px;height:52px;font-size:22px;text-align:center;border:2px solid #CBD5E1;border-radius:10px;outline:none;font-weight:800;background:#F8FAFC;">
+            <div style="font-size:12.5px;color:#475569;margin-top:12px;margin-bottom:0;display:flex;align-items:center;justify-content:center;gap:6px;">
+              <span>⏱️ Thời gian nhập PIN còn lại:</span>
+              <b id="pin-timer-display" style="color:#0D9488;font-size:13.5px;font-family:var(--font-mono);">20 giây</b>
             </div>
-            <p style="font-size:11.5px;color:#64748B;margin-top:10px;margin-bottom:0;">(Mã PIN mặc định ban đầu: <b style="color:#0D9488;">1234</b>)</p>
           </div>
 
           <div id="login-error-msg" style="display:none;background:#FFF1F2;border:1px solid #FECDD3;color:#9F1239;padding:10px 12px;border-radius:8px;font-size:12.5px;margin-bottom:18px;"></div>
@@ -3652,12 +4327,44 @@ function attachLoginScreenHandlers() {
     });
   }
 
+  // Clear any existing PIN countdown timer
+  if (STATE._pinTimerInterval) {
+    clearInterval(STATE._pinTimerInterval);
+    STATE._pinTimerInterval = null;
+  }
+
   if (backBtn) {
     backBtn.addEventListener('click', () => {
+      if (STATE._pinTimerInterval) {
+        clearInterval(STATE._pinTimerInterval);
+        STATE._pinTimerInterval = null;
+      }
       STATE.loginStep = 1;
       STATE.pendingUser = null;
       render();
     });
+  }
+
+  if (pinForm) {
+    let timeLeft = 20;
+    const timerDisplay = document.getElementById('pin-timer-display');
+    STATE._pinTimerInterval = setInterval(() => {
+      timeLeft--;
+      if (timerDisplay) {
+        timerDisplay.textContent = `${timeLeft} giây`;
+        if (timeLeft <= 5) {
+          timerDisplay.style.color = '#E11D48';
+        }
+      }
+      if (timeLeft <= 0) {
+        clearInterval(STATE._pinTimerInterval);
+        STATE._pinTimerInterval = null;
+        STATE.loginStep = 1;
+        STATE.pendingUser = null;
+        showToast('⏱️ Đã hết 20 giây nhập mã PIN! Vui lòng thử đăng nhập lại.');
+        render();
+      }
+    }, 1000);
   }
 
   // Handle PIN digit inputs focus auto-advance
@@ -3752,6 +4459,10 @@ function attachLoginScreenHandlers() {
       }
 
       // Success PIN Login
+      if (STATE._pinTimerInterval) {
+        clearInterval(STATE._pinTimerInterval);
+        STATE._pinTimerInterval = null;
+      }
       STATE.currentUserId = STATE.pendingUser.id;
       STATE.isLoggedIn = true;
       const loggedUser = STATE.pendingUser;
@@ -3759,9 +4470,26 @@ function attachLoginScreenHandlers() {
       STATE.pendingUser = null;
 
       try {
-        await window.storage.set('current-user-id', loggedUser.id);
-        await window.storage.set('is-logged-in', 'true');
+        sessionStorage.setItem('CPC1_SESSION_LOGGED_IN', 'true');
+        sessionStorage.setItem('CPC1_SESSION_USER_ID', loggedUser.id);
+        // Clear global storage login flags to prevent auto-login leaks across Chrome profiles
+        localStorage.removeItem('CPC1_LOGGED_IN');
+        localStorage.removeItem('cpc1_is-logged-in');
+        localStorage.removeItem('cpc1_current-user-id');
       } catch (err) {}
+
+      // Handle target deep link redirect after login
+      if (STATE.pendingRedirect) {
+        if (STATE.pendingRedirect.page === 'detail' && STATE.pendingRedirect.docId) {
+          STATE.page = 'detail';
+          STATE.selectedId = STATE.pendingRedirect.docId;
+        } else if (STATE.pendingRedirect.page) {
+          STATE.page = STATE.pendingRedirect.page;
+        }
+        STATE.pendingRedirect = null;
+      } else {
+        STATE.page = 'overview';
+      }
 
       showToast(`Xin chào ${loggedUser.name}!`);
       render();
@@ -4167,7 +4895,14 @@ function attachHandlers() {
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
       STATE.isLoggedIn = false;
-      try { await window.storage.set('is-logged-in', 'false'); } catch (e) {}
+      STATE.currentUserId = null;
+      try {
+        sessionStorage.clear();
+        localStorage.removeItem('CPC1_LOGGED_IN');
+        localStorage.removeItem('cpc1_is-logged-in');
+        localStorage.removeItem('cpc1_current-user-id');
+        await window.storage.set('is-logged-in', 'false');
+      } catch (e) {}
       showToast('Đã đăng xuất tài khoản');
       render();
     });
@@ -4188,9 +4923,6 @@ function attachHandlers() {
       sendOverdueAdvanceEmailNotification();
     });
   });
-
-  const ovEmailBtn = document.getElementById('ov-send-email-btn');
-  if (ovEmailBtn) ovEmailBtn.addEventListener('click', () => sendOverdueAdvanceEmailNotification());
 
   // Overview Quick Create Voucher from Unlinked Invoice
   document.querySelectorAll('[data-quickcreateinvoice]').forEach(el => {
@@ -4215,10 +4947,24 @@ function attachHandlers() {
   });
 
   // Navigation
-  document.querySelectorAll('[data-nav]').forEach(el => el.addEventListener('click', () => {
+  document.querySelectorAll('[data-nav]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
     STATE.page = el.dataset.nav;
+    if (el.dataset.statuscat !== undefined) {
+      STATE._listStatusCategory = el.dataset.statuscat;
+    } else if (el.dataset.nav === 'list') {
+      STATE._listStatusCategory = 'all';
+    }
     STATE.draftForm = null;
     STATE.editingPayeeId = null;
+    render();
+  }));
+
+  // Status Category Tabs
+  document.querySelectorAll('[data-statuscat]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    STATE._listStatusCategory = el.dataset.statuscat;
+    if (STATE.page !== 'list') STATE.page = 'list';
     render();
   }));
 
@@ -4320,60 +5066,77 @@ function attachHandlers() {
   const fm = document.getElementById('filter-month'); if (fm) fm.addEventListener('change', e => { STATE._listMonthFilter = e.target.value; render(); });
   const fr = document.getElementById('filter-requester'); if (fr) fr.addEventListener('change', e => { STATE._listRequesterFilter = e.target.value; render(); });
   const fp = document.getElementById('filter-payee'); if (fp) fp.addEventListener('change', e => { STATE._listPayeeFilter = e.target.value; render(); });
+  const resetListBtn = document.getElementById('btn-reset-list-filters');
+  if (resetListBtn) {
+    resetListBtn.addEventListener('click', () => {
+      STATE._listTypeFilter = 'all';
+      STATE._listStatusFilter = 'all';
+      STATE._listMonthFilter = 'all';
+      STATE._listRequesterFilter = 'all';
+      STATE._listPayeeFilter = 'all';
+      STATE._listSearch = '';
+      STATE._listStatusCategory = 'all';
+      render();
+    });
+  }
   const fls = document.getElementById('filter-list-search');
   if (fls) {
+    let listSearchTimer = null;
     fls.addEventListener('input', e => {
       STATE._listSearch = e.target.value;
-      const tableWrapper = document.querySelector('.doc-table');
-      if (tableWrapper) {
-        // Re-render only document list table if on list page
-        const typeFilter = STATE._listTypeFilter || 'all';
-        const statusFilter = STATE._listStatusFilter || 'all';
-        const monthFilter = STATE._listMonthFilter || 'all';
-        const requesterFilter = STATE._listRequesterFilter || 'all';
-        const payeeFilter = STATE._listPayeeFilter || 'all';
-        const listSearch = (STATE._listSearch || '').trim().toLowerCase();
+      if (listSearchTimer) clearTimeout(listSearchTimer);
+      listSearchTimer = setTimeout(() => {
+        const tableWrapper = document.querySelector('.doc-table');
+        if (tableWrapper) {
+          // Re-render only document list table if on list page
+          const typeFilter = STATE._listTypeFilter || 'all';
+          const statusFilter = STATE._listStatusFilter || 'all';
+          const monthFilter = STATE._listMonthFilter || 'all';
+          const requesterFilter = STATE._listRequesterFilter || 'all';
+          const payeeFilter = STATE._listPayeeFilter || 'all';
+          const listSearch = (STATE._listSearch || '').trim().toLowerCase();
 
-        let docs = [...STATE.documents];
-        if (typeFilter !== 'all') docs = docs.filter(d => d.type === typeFilter);
-        if (statusFilter !== 'all') docs = docs.filter(d => d.status === statusFilter);
-        if (monthFilter !== 'all') docs = docs.filter(d => monthKey(d.documentDate || d.createdAt) === monthFilter);
-        if (requesterFilter !== 'all') docs = docs.filter(d => d.requesterName === requesterFilter);
-        if (payeeFilter !== 'all') docs = docs.filter(d => getBeneficiaryName(d) === payeeFilter);
-        if (listSearch) {
-          docs = docs.filter(d => {
-            const summary = docSummaryText(d);
-            const ben = getBeneficiaryName(d);
-            const total = computeTotal(d);
-            const haystack = [
-              d.requesterName,
-              ben,
-              summary,
-              d.department,
-              d.documentDate,
-              fmtDate(d.documentDate),
-              String(total),
-              fmtMoney(total, d.currency),
-              DOC_TYPES[d.type].label,
-              DOC_TYPES[d.type].formCode
-            ].join(' ').toLowerCase();
-            return haystack.includes(listSearch);
-          });
+          let docs = [...STATE.documents];
+          if (typeFilter !== 'all') docs = docs.filter(d => d.type === typeFilter);
+          if (statusFilter !== 'all') docs = docs.filter(d => d.status === statusFilter);
+          if (monthFilter !== 'all') docs = docs.filter(d => monthKey(d.documentDate || d.createdAt) === monthFilter);
+          if (requesterFilter !== 'all') docs = docs.filter(d => d.requesterName === requesterFilter);
+          if (payeeFilter !== 'all') docs = docs.filter(d => getBeneficiaryName(d) === payeeFilter);
+          if (listSearch) {
+            docs = docs.filter(d => {
+              const summary = docSummaryText(d);
+              const ben = getBeneficiaryName(d);
+              const total = computeTotal(d);
+              const haystack = [
+                d.requesterName,
+                ben,
+                summary,
+                d.department,
+                d.documentDate,
+                fmtDate(d.documentDate),
+                String(total),
+                fmtMoney(total, d.currency),
+                DOC_TYPES[d.type].label,
+                DOC_TYPES[d.type].formCode
+              ].join(' ').toLowerCase();
+              return haystack.includes(listSearch);
+            });
+          }
+          docs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = renderDocTable(docs);
+          const newTable = tempDiv.firstElementChild;
+          if (newTable) {
+            tableWrapper.replaceWith(newTable);
+            newTable.querySelectorAll('.row-click').forEach(r => r.addEventListener('click', () => {
+              STATE.selectedId = r.dataset.open;
+              STATE.page = 'detail';
+              STATE.previewAttachmentId = null;
+              render();
+            }));
+          }
         }
-        docs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = renderDocTable(docs);
-        const newTable = tempDiv.firstElementChild;
-        if (newTable) {
-          tableWrapper.replaceWith(newTable);
-          newTable.querySelectorAll('.row-click').forEach(r => r.addEventListener('click', () => {
-            STATE.selectedId = r.dataset.open;
-            STATE.page = 'detail';
-            STATE.previewAttachmentId = null;
-            render();
-          }));
-        }
-      }
+      }, 150);
     });
   }
 
@@ -4452,6 +5215,15 @@ function attachHandlers() {
       openManualInvoiceModal();
     });
   }
+  // Trash Bin Handlers
+  const fttrash = document.getElementById('filter-trash-type');
+  if (fttrash) fttrash.addEventListener('change', e => { STATE._trashTypeFilter = e.target.value; render(); });
+
+  const emptyTrashBtn = document.getElementById('empty-trash-btn');
+  if (emptyTrashBtn) emptyTrashBtn.addEventListener('click', emptyAllTrash);
+
+  document.querySelectorAll('[data-restoretrash]').forEach(el => el.addEventListener('click', () => restoreTrashItem(el.dataset.restoretrash)));
+  document.querySelectorAll('[data-purgetrash]').forEach(el => el.addEventListener('click', () => purgeTrashItem(el.dataset.purgetrash)));
 
 
 
@@ -4472,9 +5244,13 @@ function attachHandlers() {
 
   const fsearch = document.getElementById('filter-inv-search');
   if (fsearch) {
+    let invSearchTimer = null;
     fsearch.addEventListener('input', e => {
       STATE._invSearch = e.target.value;
-      updateInvoiceTableView();
+      if (invSearchTimer) clearTimeout(invSearchTimer);
+      invSearchTimer = setTimeout(() => {
+        updateInvoiceTableView();
+      }, 200);
     });
   }
 
@@ -4782,19 +5558,24 @@ function attachInvoiceTableHandlers() {
       rec.seriesNo = el.value.trim().toUpperCase();
       el.value = rec.seriesNo;
       const s = rec.seriesNo;
+      let autoNote = null;
       if (/1K26TED|K26TED/i.test(s)) {
-        rec.note = "Phí bảo hiểm lô hàng xuất";
+        autoNote = "Phí bảo hiểm lô hàng xuất";
       } else if (/C26TML/i.test(s)) {
-        rec.note = "Phí cấp C/O cho lô hàng";
+        autoNote = "Phí cấp C/O cho lô hàng";
       } else if (/26T/i.test(s)) {
-        rec.note = "Lệ phí cấp C/O cho lô hàng";
+        autoNote = "Lệ phí cấp C/O cho lô hàng";
       } else if (/1C26TAA|C26TAA|1C26TYY|C26TYY|1C26TNM|C26TNM/i.test(s)) {
         if (!rec.note || rec.note.includes("Cước")) {
-          rec.note = "Cước vận chuyển quốc tế lô hàng xuất";
+          autoNote = "Cước vận chuyển quốc tế lô hàng xuất";
         }
       }
+      if (autoNote) {
+        rec.note = autoNote;
+        const noteArea = document.querySelector(`[data-invnote="${rec.id}"]`);
+        if (noteArea) noteArea.value = autoNote;
+      }
       await saveInvoices();
-      render();
       showToast('Đã lưu ký hiệu');
     }
   }));
@@ -4820,14 +5601,19 @@ function attachInvoiceTableHandlers() {
   }));
 
   document.querySelectorAll('[data-invamount]').forEach(el => {
-    el.addEventListener('input', () => {
+    el.addEventListener('blur', () => {
       const digits = el.value.replace(/[^\d]/g, '');
       el.value = digits ? Number(digits).toLocaleString('vi-VN') : '';
     });
     el.addEventListener('change', async () => {
       const rec = STATE.invoices.find(r => r.id === el.dataset.invamount);
       const digits = el.value.replace(/[^\d]/g, '');
-      if (rec) { rec.amount = digits ? Number(digits) : 0; await saveInvoices(); showToast('Đã lưu số tiền'); }
+      if (rec) {
+        rec.amount = digits ? Number(digits) : 0;
+        el.value = rec.amount ? Number(rec.amount).toLocaleString('vi-VN') : '';
+        await saveInvoices();
+        showToast('Đã lưu số tiền');
+      }
     });
   });
 
@@ -5342,6 +6128,7 @@ async function initApp() {
   const app = document.getElementById('app');
   if (app) app.innerHTML = '<div style="padding:40px;font-family:Inter,sans-serif;color:#0A2F52;font-weight:600;">Đang khởi động hệ thống CPC1...</div>';
   await loadAll();
+  await autoPurgeExpiredTrash();
   checkAndDispatchWeeklyOverdueAdvanceEmails();
   render();
 }
