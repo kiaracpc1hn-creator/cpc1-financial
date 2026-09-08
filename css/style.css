@@ -1258,12 +1258,12 @@ table {
 
 .inv-note-area {
   width: 100%;
-  min-width: 230px;
-  max-width: 360px;
-  min-height: 46px;
+  min-width: 250px;
+  max-width: 380px;
+  min-height: 64px;
   padding: 6px 8px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 12px;
   font-family: inherit;
   resize: vertical;
@@ -1272,6 +1272,8 @@ table {
   display: block;
   background: #FFFFFF;
   color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
   transition: border-color .2s, box-shadow .2s;
 }
 
@@ -1283,12 +1285,12 @@ table {
 
 .inv-beneficiary-area {
   width: 100%;
-  min-width: 170px;
-  max-width: 270px;
-  min-height: 46px;
+  min-width: 220px;
+  max-width: 320px;
+  min-height: 64px;
   padding: 6px 8px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 12px;
   font-family: inherit;
   resize: vertical;
@@ -1297,6 +1299,8 @@ table {
   display: block;
   background: #FFFFFF;
   color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
   transition: border-color .2s, box-shadow .2s;
 }
 
