@@ -433,17 +433,17 @@ async function saveCurrentUser() {
 
 function seedUsers() {
   return [
-    { id: 'u_017481', username: '017481', password: '123', pin: '1234', name: 'Vũ Thị Kim Tuyến', employeeCode: '017481', email: 'tuyen.vukim@cpc1hn.com.vn', department: 'Nhóm EXP', group: 'Nhóm EXP', role: 'employee', bank: { accountName: 'Vũ Thị Kim Tuyến', accountNumber: '17923381', bankName: 'ACB - Ngân hàng TMCP Á Châu' } },
-    { id: 'u_015408', username: '015408', password: '123', pin: '1234', name: 'Nguyễn Phương Anh', employeeCode: '015408', email: 'anh.nguyenphuong@cpc1hn.com.vn', department: 'Nhóm Docs', group: 'Nhóm Docs', role: 'employee', bank: null },
-    { id: 'u_019690', username: '019690', password: '123', pin: '1234', name: 'Ngô Mai Anh', employeeCode: '019690', email: 'anh.ngomai@cpc1hn.com.vn', department: 'Phòng Kế toán', group: 'Phòng Kế toán', role: 'employee', bank: null },
-    { id: 'u_017078', username: '017078', password: '123', pin: '1234', name: 'Khuất Phương Nhung', employeeCode: '017078', email: 'nhung.khuatphuong@cpc1hn.com.vn', department: 'Phòng Hành chính - Nhân sự', group: 'Phòng Hành chính - Nhân sự', role: 'employee', bank: null },
-    { id: 'u_018906', username: '018906', password: '123', pin: '1234', name: 'Đinh Ngọc Mai', employeeCode: '018906', email: 'mai.dinhngoc@cpc1hn.com.vn', department: 'Nhóm EXP', group: 'Nhóm EXP', role: 'employee', bank: null },
-    { id: 'u_018233', username: '018233', password: '123', pin: '1234', name: 'Lê Minh Đăng', employeeCode: '018233', email: 'dang.leminh@cpc1hn.com.vn', department: 'Nhóm Docs', group: 'Nhóm Docs', role: 'employee', bank: null },
-    { id: 'u_018858', username: '018858', password: '123', pin: '1234', name: 'Phạm Thị Lan Hương', employeeCode: '018858', email: 'huong.phamthilan@cpc1hn.com.vn', department: 'Phòng Đảm bảo chất lượng', group: 'Phòng Đảm bảo chất lượng', role: 'employee', bank: null },
-    { id: 'u_010023', username: '010023', password: '123', pin: '1234', name: 'Nguyễn Văn Hùng', employeeCode: '010023', email: 'hung.nguyenvan@cpc1hn.com.vn', department: 'Nhóm EXP', group: 'Nhóm EXP', role: 'dept_head', bank: null },
-    { id: 'u_010024', username: '010024', password: '123', pin: '1234', name: 'Nguyễn Thị Nga', employeeCode: '010024', email: 'nga.nguyenthi@cpc1hn.com.vn', department: 'Nhóm Docs', group: 'Nhóm Docs', role: 'dept_head', bank: null },
-    { id: 'u_010005', username: '010005', password: '123', pin: '1234', name: 'Trần Thị Lan', employeeCode: '010005', email: 'lan.tranthi@cpc1hn.com.vn', department: 'Phòng Kế toán', group: 'Phòng Kế toán', role: 'chief_accountant', bank: null },
-    { id: 'u_010001', username: '010001', password: '123', pin: '1234', name: 'Phạm Minh Đức', employeeCode: '010001', email: 'duc.phamminh@cpc1hn.com.vn', department: 'Ban Giám đốc', group: 'Ban Giám đốc', role: 'director', bank: null }
+    { id: 'u_017481', username: '017481', password: '123', pin: '1234', name: 'Vũ Thị Kim Tuyến', employeeCode: '017481', email: 'tuyen.vukim@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm EXP', role: 'employee', bank: { accountName: 'Vũ Thị Kim Tuyến', accountNumber: '17923381', bankName: 'ACB - Ngân hàng TMCP Á Châu' } },
+    { id: 'u_015408', username: '015408', password: '123', pin: '1234', name: 'Nguyễn Phương Anh', employeeCode: '015408', email: 'anh.nguyenphuong@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm Docs', role: 'employee', bank: null },
+    { id: 'u_019690', username: '019690', password: '123', pin: '1234', name: 'Ngô Mai Anh', employeeCode: '019690', email: 'anh.ngomai@cpc1hn.com.vn', department: 'Phòng Kế toán', group: 'Nhóm EXP', role: 'employee', bank: null },
+    { id: 'u_017078', username: '017078', password: '123', pin: '1234', name: 'Khuất Phương Nhung', employeeCode: '017078', email: 'nhung.khuatphuong@cpc1hn.com.vn', department: 'Phòng Hành chính - Nhân sự', group: 'Nhóm EXP', role: 'employee', bank: null },
+    { id: 'u_018906', username: '018906', password: '123', pin: '1234', name: 'Đinh Ngọc Mai', employeeCode: '018906', email: 'mai.dinhngoc@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm EXP', role: 'employee', bank: null },
+    { id: 'u_018233', username: '018233', password: '123', pin: '1234', name: 'Lê Minh Đăng', employeeCode: '018233', email: 'dang.leminh@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm Docs', role: 'employee', bank: null },
+    { id: 'u_018858', username: '018858', password: '123', pin: '1234', name: 'Phạm Thị Lan Hương', employeeCode: '018858', email: 'huong.phamthilan@cpc1hn.com.vn', department: 'Phòng Đảm bảo chất lượng', group: 'Nhóm EXP', role: 'employee', bank: null },
+    { id: 'u_010023', username: '010023', password: '123', pin: '1234', name: 'Nguyễn Văn Hùng', employeeCode: '010023', email: 'hung.nguyenvan@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm EXP', role: 'dept_head', bank: null },
+    { id: 'u_010024', username: '010024', password: '123', pin: '1234', name: 'Nguyễn Thị Nga', employeeCode: '010024', email: 'nga.nguyenthi@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm Docs', role: 'dept_head', bank: null },
+    { id: 'u_010005', username: '010005', password: '123', pin: '1234', name: 'Trần Thị Lan', employeeCode: '010005', email: 'lan.tranthi@cpc1hn.com.vn', department: 'Phòng Kế toán', group: 'Nhóm EXP', role: 'chief_accountant', bank: null },
+    { id: 'u_010001', username: '010001', password: '123', pin: '1234', name: 'Phạm Minh Đức', employeeCode: '010001', email: 'duc.phamminh@cpc1hn.com.vn', department: 'Ban Giám đốc', group: 'Nhóm EXP', role: 'director', bank: null }
   ];
 }
 
@@ -4491,20 +4491,28 @@ function renderSettings() {
               <th style="padding:10px 14px;">Mã NV</th>
               <th style="padding:10px 14px;">Họ và tên</th>
               <th style="padding:10px 14px;">Email nhận thông báo</th>
-              <th style="padding:10px 14px;">Bộ phận / Nhóm</th>
+              <th style="padding:10px 14px;">Bộ phận công tác</th>
+              <th style="padding:10px 14px;">Nhóm kho hoá đơn</th>
               <th style="padding:10px 14px;">Vai trò / Quyền</th>
               <th style="padding:10px 14px;text-align:right;">Thao tác</th>
             </tr>
           </thead>
           <tbody>
             ${manageableUsers.map(u => {
+              const uGroup = getUserGroup(u);
               if (STATE.editingUserId === u.id) {
                 return `
                   <tr style="background:#F0FDFA;border-bottom:1.5px solid #0D9488;">
-                    <td style="padding:10px;"><input type="text" id="eu-code-${u.id}" value="${u.employeeCode || u.username}" style="padding:6px 8px;font-size:12.5px;font-weight:700;width:95px;border-radius:6px;border:1px solid #0D9488;"></td>
-                    <td style="padding:10px;"><input type="text" id="eu-name-${u.id}" value="${u.name}" style="padding:6px 8px;font-size:12.5px;font-weight:600;width:150px;border-radius:6px;border:1px solid #0D9488;"></td>
-                    <td style="padding:10px;"><input type="email" id="eu-email-${u.id}" value="${u.email || (u.employeeCode + '@cpc1hn.com.vn')}" style="padding:6px 8px;font-size:12.5px;width:170px;border-radius:6px;border:1px solid #0D9488;"></td>
-                    <td style="padding:10px;"><input type="text" id="eu-dept-${u.id}" value="${u.department}" ${isDeptHeadOnly ? 'readonly style="background:#E2E8F0;"' : ''} style="padding:6px 8px;font-size:12.5px;width:140px;border-radius:6px;border:1px solid #0D9488;"></td>
+                    <td style="padding:10px;"><input type="text" id="eu-code-${u.id}" value="${u.employeeCode || u.username}" style="padding:6px 8px;font-size:12.5px;font-weight:700;width:85px;border-radius:6px;border:1px solid #0D9488;"></td>
+                    <td style="padding:10px;"><input type="text" id="eu-name-${u.id}" value="${u.name}" style="padding:6px 8px;font-size:12.5px;font-weight:600;width:130px;border-radius:6px;border:1px solid #0D9488;"></td>
+                    <td style="padding:10px;"><input type="email" id="eu-email-${u.id}" value="${u.email || (u.employeeCode + '@cpc1hn.com.vn')}" style="padding:6px 8px;font-size:12.5px;width:150px;border-radius:6px;border:1px solid #0D9488;"></td>
+                    <td style="padding:10px;"><input type="text" id="eu-dept-${u.id}" value="${u.department || 'Phòng Thương mại quốc tế'}" placeholder="VD: Phòng Thương mại quốc tế" style="padding:6px 8px;font-size:12.5px;width:150px;border-radius:6px;border:1px solid #0D9488;"></td>
+                    <td style="padding:10px;">
+                      <select id="eu-group-${u.id}" ${isDeptHeadOnly ? 'disabled style="background:#E2E8F0;"' : ''} style="padding:6px 8px;font-size:12px;font-weight:700;border-radius:6px;border:1px solid #0D9488;color:#0D9488;">
+                        <option value="Nhóm EXP" ${uGroup === 'Nhóm EXP' ? 'selected' : ''}>📁 Nhóm EXP</option>
+                        <option value="Nhóm Docs" ${uGroup === 'Nhóm Docs' ? 'selected' : ''}>📁 Nhóm Docs</option>
+                      </select>
+                    </td>
                     <td style="padding:10px;">
                       <select id="eu-role-${u.id}" style="padding:6px 8px;font-size:12px;font-weight:600;border-radius:6px;border:1px solid #0D9488;">
                         <option value="employee" ${u.role === 'employee' ? 'selected' : ''}>👤 Nhân viên</option>
@@ -4528,7 +4536,8 @@ function renderSettings() {
                   <td style="padding:12px 14px;font-weight:700;color:#0D9488;">${u.employeeCode || u.username}</td>
                   <td style="padding:12px 14px;font-weight:600;color:#0F172A;">${u.name}</td>
                   <td style="padding:12px 14px;color:#0284C7;font-weight:600;">${u.email || (u.employeeCode + '@cpc1hn.com.vn')}</td>
-                  <td style="padding:12px 14px;color:#64748B;"><span class="badge badge-gray">${u.department}</span></td>
+                  <td style="padding:12px 14px;color:#64748B;"><span class="badge badge-gray">${u.department || 'Phòng Thương mại quốc tế'}</span></td>
+                  <td style="padding:12px 14px;"><span class="badge badge-teal" style="font-weight:700;">👥 ${uGroup}</span></td>
                   <td style="padding:12px 14px;">
                     <span class="badge ${['admin','dept_head','director','chief_accountant'].includes(u.role) ? 'badge-teal' : 'badge-gray'}" style="font-size:11.5px;padding:4px 10px;">
                       ${u.role === 'admin' ? '👑 Admin Nhóm' : u.role === 'dept_head' ? '👔 Trưởng nhóm' : u.role === 'chief_accountant' ? '💼 KT Trưởng' : u.role === 'director' ? '⭐ BGĐ' : '👤 Nhân viên'}
@@ -4563,8 +4572,15 @@ function renderSettings() {
             <input type="email" id="new-user-email" placeholder="VD: a.nguyenvan@cpc1hn.com.vn">
           </div>
           <div class="field">
-            <label><b>Bộ phận công tác</b></label>
-            <input type="text" id="new-user-dept" value="${isDeptHeadOnly ? myGroup : ''}" placeholder="VD: ${isDeptHeadOnly ? myGroup : 'Nhóm EXP / Nhóm Docs'}" ${isDeptHeadOnly ? 'readonly style="background:#F1F5F9;"' : ''}>
+            <label><b>Bộ phận công tác (Phòng ban)</b></label>
+            <input type="text" id="new-user-dept" value="Phòng Thương mại quốc tế" placeholder="VD: Phòng Thương mại quốc tế">
+          </div>
+          <div class="field">
+            <label><b>Nhóm kho hoá đơn</b></label>
+            <select id="new-user-group" ${isDeptHeadOnly ? 'disabled style="background:#F1F5F9;"' : ''} style="padding:10px;border-radius:6px;border:1px solid #CBD5E1;font-size:13px;font-weight:700;color:#0D9488;">
+              <option value="Nhóm EXP" ${myGroup === 'Nhóm EXP' ? 'selected' : ''}>📁 Nhóm EXP</option>
+              <option value="Nhóm Docs" ${myGroup === 'Nhóm Docs' ? 'selected' : ''}>📁 Nhóm Docs</option>
+            </select>
           </div>
           <div class="field">
             <label><b>Vai trò / Phân quyền</b></label>
@@ -5852,14 +5868,13 @@ function attachHandlers() {
       const code = (document.getElementById('new-user-code') || {}).value?.trim();
       const name = (document.getElementById('new-user-name') || {}).value?.trim();
       const email = (document.getElementById('new-user-email') || {}).value?.trim() || `${code}@cpc1hn.com.vn`;
-      let dept = (document.getElementById('new-user-dept') || {}).value?.trim();
+      const dept = (document.getElementById('new-user-dept') || {}).value?.trim() || 'Phòng Thương mại quốc tế';
+      let group = (document.getElementById('new-user-group') || {}).value || 'Nhóm EXP';
       let role = (document.getElementById('new-user-role') || {}).value || 'employee';
 
       if (curU && curU.role === 'dept_head') {
-        dept = getUserGroup(curU);
+        group = getUserGroup(curU);
         if (!['employee', 'dept_head'].includes(role)) role = 'employee';
-      } else {
-        if (!dept) dept = 'CPC1 Hà Nội';
       }
 
       if (!code || !name) {
@@ -5880,6 +5895,7 @@ function attachHandlers() {
         name: name,
         email: email,
         department: dept,
+        group: group,
         role: role,
         password: '123',
         pin: '1234',
@@ -5888,7 +5904,7 @@ function attachHandlers() {
 
       STATE.users.push(newUser);
       await saveUsers();
-      showToast(`✓ Đã thêm nhân viên ${name} (${code}) vào ${dept} thành công!`);
+      showToast(`✓ Đã thêm nhân viên ${name} (${code}) thuộc ${group} thành công!`);
       render();
     });
   }
@@ -5940,7 +5956,8 @@ function attachHandlers() {
       const code = (document.getElementById(`eu-code-${uidVal}`) || {}).value?.trim();
       const name = (document.getElementById(`eu-name-${uidVal}`) || {}).value?.trim();
       const email = (document.getElementById(`eu-email-${uidVal}`) || {}).value?.trim();
-      let dept = (document.getElementById(`eu-dept-${uidVal}`) || {}).value?.trim();
+      const dept = (document.getElementById(`eu-dept-${uidVal}`) || {}).value?.trim();
+      let group = (document.getElementById(`eu-group-${uidVal}`) || {}).value;
       let role = (document.getElementById(`eu-role-${uidVal}`) || {}).value;
 
       if (!code || !name) {
@@ -5949,7 +5966,7 @@ function attachHandlers() {
       }
 
       if (curU && curU.role === 'dept_head') {
-        dept = getUserGroup(curU);
+        group = getUserGroup(curU);
         if (!['employee', 'dept_head'].includes(role)) role = targetUser.role;
       }
 
@@ -5957,7 +5974,8 @@ function attachHandlers() {
       targetUser.username = code;
       targetUser.name = name;
       targetUser.email = email || `${code}@cpc1hn.com.vn`;
-      targetUser.department = dept || 'CPC1 Hà Nội';
+      targetUser.department = dept || 'Phòng Thương mại quốc tế';
+      targetUser.group = group || 'Nhóm EXP';
       targetUser.role = role || 'employee';
 
       await saveUsers();
