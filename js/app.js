@@ -1904,11 +1904,11 @@ function getManageableUsers() {
   if (['admin', 'chief_accountant', 'director'].includes(user.role)) {
     return [...STATE.users];
   }
-  if (user.role === 'dept_head') {
-    const myGroupKey = normalizeGroupKey(getUserGroup(user));
-    return STATE.users.filter(u => normalizeGroupKey(getUserGroup(u)) === myGroupKey);
+  const myGroupKey = normalizeGroupKey(getUserGroup(user));
+  if (myGroupKey === 'NONE') {
+    return STATE.users.filter(u => u.id === user.id);
   }
-  return [];
+  return STATE.users.filter(u => normalizeGroupKey(getUserGroup(u)) === myGroupKey);
 }
 
 function mkInvoiceRecord(extra = {}) {
@@ -2462,24 +2462,48 @@ function openManualInvoiceModal(initialData = {}) {
   });
 }
 
+function getDocGroup(doc) {
+  if (!doc) return 'Không';
+  if (doc.group) return doc.group;
+  const creator = (STATE.users || []).find(u => 
+    (doc.employeeCode && u.employeeCode && doc.employeeCode === u.employeeCode) ||
+    (doc.requesterId && u.id && doc.requesterId === u.id) ||
+    (doc.requesterName && u.name && doc.requesterName.trim().toLowerCase() === u.name.trim().toLowerCase())
+  );
+  if (creator) return getUserGroup(creator);
+  if (doc.department) return getUserGroup({ department: doc.department });
+  return 'Không';
+}
+
 function canUserAccessDoc(doc, user = currentUser()) {
   if (!doc) return false;
   if (!user) return true;
-  // Admin toàn hệ thống, Trưởng nhóm / Phụ trách bộ phận (dept_head), Kế toán trưởng, Giám đốc:
-  // Xem TOÀN BỘ 100% tất cả Hóa đơn và các loại phiếu (ĐNTT, ĐNTƯ, ĐNHƯ, Phiếu trình, Phiếu thu) của tất cả thành viên trong công ty!
-  if (['admin', 'director', 'chief_accountant', 'dept_head'].includes(user.role)) {
+  // Admin toàn hệ thống, Kế toán trưởng, Giám đốc: Xem toàn bộ phiếu của tất cả nhóm
+  if (['admin', 'director', 'chief_accountant'].includes(user.role)) {
     return true;
   }
-  // Nhân viên thường (employee): Chỉ xem được phiếu do chính mình lập
+  // Phiếu do chính người này tạo
   const isOwnDoc = (
     (doc.employeeCode && user.employeeCode && doc.employeeCode === user.employeeCode) ||
     (doc.requesterId && user.id && doc.requesterId === user.id) ||
     (doc.requesterName && user.name && doc.requesterName.trim().toLowerCase() === user.name.trim().toLowerCase())
   );
-  return isOwnDoc;
+  if (isOwnDoc) return true;
+
+  // Thành viên & Trưởng nhóm: Xem toàn bộ phiếu thuộc nhóm của mình (Nhóm EXP / Nhóm Docs / Không)
+  const userGroupKey = normalizeGroupKey(getUserGroup(user));
+  const docGroupKey = normalizeGroupKey(getDocGroup(doc));
+
+  return userGroupKey === docGroupKey;
 }
 
 function getAccessibleDocuments(user = currentUser()) {
+  if (!user) return [];
+  if (['admin', 'chief_accountant', 'director'].includes(user.role)) {
+    const groupFilter = STATE._listGroupFilter || 'all';
+    if (groupFilter === 'all') return [...(STATE.documents || [])];
+    return (STATE.documents || []).filter(doc => normalizeGroupKey(getDocGroup(doc)) === normalizeGroupKey(groupFilter));
+  }
   return (STATE.documents || []).filter(doc => canUserAccessDoc(doc, user));
 }
 
@@ -2553,13 +2577,15 @@ function renderSidebar() {
       <span>Danh bạ người nhận</span>
     </button>
 
-    ${['admin', 'dept_head', 'chief_accountant', 'director'].includes(u.role) ? `
-    <button class="nav-item ${STATE.page === 'trash' ? 'active' : ''}" data-nav="trash">
-      <span class="nav-icon">🗑️</span>
-      <span>Thùng rác</span>
-      ${(STATE.trash && STATE.trash.length > 0) ? `<span class="nav-badge">${STATE.trash.length}</span>` : ''}
-    </button>
-    ` : ''}
+    ${(() => {
+      const accTrash = getAccessibleTrash(u);
+      return `
+      <button class="nav-item ${STATE.page === 'trash' ? 'active' : ''}" data-nav="trash">
+        <span class="nav-icon">🗑️</span>
+        <span>Thùng rác</span>
+        ${(accTrash.length > 0) ? `<span class="nav-badge">${accTrash.length}</span>` : ''}
+      </button>`;
+    })()}
 
     <button class="nav-item ${STATE.page === 'settings' ? 'active' : ''}" data-nav="settings">
       <span class="nav-icon">⚙</span>
@@ -2918,27 +2944,42 @@ function renderPage() {
 }
 
 /* ===================== VIEW: TRASH (THÙNG RÁC) ===================== */
+function getItemGroup(item) {
+  if (!item) return 'Không';
+  if (item.group) return item.group;
+  if (item.itemType === 'invoice' || item.invoiceNumber) {
+    return getInvoiceGroup(item);
+  }
+  return getDocGroup(item);
+}
+
+function getAccessibleTrash(user = currentUser()) {
+  if (!user) return [];
+  const allTrash = STATE.trash || [];
+  if (['admin', 'chief_accountant', 'director'].includes(user.role)) {
+    const groupFilter = STATE._trashGroupFilter || 'all';
+    if (groupFilter === 'all') return [...allTrash];
+    return allTrash.filter(item => normalizeGroupKey(getItemGroup(item)) === normalizeGroupKey(groupFilter));
+  }
+  const userGroupKey = normalizeGroupKey(getUserGroup(user));
+  return allTrash.filter(item => {
+    if (item.deletedBy === user.name) return true;
+    const itemGroupKey = normalizeGroupKey(getItemGroup(item));
+    return itemGroupKey === userGroupKey;
+  });
+}
+
 function renderTrash() {
   const user = currentUser();
-  const isAuthorizedAdmin = ['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role);
-  if (!isAuthorizedAdmin) {
-    return `
-    <div class="empty-state" style="padding:60px 20px;background:var(--card);border-radius:12px;border:1px solid var(--line);text-align:center;margin-top:20px;">
-      <div class="big" style="font-size:48px;">🔒</div>
-      <p style="font-size:18px;font-weight:700;color:var(--danger);margin-top:12px;">Quyền truy cập bị hạn chế</p>
-      <p style="font-size:14px;color:var(--ink-soft);margin-top:6px;max-width:480px;margin-left:auto;margin-right:auto;">
-        Chỉ <strong>Admin</strong> và <strong>Trưởng nhóm / Quản lý</strong> mới có quyền xem và thao tác dữ liệu trong Thùng rác.
-      </p>
-    </div>
-    `;
-  }
-
-  const trashItems = STATE.trash || [];
+  const trashItems = getAccessibleTrash(user);
   const selectedType = STATE._trashTypeFilter || 'all';
 
   let filtered = [...trashItems];
   if (selectedType === 'document') filtered = filtered.filter(i => i.itemType === 'document');
   if (selectedType === 'invoice') filtered = filtered.filter(i => i.itemType === 'invoice');
+
+  const isGlobalAdmin = ['admin', 'chief_accountant', 'director'].includes(user.role);
+  const groupFilter = STATE._trashGroupFilter || 'all';
 
   return `
   <div class="page-header">
@@ -2946,13 +2987,25 @@ function renderTrash() {
       <h1>🗑️ Thùng rác (Mục đã xoá)</h1>
       <p>Danh sách các phiếu tài chính và hoá đơn đã xoá. <strong style="color:var(--danger);">Tất cả mục trong thùng rác sẽ tự động xoá vĩnh viễn sau 30 ngày.</strong></p>
     </div>
-    ${trashItems.length > 0 ? `
+    ${filtered.length > 0 ? `
       <button type="button" class="btn btn-outline btn-sm" id="empty-trash-btn" style="color:var(--danger);border-color:var(--danger);" title="Xoá vĩnh viễn tất cả mục trong thùng rác">
-        ❌ Xoá sạch thùng rác (${trashItems.length})
+        ❌ Xoá sạch thùng rác (${filtered.length})
       </button>` : ''}
   </div>
 
   <div class="filters" style="margin-top:0;margin-bottom:14px;">
+    ${isGlobalAdmin ? `
+    <select id="filter-trash-group" style="font-weight:700;border:1.5px solid var(--teal);color:var(--teal);background:#F0FDFA;">
+      <option value="all">Tất cả nhóm kho hóa đơn</option>
+      <option value="Nhóm EXP" ${groupFilter === 'Nhóm EXP' || groupFilter === 'EXP' ? 'selected' : ''}>Nhóm EXP</option>
+      <option value="Nhóm Docs" ${groupFilter === 'Nhóm Docs' || groupFilter === 'DOCS' ? 'selected' : ''}>Nhóm Docs</option>
+      <option value="Không" ${groupFilter === 'Không' || groupFilter === 'NONE' ? 'selected' : ''}>Hóa đơn không phân nhóm</option>
+    </select>
+    ` : `
+    <div style="display:inline-flex;align-items:center;padding:5px 12px;border-radius:6px;background:#EEF2FF;color:#4F46E5;font-weight:700;font-size:13px;border:1px solid #C7D2FE;white-space:nowrap;">
+      🏷️ Kho: ${getUserGroup(user)}
+    </div>
+    `}
     <select id="filter-trash-type">
       <option value="all" ${selectedType === 'all' ? 'selected' : ''}>Tất cả loại mục (${trashItems.length})</option>
       <option value="document" ${selectedType === 'document' ? 'selected' : ''}>Phiếu tài chính (${trashItems.filter(i => i.itemType === 'document').length})</option>
@@ -3030,13 +3083,16 @@ function renderTrash() {
 
 async function restoreTrashItem(id) {
   const user = currentUser();
-  if (!['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role)) {
-    showAlertModal('Không có quyền', 'Chỉ Admin và Trưởng nhóm mới có quyền thao tác trên Thùng rác!');
-    return;
-  }
   if (!STATE.trash) return;
   const item = STATE.trash.find(i => i.id === id);
   if (!item) return;
+
+  const isGlobalAdmin = ['admin', 'chief_accountant', 'director'].includes(user.role);
+  const isGroupMatch = normalizeGroupKey(getItemGroup(item)) === normalizeGroupKey(getUserGroup(user));
+  if (!isGlobalAdmin && !isGroupMatch && item.deletedBy !== user.name) {
+    showAlertModal('Không có quyền', 'Bạn không có quyền khôi phục mục thuộc nhóm khác!');
+    return;
+  }
 
   const isDoc = item.itemType === 'document';
   const code = isDoc ? (item.docNo || item.formCode) : (item.invoiceNumber || 'Hoá đơn');
@@ -3066,13 +3122,16 @@ async function restoreTrashItem(id) {
 
 async function purgeTrashItem(id) {
   const user = currentUser();
-  if (!['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role)) {
-    showAlertModal('Không có quyền', 'Chỉ Admin và Trưởng nhóm mới có quyền thao tác trên Thùng rác!');
-    return;
-  }
   if (!STATE.trash) return;
   const item = STATE.trash.find(i => i.id === id);
   if (!item) return;
+
+  const isGlobalAdmin = ['admin', 'chief_accountant', 'director'].includes(user.role);
+  const isGroupMatch = normalizeGroupKey(getItemGroup(item)) === normalizeGroupKey(getUserGroup(user));
+  if (!isGlobalAdmin && !isGroupMatch && item.deletedBy !== user.name) {
+    showAlertModal('Không có quyền', 'Bạn không có quyền xoá vĩnh viễn mục thuộc nhóm khác!');
+    return;
+  }
 
   showConfirmModal('Xoá vĩnh viễn?', `Bạn có chắc muốn xoá VĨNH VIỄN mục này? Dữ liệu và file đính kèm sẽ không thể phục hồi lại.`, async () => {
     if (item.attachmentId) {
@@ -3099,13 +3158,12 @@ async function purgeTrashItem(id) {
 
 async function emptyAllTrash() {
   const user = currentUser();
-  if (!['admin', 'dept_head', 'chief_accountant', 'director'].includes(user.role)) {
-    showAlertModal('Không có quyền', 'Chỉ Admin và Trưởng nhóm mới có quyền thao tác trên Thùng rác!');
-    return;
-  }
-  if (!STATE.trash || STATE.trash.length === 0) return;
-  showConfirmModal('❌ Xoá sạch Thùng rác?', `Bạn có chắc chắn muốn xoá vĩnh viễn toàn bộ ${STATE.trash.length} mục trong Thùng rác? Hành động này không thể hoàn tác.`, async () => {
-    for (const item of STATE.trash) {
+  const accessibleItems = getAccessibleTrash(user);
+  if (!accessibleItems || accessibleItems.length === 0) return;
+
+  showConfirmModal('❌ Xoá sạch Thùng rác?', `Bạn có chắc chắn muốn xoá vĩnh viễn ${accessibleItems.length} mục trong Thùng rác? Hành động này không thể hoàn tác.`, async () => {
+    const removeIds = new Set(accessibleItems.map(i => i.id));
+    for (const item of accessibleItems) {
       if (item.itemType === 'document' || !item.itemType) {
         await window.storage.deleteVoucherCloud(item.id);
       }
@@ -3121,10 +3179,10 @@ async function emptyAllTrash() {
         }
       }
     }
-    STATE.trash = [];
+    STATE.trash = (STATE.trash || []).filter(i => !removeIds.has(i.id));
     await saveTrash();
     render();
-    showToast('Đã xoá sạch toàn bộ Thùng rác!');
+    showToast('Đã xoá sạch các mục trong Thùng rác!');
   });
 }
 
@@ -3827,9 +3885,13 @@ function renderList() {
   }
   docs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-  const allMonths = [...new Set(STATE.documents.map(d => monthKey(d.documentDate || d.createdAt)))].sort((a, b) => a < b ? 1 : -1);
-  const allRequesters = [...new Set(STATE.documents.map(d => d.requesterName))].sort((a, b) => a.localeCompare(b));
-  const allPayees = [...new Set(STATE.documents.map(d => getBeneficiaryName(d)))].sort((a, b) => a.localeCompare(b));
+  const allMonths = [...new Set(accessibleDocs.map(d => monthKey(d.documentDate || d.createdAt)))].sort((a, b) => a < b ? 1 : -1);
+  const allRequesters = [...new Set(accessibleDocs.map(d => d.requesterName))].sort((a, b) => a.localeCompare(b));
+  const allPayees = [...new Set(accessibleDocs.map(d => getBeneficiaryName(d)))].sort((a, b) => a.localeCompare(b));
+
+  const curUser = currentUser();
+  const isGlobalAdmin = ['admin', 'chief_accountant', 'director'].includes(curUser.role);
+  const groupFilter = STATE._listGroupFilter || 'all';
 
   const categoryTitleMap = {
     all: 'Danh sách phiếu tài chính',
@@ -3849,6 +3911,18 @@ function renderList() {
   ${renderGlobalDuplicateWarningBannerHtml()}
 
   <div class="filters">
+    ${isGlobalAdmin ? `
+    <select id="filter-list-group" style="font-weight:700;border:1.5px solid var(--teal);color:var(--teal);background:#F0FDFA;">
+      <option value="all">Tất cả nhóm kho hóa đơn</option>
+      <option value="Nhóm EXP" ${groupFilter === 'Nhóm EXP' || groupFilter === 'EXP' ? 'selected' : ''}>Nhóm EXP</option>
+      <option value="Nhóm Docs" ${groupFilter === 'Nhóm Docs' || groupFilter === 'DOCS' ? 'selected' : ''}>Nhóm Docs</option>
+      <option value="Không" ${groupFilter === 'Không' || groupFilter === 'NONE' ? 'selected' : ''}>Hóa đơn không phân nhóm</option>
+    </select>
+    ` : `
+    <div style="display:inline-flex;align-items:center;padding:5px 12px;border-radius:6px;background:#EEF2FF;color:#4F46E5;font-weight:700;font-size:13px;border:1px solid #C7D2FE;white-space:nowrap;">
+      🏷️ Kho: ${getUserGroup(curUser)}
+    </div>
+    `}
     <select id="filter-type">
       <option value="all">Tất cả loại biểu mẫu</option>
       ${Object.entries(DOC_TYPES).map(([k, t]) => `<option value="${k}" ${typeFilter === k ? 'selected' : ''}>${t.label}</option>`).join('')}
@@ -3882,7 +3956,7 @@ function renderList() {
 }
 
 function renderInbox() {
-  const docs = STATE.documents.filter(d => d.status === 'pending_signature').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const docs = getAccessibleDocuments().filter(d => d.status === 'pending_signature').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   return `
   <div class="page-header">
     <div>
@@ -5521,6 +5595,7 @@ function attachHandlers() {
   }));
 
   // List filters
+  const flg = document.getElementById('filter-list-group'); if (flg) flg.addEventListener('change', e => { STATE._listGroupFilter = e.target.value; render(); });
   const ft = document.getElementById('filter-type'); if (ft) ft.addEventListener('change', e => { STATE._listTypeFilter = e.target.value; render(); });
   const fs = document.getElementById('filter-status'); if (fs) fs.addEventListener('change', e => { STATE._listStatusFilter = e.target.value; render(); });
   const fm = document.getElementById('filter-month'); if (fm) fm.addEventListener('change', e => { STATE._listMonthFilter = e.target.value; render(); });
@@ -5529,6 +5604,7 @@ function attachHandlers() {
   const resetListBtn = document.getElementById('btn-reset-list-filters');
   if (resetListBtn) {
     resetListBtn.addEventListener('click', () => {
+      STATE._listGroupFilter = 'all';
       STATE._listTypeFilter = 'all';
       STATE._listStatusFilter = 'all';
       STATE._listMonthFilter = 'all';
@@ -5556,7 +5632,7 @@ function attachHandlers() {
           const payeeFilter = STATE._listPayeeFilter || 'all';
           const listSearch = (STATE._listSearch || '').trim().toLowerCase();
 
-          let docs = [...STATE.documents];
+          let docs = [...getAccessibleDocuments()];
           if (typeFilter !== 'all') docs = docs.filter(d => d.type === typeFilter);
           if (statusFilter !== 'all') docs = docs.filter(d => d.status === statusFilter);
           if (monthFilter !== 'all') docs = docs.filter(d => monthKey(d.documentDate || d.createdAt) === monthFilter);
@@ -5676,6 +5752,8 @@ function attachHandlers() {
     });
   }
   // Trash Bin Handlers
+  const fgtrash = document.getElementById('filter-trash-group');
+  if (fgtrash) fgtrash.addEventListener('change', e => { STATE._trashGroupFilter = e.target.value; render(); });
   const fttrash = document.getElementById('filter-trash-type');
   if (fttrash) fttrash.addEventListener('change', e => { STATE._trashTypeFilter = e.target.value; render(); });
 
