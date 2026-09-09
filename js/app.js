@@ -433,16 +433,17 @@ async function saveCurrentUser() {
 
 function seedUsers() {
   return [
-    { id: 'u_017481', username: '017481', password: '123', pin: '1234', name: 'Vũ Thị Kim Tuyến', employeeCode: '017481', email: 'tuyen.vukim@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', role: 'employee', bank: { accountName: 'Vũ Thị Kim Tuyến', accountNumber: '17923381', bankName: 'ACB - Ngân hàng TMCP Á Châu' } },
-    { id: 'u_015408', username: '015408', password: '123', pin: '1234', name: 'Nguyễn Phương Anh', employeeCode: '015408', email: 'anh.nguyenphuong@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', role: 'employee', bank: null },
-    { id: 'u_019690', username: '019690', password: '123', pin: '1234', name: 'Ngô Mai Anh', employeeCode: '019690', email: 'anh.ngomai@cpc1hn.com.vn', department: 'Phòng Kế toán', role: 'employee', bank: null },
-    { id: 'u_017078', username: '017078', password: '123', pin: '1234', name: 'Khuất Phương Nhung', employeeCode: '017078', email: 'nhung.khuatphuong@cpc1hn.com.vn', department: 'Phòng Hành chính - Nhân sự', role: 'employee', bank: null },
-    { id: 'u_018906', username: '018906', password: '123', pin: '1234', name: 'Đinh Ngọc Mai', employeeCode: '018906', email: 'mai.dinhngoc@cpc1hn.com.vn', department: 'Phòng Kế hoạch & Cung ứng', role: 'employee', bank: null },
-    { id: 'u_018233', username: '018233', password: '123', pin: '1234', name: 'Lê Minh Đăng', employeeCode: '018233', email: 'dang.leminh@cpc1hn.com.vn', department: 'Phòng R&D', role: 'employee', bank: null },
-    { id: 'u_018858', username: '018858', password: '123', pin: '1234', name: 'Phạm Thị Lan Hương', employeeCode: '018858', email: 'huong.phamthilan@cpc1hn.com.vn', department: 'Phòng Đảm bảo chất lượng', role: 'employee', bank: null },
-    { id: 'u_010023', username: '010023', password: '123', pin: '1234', name: 'Nguyễn Văn Hùng', employeeCode: '010023', email: 'hung.nguyenvan@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', role: 'dept_head', bank: null },
-    { id: 'u_010005', username: '010005', password: '123', pin: '1234', name: 'Trần Thị Lan', employeeCode: '010005', email: 'lan.tranthi@cpc1hn.com.vn', department: 'Phòng Kế toán', role: 'chief_accountant', bank: null },
-    { id: 'u_010001', username: '010001', password: '123', pin: '1234', name: 'Phạm Minh Đức', employeeCode: '010001', email: 'duc.phamminh@cpc1hn.com.vn', department: 'Ban Giám đốc', role: 'director', bank: null }
+    { id: 'u_017481', username: '017481', password: '123', pin: '1234', name: 'Vũ Thị Kim Tuyến', employeeCode: '017481', email: 'tuyen.vukim@cpc1hn.com.vn', department: 'Nhóm EXP', group: 'Nhóm EXP', role: 'employee', bank: { accountName: 'Vũ Thị Kim Tuyến', accountNumber: '17923381', bankName: 'ACB - Ngân hàng TMCP Á Châu' } },
+    { id: 'u_015408', username: '015408', password: '123', pin: '1234', name: 'Nguyễn Phương Anh', employeeCode: '015408', email: 'anh.nguyenphuong@cpc1hn.com.vn', department: 'Nhóm Docs', group: 'Nhóm Docs', role: 'employee', bank: null },
+    { id: 'u_019690', username: '019690', password: '123', pin: '1234', name: 'Ngô Mai Anh', employeeCode: '019690', email: 'anh.ngomai@cpc1hn.com.vn', department: 'Phòng Kế toán', group: 'Phòng Kế toán', role: 'employee', bank: null },
+    { id: 'u_017078', username: '017078', password: '123', pin: '1234', name: 'Khuất Phương Nhung', employeeCode: '017078', email: 'nhung.khuatphuong@cpc1hn.com.vn', department: 'Phòng Hành chính - Nhân sự', group: 'Phòng Hành chính - Nhân sự', role: 'employee', bank: null },
+    { id: 'u_018906', username: '018906', password: '123', pin: '1234', name: 'Đinh Ngọc Mai', employeeCode: '018906', email: 'mai.dinhngoc@cpc1hn.com.vn', department: 'Nhóm EXP', group: 'Nhóm EXP', role: 'employee', bank: null },
+    { id: 'u_018233', username: '018233', password: '123', pin: '1234', name: 'Lê Minh Đăng', employeeCode: '018233', email: 'dang.leminh@cpc1hn.com.vn', department: 'Nhóm Docs', group: 'Nhóm Docs', role: 'employee', bank: null },
+    { id: 'u_018858', username: '018858', password: '123', pin: '1234', name: 'Phạm Thị Lan Hương', employeeCode: '018858', email: 'huong.phamthilan@cpc1hn.com.vn', department: 'Phòng Đảm bảo chất lượng', group: 'Phòng Đảm bảo chất lượng', role: 'employee', bank: null },
+    { id: 'u_010023', username: '010023', password: '123', pin: '1234', name: 'Nguyễn Văn Hùng', employeeCode: '010023', email: 'hung.nguyenvan@cpc1hn.com.vn', department: 'Nhóm EXP', group: 'Nhóm EXP', role: 'dept_head', bank: null },
+    { id: 'u_010024', username: '010024', password: '123', pin: '1234', name: 'Nguyễn Thị Nga', employeeCode: '010024', email: 'nga.nguyenthi@cpc1hn.com.vn', department: 'Nhóm Docs', group: 'Nhóm Docs', role: 'dept_head', bank: null },
+    { id: 'u_010005', username: '010005', password: '123', pin: '1234', name: 'Trần Thị Lan', employeeCode: '010005', email: 'lan.tranthi@cpc1hn.com.vn', department: 'Phòng Kế toán', group: 'Phòng Kế toán', role: 'chief_accountant', bank: null },
+    { id: 'u_010001', username: '010001', password: '123', pin: '1234', name: 'Phạm Minh Đức', employeeCode: '010001', email: 'duc.phamminh@cpc1hn.com.vn', department: 'Ban Giám đốc', group: 'Ban Giám đốc', role: 'director', bank: null }
   ];
 }
 
@@ -552,6 +553,20 @@ function showToast(msg) {
   t.classList.add('show');
   clearTimeout(window._toastTimer);
   window._toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+function parseFormattedDateToIso(str) {
+  if (!str) return '';
+  const s = str.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})$/);
+  if (m) {
+    const dd = m[1].padStart(2, '0');
+    const mm = m[2].padStart(2, '0');
+    const yyyy = m[3];
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return s;
 }
 
 function showAlertModal(title, message) {
@@ -1830,9 +1845,68 @@ async function renderAttachmentPreview(attId) {
     : `<iframe src="${dataUrl}"></iframe>`;
 }
 
-/* ===================== INVOICE REPOSITORY ===================== */
+/* ===================== GROUP ACCESS & INVOICE REPOSITORY ===================== */
+function getUserGroup(user) {
+  if (!user) return 'Nhóm EXP';
+  if (user.group) return user.group;
+  const dept = (user.department || '').trim();
+  if (!dept) return 'Nhóm EXP';
+  if (/EXP/i.test(dept)) return 'Nhóm EXP';
+  if (/DOC/i.test(dept) || /CHỨNG TỪ/i.test(dept)) return 'Nhóm Docs';
+  return dept;
+}
+
+function normalizeGroupKey(groupStr) {
+  if (!groupStr) return '';
+  const s = groupStr.toString().trim().toUpperCase();
+  if (s.includes('EXP')) return 'EXP';
+  if (s.includes('DOC') || s.includes('CHỨNG TỪ')) return 'DOCS';
+  return s;
+}
+
+function getInvoiceGroup(rec) {
+  if (!rec) return 'Nhóm EXP';
+  if (rec.group) return rec.group;
+  const uploader = (STATE.users || []).find(u => u.id === rec.requesterId || u.name === rec.requesterName || u.employeeCode === rec.requesterName);
+  if (uploader) return getUserGroup(uploader);
+  if (rec.department) return getUserGroup({ department: rec.department });
+  return 'Nhóm EXP';
+}
+
+function getAccessibleInvoices() {
+  const user = currentUser();
+  if (!user) return [];
+
+  if (['admin', 'chief_accountant', 'director'].includes(user.role)) {
+    const groupFilter = STATE._invGroupFilter || 'all';
+    if (groupFilter === 'all') return [...STATE.invoices];
+    return STATE.invoices.filter(r => normalizeGroupKey(getInvoiceGroup(r)) === normalizeGroupKey(groupFilter));
+  }
+
+  const userGroupKey = normalizeGroupKey(getUserGroup(user));
+  return STATE.invoices.filter(r => {
+    if (r.requesterId === user.id || r.requesterName === user.name) return true;
+    const invGroupKey = normalizeGroupKey(getInvoiceGroup(r));
+    return invGroupKey === userGroupKey;
+  });
+}
+
+function getManageableUsers() {
+  const user = currentUser();
+  if (!user) return [];
+  if (['admin', 'chief_accountant', 'director'].includes(user.role)) {
+    return [...STATE.users];
+  }
+  if (user.role === 'dept_head') {
+    const myGroupKey = normalizeGroupKey(getUserGroup(user));
+    return STATE.users.filter(u => normalizeGroupKey(getUserGroup(u)) === myGroupKey);
+  }
+  return [];
+}
+
 function mkInvoiceRecord(extra = {}) {
   const u = currentUser();
+  const userGrp = getUserGroup(u);
   return Object.assign({
     id: uid('inv'),
     date: '',
@@ -1845,6 +1919,8 @@ function mkInvoiceRecord(extra = {}) {
     beneficiaryName: '',
     amount: 0,
     currency: 'VND',
+    group: userGrp,
+    department: u.department,
     attachmentId: null,
     fileName: '',
     uploadedAt: new Date().toISOString()
@@ -3086,7 +3162,7 @@ function getFilteredInvoices() {
   const statusFilter = STATE._invStatusFilter || 'all';
   const searchQuery = (STATE._invSearch || '').trim().toLowerCase();
 
-  let records = [...STATE.invoices];
+  let records = getAccessibleInvoices();
   if (monthFilter !== 'all') records = records.filter(r => monthKey(r.date || r.uploadedAt) === monthFilter);
   if (requesterFilter !== 'all') records = records.filter(r => r.requesterName === requesterFilter);
   if (beneficiaryFilter !== 'all') records = records.filter(r => (r.beneficiaryName || '(chưa rõ)') === beneficiaryFilter);
@@ -3159,7 +3235,16 @@ function renderInvoiceTableHtml(records, selected) {
           <tr>
             <td><input type="checkbox" class="inv-select" data-invsel="${r.id}" ${selected.includes(r.id) ? 'checked' : ''}></td>
             <td>
-              <input type="date" data-invdate="${r.id}" value="${r.date || ''}" ${lockAttr} style="width:115px;padding:5px 4px;border:1px solid var(--line);border-radius:4px;font-size:12px;font-family:inherit;${isLocked ? lockInputStyle : ''}" ${lockTitle}>
+              ${isLocked ? `
+                <div style="font-weight:700;font-size:12px;color:#1E293B;padding:5px 4px;background:#F8FAFC;border:1.5px solid #CBD5E1;border-radius:4px;text-align:center;width:105px;box-sizing:border-box;" ${lockTitle}>
+                  ${fmtDate(r.date) || '—'}
+                </div>
+              ` : `
+                <div style="position:relative;display:inline-block;width:105px;">
+                  <input type="text" data-invdatetext="${r.id}" value="${fmtDate(r.date) || ''}" placeholder="dd/mm/yyyy" style="width:100%;padding:5px 4px;border:1px solid var(--line);border-radius:4px;font-size:12px;text-align:center;font-weight:700;color:#0F172A;box-sizing:border-box;" title="Nhập ngày dạng dd/mm/yyyy hoặc chọn từ lịch">
+                  <input type="date" data-invdate="${r.id}" value="${r.date || ''}" style="position:absolute;top:0;right:0;width:24px;height:100%;opacity:0;cursor:pointer;" title="Mở lịch chọn ngày">
+                </div>
+              `}
             </td>
             <td>
               <input type="text" data-invseries="${r.id}" value="${r.seriesNo || ''}" placeholder="Ký hiệu" ${lockAttr} style="width:85px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;font-weight:700;text-transform:uppercase;${isLocked ? lockInputStyle : ''}" ${lockTitle}>
@@ -3210,17 +3295,23 @@ function renderInvoiceTableHtml(records, selected) {
 }
 
 function renderInvoices() {
+  const user = currentUser();
+  const userGrp = getUserGroup(user);
+  const isGlobalAdmin = ['admin', 'chief_accountant', 'director'].includes(user ? user.role : '');
+
   const monthFilter = STATE._invMonthFilter || 'all';
   const requesterFilter = STATE._invRequesterFilter || 'all';
   const beneficiaryFilter = STATE._invBeneficiaryFilter || 'all';
   const statusFilter = STATE._invStatusFilter || 'all';
+  const groupFilter = STATE._invGroupFilter || 'all';
   const selected = STATE.selectedInvoiceIds || [];
 
+  const accessibleInvoices = getAccessibleInvoices();
   const records = getFilteredInvoices();
 
-  const allMonths = [...new Set(STATE.invoices.map(r => monthKey(r.date || r.uploadedAt)))].sort((a, b) => a < b ? 1 : -1);
-  const allRequesters = [...new Set(STATE.invoices.map(r => r.requesterName))].sort((a, b) => a.localeCompare(b));
-  const allBeneficiaries = [...new Set(STATE.invoices.map(r => r.beneficiaryName || '(chưa rõ)'))].sort((a, b) => a.localeCompare(b));
+  const allMonths = [...new Set(accessibleInvoices.map(r => monthKey(r.date || r.uploadedAt)))].sort((a, b) => a < b ? 1 : -1);
+  const allRequesters = [...new Set(accessibleInvoices.map(r => r.requesterName))].sort((a, b) => a.localeCompare(b));
+  const allBeneficiaries = [...new Set(accessibleInvoices.map(r => r.beneficiaryName || '(chưa rõ)'))].sort((a, b) => a.localeCompare(b));
   const statusOptions = [
     { key: 'not_submitted', label: 'Mới nhập' },
     { key: 'draft', label: 'Nháp' },
@@ -3231,16 +3322,19 @@ function renderInvoices() {
   return `
   <div class="page-header">
     <div>
-      <h1>Kho Hoá đơn điện tử</h1>
-      <p id="inv-header-count">Tải lên hoá đơn PDF hoặc bấm "＋ Thêm chứng từ nhập tay" để nhập hoá đơn scan/biên lai giấy. (${STATE.invoices.length} hoá đơn)</p>
+      <h1 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span>Kho Hoá đơn điện tử</span>
+        ${!isGlobalAdmin ? `<span class="badge badge-teal" style="font-size:13px;padding:4px 10px;font-weight:700;">👥 Kho: ${userGrp}</span>` : ''}
+      </h1>
+      <p id="inv-header-count">Tải lên hoá đơn PDF hoặc bấm "＋ Thêm chứng từ nhập tay" để nhập hoá đơn scan/biên lai giấy. (${records.length} hoá đơn ${isGlobalAdmin ? 'khả dụng' : `trực thuộc ${userGrp}`})</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <button type="button" class="btn btn-primary btn-sm" id="manual-add-invoice-btn" title="Tạo một dòng chứng từ trống để nhập tay">
         ＋ Thêm chứng từ nhập tay
       </button>
-      ${STATE.invoices.length > 0 ? `
+      ${accessibleInvoices.length > 0 ? `
         <button type="button" class="btn btn-outline btn-sm" id="reparse-invoices-btn" title="Chạy lại bộ trích xuất thông minh nâng cấp cho toàn bộ hoá đơn trong kho">
-          🔄 Quét lại dữ liệu (${STATE.invoices.length})
+          🔄 Quét lại dữ liệu (${accessibleInvoices.length})
         </button>` : ''}
     </div>
   </div>
@@ -3251,7 +3345,7 @@ function renderInvoices() {
     <div class="invoice-upload-icon">⬆</div>
     <div class="invoice-upload-text">
       <div class="invoice-upload-title">Kéo thả (nhiều) file PDF / Ảnh scan hoá đơn vào đây, hoặc bấm để chọn</div>
-      <div class="hint">Hỗ trợ nhận diện tự động PDF & Ảnh scan (JPG, PNG, WEBP...). Tối đa ~3.5MB / file.</div>
+      <div class="hint">Hỗ trợ nhận diện tự động PDF & Ảnh scan (JPG, PNG, WEBP...). Tối đa ~3.5MB / file. Hoá đơn sẽ tự động lưu vào ${userGrp || 'kho của nhóm'}.</div>
     </div>
     <button type="button" class="btn btn-primary btn-sm" id="invoice-choose-btn">Chọn file PDF / Ảnh</button>
     <input type="file" id="invoice-input" multiple style="display:none;">
@@ -3260,6 +3354,13 @@ function renderInvoices() {
 
   <div class="invoice-sticky-bar">
     <div class="filters" style="margin-top:0;">
+      ${isGlobalAdmin ? `
+      <select id="filter-inv-group" style="font-weight:700;color:var(--teal);border-color:var(--teal);">
+        <option value="all" ${groupFilter === 'all' ? 'selected' : ''}>🏢 Tất cả kho nhóm</option>
+        <option value="Nhóm EXP" ${groupFilter === 'Nhóm EXP' ? 'selected' : ''}>📁 Kho Nhóm EXP</option>
+        <option value="Nhóm Docs" ${groupFilter === 'Nhóm Docs' ? 'selected' : ''}>📁 Kho Nhóm Docs</option>
+      </select>
+      ` : ''}
       <select id="filter-inv-month">
         <option value="all">Tất cả tháng</option>
         ${allMonths.map(mk => `<option value="${mk}" ${monthFilter === mk ? 'selected' : ''}>${monthLabel(mk)}</option>`).join('')}
@@ -4328,7 +4429,11 @@ function renderPayees() {
 }
 
 function renderSettings() {
-  const isAuthorizedAdmin = ['admin', 'dept_head', 'chief_accountant', 'director'].includes(currentUser().role);
+  const curUser = currentUser();
+  const isAuthorizedAdmin = ['admin', 'dept_head', 'chief_accountant', 'director'].includes(curUser.role);
+  const manageableUsers = getManageableUsers();
+  const isDeptHeadOnly = curUser.role === 'dept_head';
+  const myGroup = getUserGroup(curUser);
 
   return `
   <div style="display:flex;flex-direction:column;gap:24px;width:100%;max-width:960px;">
@@ -4371,11 +4476,11 @@ function renderSettings() {
     <!-- CARD 2: QUẢN LÝ DANH SÁCH THÀNH VIÊN (CHỈ ADMIN / TRƯỞNG NHÓM) -->
     <div class="form-card" style="width:100%;max-width:100%;margin-bottom:0;">
       <h3 style="font-size:16px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
-        <span>👥 Quản Lý Danh Sách Thành Viên & Phân Quyền</span>
-        <span class="badge badge-teal">${STATE.users.length} tài khoản</span>
+        <span>👥 Quản Lý Thành Viên & Phân Quyền ${isDeptHeadOnly ? `— ${myGroup}` : ''}</span>
+        <span class="badge badge-teal">${manageableUsers.length} thành viên</span>
       </h3>
       <p style="font-size:13px;color:var(--ink-soft);margin-bottom:16px;line-height:1.5;">
-        Thêm nhân viên mới, cấp quyền Trưởng nhóm / Admin hoặc đặt lại Mật khẩu & Mã PIN cho nhân viên trực tiếp trên giao diện web mà không cần sửa code. Tự động đồng bộ lên Firebase.
+        ${isDeptHeadOnly ? `Trưởng nhóm có quyền tự thêm thành viên mới vào <b>${myGroup}</b>, quản lý quyền hạn và đặt lại Mật khẩu & Mã PIN cho nhân viên trong nhóm.` : 'Thêm nhân viên mới, cấp quyền Trưởng nhóm / Admin hoặc đặt lại Mật khẩu & Mã PIN cho nhân viên trực tiếp trên giao diện web.'}
       </p>
 
       <!-- Clean Members Table -->
@@ -4386,27 +4491,29 @@ function renderSettings() {
               <th style="padding:10px 14px;">Mã NV</th>
               <th style="padding:10px 14px;">Họ và tên</th>
               <th style="padding:10px 14px;">Email nhận thông báo</th>
-              <th style="padding:10px 14px;">Bộ phận</th>
+              <th style="padding:10px 14px;">Bộ phận / Nhóm</th>
               <th style="padding:10px 14px;">Vai trò / Quyền</th>
               <th style="padding:10px 14px;text-align:right;">Thao tác</th>
             </tr>
           </thead>
           <tbody>
-            ${STATE.users.map(u => {
+            ${manageableUsers.map(u => {
               if (STATE.editingUserId === u.id) {
                 return `
                   <tr style="background:#F0FDFA;border-bottom:1.5px solid #0D9488;">
                     <td style="padding:10px;"><input type="text" id="eu-code-${u.id}" value="${u.employeeCode || u.username}" style="padding:6px 8px;font-size:12.5px;font-weight:700;width:95px;border-radius:6px;border:1px solid #0D9488;"></td>
                     <td style="padding:10px;"><input type="text" id="eu-name-${u.id}" value="${u.name}" style="padding:6px 8px;font-size:12.5px;font-weight:600;width:150px;border-radius:6px;border:1px solid #0D9488;"></td>
                     <td style="padding:10px;"><input type="email" id="eu-email-${u.id}" value="${u.email || (u.employeeCode + '@cpc1hn.com.vn')}" style="padding:6px 8px;font-size:12.5px;width:170px;border-radius:6px;border:1px solid #0D9488;"></td>
-                    <td style="padding:10px;"><input type="text" id="eu-dept-${u.id}" value="${u.department}" style="padding:6px 8px;font-size:12.5px;width:140px;border-radius:6px;border:1px solid #0D9488;"></td>
+                    <td style="padding:10px;"><input type="text" id="eu-dept-${u.id}" value="${u.department}" ${isDeptHeadOnly ? 'readonly style="background:#E2E8F0;"' : ''} style="padding:6px 8px;font-size:12.5px;width:140px;border-radius:6px;border:1px solid #0D9488;"></td>
                     <td style="padding:10px;">
                       <select id="eu-role-${u.id}" style="padding:6px 8px;font-size:12px;font-weight:600;border-radius:6px;border:1px solid #0D9488;">
                         <option value="employee" ${u.role === 'employee' ? 'selected' : ''}>👤 Nhân viên</option>
                         <option value="dept_head" ${u.role === 'dept_head' ? 'selected' : ''}>👔 Trưởng nhóm / Admin nhóm</option>
+                        ${!isDeptHeadOnly ? `
                         <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>👑 Admin toàn quyền</option>
                         <option value="chief_accountant" ${u.role === 'chief_accountant' ? 'selected' : ''}>💼 Kế toán trưởng</option>
                         <option value="director" ${u.role === 'director' ? 'selected' : ''}>⭐ Ban Giám đốc</option>
+                        ` : ''}
                       </select>
                     </td>
                     <td style="padding:10px;text-align:right;white-space:nowrap;">
@@ -4421,7 +4528,7 @@ function renderSettings() {
                   <td style="padding:12px 14px;font-weight:700;color:#0D9488;">${u.employeeCode || u.username}</td>
                   <td style="padding:12px 14px;font-weight:600;color:#0F172A;">${u.name}</td>
                   <td style="padding:12px 14px;color:#0284C7;font-weight:600;">${u.email || (u.employeeCode + '@cpc1hn.com.vn')}</td>
-                  <td style="padding:12px 14px;color:#64748B;">${u.department}</td>
+                  <td style="padding:12px 14px;color:#64748B;"><span class="badge badge-gray">${u.department}</span></td>
                   <td style="padding:12px 14px;">
                     <span class="badge ${['admin','dept_head','director','chief_accountant'].includes(u.role) ? 'badge-teal' : 'badge-gray'}" style="font-size:11.5px;padding:4px 10px;">
                       ${u.role === 'admin' ? '👑 Admin Nhóm' : u.role === 'dept_head' ? '👔 Trưởng nhóm' : u.role === 'chief_accountant' ? '💼 KT Trưởng' : u.role === 'director' ? '⭐ BGĐ' : '👤 Nhân viên'}
@@ -4429,7 +4536,7 @@ function renderSettings() {
                   </td>
                   <td style="padding:12px 14px;text-align:right;white-space:nowrap;">
                     <button type="button" class="btn btn-outline btn-sm edit-user-btn" data-edituser="${u.id}" style="padding:4px 10px;font-size:12px;margin-right:4px;">✏️ Sửa</button>
-                    <button type="button" class="btn btn-ghost btn-sm del-user-btn" data-deluser="${u.id}" style="color:#EF4444;padding:4px 10px;font-size:12px;" ${u.id === currentUser().id ? 'disabled title="Không thể xoá tài khoản chính bạn"' : ''}>Xoá</button>
+                    <button type="button" class="btn btn-ghost btn-sm del-user-btn" data-deluser="${u.id}" style="color:#EF4444;padding:4px 10px;font-size:12px;" ${u.id === curUser.id ? 'disabled title="Không thể xoá tài khoản chính bạn"' : ''}>Xoá</button>
                   </td>
                 </tr>`;
             }).join('')}
@@ -4439,7 +4546,7 @@ function renderSettings() {
 
       <!-- Form Add New Member -->
       <div style="border-top:1px solid #E2E8F0;padding-top:20px;">
-        <h4 style="font-size:14.5px;font-weight:700;color:#0F172A;margin-bottom:14px;">➕ Thêm Nhân Viên Mới Vào Hệ Thống</h4>
+        <h4 style="font-size:14.5px;font-weight:700;color:#0F172A;margin-bottom:14px;">➕ Thêm Thành Viên Mới Vào ${isDeptHeadOnly ? myGroup : 'Hệ Thống'}</h4>
         <div class="field-row" style="margin-bottom:14px;">
           <div class="field">
             <label><b>Mã nhân viên mới</b></label>
@@ -4457,21 +4564,30 @@ function renderSettings() {
           </div>
           <div class="field">
             <label><b>Bộ phận công tác</b></label>
-            <input type="text" id="new-user-dept" placeholder="VD: Phòng Kế toán">
+            <input type="text" id="new-user-dept" value="${isDeptHeadOnly ? myGroup : ''}" placeholder="VD: ${isDeptHeadOnly ? myGroup : 'Nhóm EXP / Nhóm Docs'}" ${isDeptHeadOnly ? 'readonly style="background:#F1F5F9;"' : ''}>
           </div>
           <div class="field">
             <label><b>Vai trò / Phân quyền</b></label>
             <select id="new-user-role" style="padding:10px;border-radius:6px;border:1px solid #CBD5E1;font-size:13px;font-weight:600;">
-              <option value="employee">👤 Nhân viên (Chỉ xem phiếu cá nhân)</option>
-              <option value="dept_head">👔 Trưởng nhóm / Admin nhóm (Xem hết phiếu)</option>
+              <option value="employee">👤 Nhân viên (Chỉ xem kho & phiếu của nhóm)</option>
+              <option value="dept_head">👔 Trưởng nhóm / Admin nhóm (Xem hết phiếu nhóm & tự thêm thành viên)</option>
+              ${!isDeptHeadOnly ? `
               <option value="admin">👑 Admin toàn quyền hệ thống</option>
               <option value="chief_accountant">💼 Kế toán trưởng</option>
               <option value="director">⭐ Ban Giám đốc</option>
+              ` : ''}
             </select>
           </div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
           <span style="font-size:12px;color:#64748B;">Mật khẩu mặc định: <b style="color:#0F172A;">123</b> · Mã PIN mặc định: <b style="color:#0F172A;">1234</b></span>
+          <button type="button" class="btn btn-primary btn-sm" id="add-new-user-btn" style="padding:10px 20px;">
+            ➕ Thêm nhân viên
+          </button>
+        </div>
+      </div>
+    </div>
+    ` : ''}
           <button type="button" class="btn btn-primary btn-sm" id="add-new-user-btn" style="padding:10px 20px;">
             ➕ Thêm nhân viên
           </button>
@@ -5344,7 +5460,6 @@ function attachHandlers() {
     submitDoc(doc);
   }));
   document.querySelectorAll('[data-cancelsign]').forEach(el => el.addEventListener('click', () => {
-    const doc = STATE.documents.find(d => d.id === el.dataset.cancelsign);
     cancelSignature(doc);
   }));
   document.querySelectorAll('[data-mkreimb]').forEach(el => el.addEventListener('click', () => {
@@ -5556,6 +5671,9 @@ function attachHandlers() {
   const reparseBtn = document.getElementById('reparse-invoices-btn');
   if (reparseBtn) reparseBtn.addEventListener('click', reparseAllExistingInvoices);
 
+  const fig = document.getElementById('filter-inv-group');
+  if (fig) fig.addEventListener('change', e => { STATE._invGroupFilter = e.target.value; updateInvoiceTableView(); });
+
   const fim = document.getElementById('filter-inv-month');
   if (fim) fim.addEventListener('change', e => { STATE._invMonthFilter = e.target.value; updateInvoiceTableView(); });
 
@@ -5616,7 +5734,6 @@ function attachHandlers() {
     viewInvoicePdf(el.dataset.viewmodal, el.dataset.attname);
   }));
 
-  // Settings & Backup
   const pushCloudBtn = document.getElementById('push-all-cloud-btn');
   if (pushCloudBtn) {
     pushCloudBtn.addEventListener('click', async () => {
@@ -5738,11 +5855,19 @@ function attachHandlers() {
   const addUserBtn = document.getElementById('add-new-user-btn');
   if (addUserBtn) {
     addUserBtn.addEventListener('click', async () => {
+      const curU = currentUser();
       const code = (document.getElementById('new-user-code') || {}).value?.trim();
       const name = (document.getElementById('new-user-name') || {}).value?.trim();
       const email = (document.getElementById('new-user-email') || {}).value?.trim() || `${code}@cpc1hn.com.vn`;
-      const dept = (document.getElementById('new-user-dept') || {}).value?.trim() || 'CPC1 Hà Nội';
-      const role = (document.getElementById('new-user-role') || {}).value || 'employee';
+      let dept = (document.getElementById('new-user-dept') || {}).value?.trim();
+      let role = (document.getElementById('new-user-role') || {}).value || 'employee';
+
+      if (curU && curU.role === 'dept_head') {
+        dept = getUserGroup(curU);
+        if (!['employee', 'dept_head'].includes(role)) role = 'employee';
+      } else {
+        if (!dept) dept = 'CPC1 Hà Nội';
+      }
 
       if (!code || !name) {
         showToast('Vui lòng nhập đầy đủ Mã nhân viên và Họ tên!');
@@ -5770,7 +5895,7 @@ function attachHandlers() {
 
       STATE.users.push(newUser);
       await saveUsers();
-      showToast(`✓ Đã thêm nhân viên ${name} (${code}) thành công!`);
+      showToast(`✓ Đã thêm nhân viên ${name} (${code}) vào ${dept} thành công!`);
       render();
     });
   }
@@ -5814,6 +5939,7 @@ function attachHandlers() {
   document.querySelectorAll('.save-user-edit-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
+      const curU = currentUser();
       const uidVal = btn.dataset.saveuser;
       const targetUser = STATE.users.find(u => u.id === uidVal);
       if (!targetUser) return;
@@ -5821,12 +5947,17 @@ function attachHandlers() {
       const code = (document.getElementById(`eu-code-${uidVal}`) || {}).value?.trim();
       const name = (document.getElementById(`eu-name-${uidVal}`) || {}).value?.trim();
       const email = (document.getElementById(`eu-email-${uidVal}`) || {}).value?.trim();
-      const dept = (document.getElementById(`eu-dept-${uidVal}`) || {}).value?.trim();
-      const role = (document.getElementById(`eu-role-${uidVal}`) || {}).value;
+      let dept = (document.getElementById(`eu-dept-${uidVal}`) || {}).value?.trim();
+      let role = (document.getElementById(`eu-role-${uidVal}`) || {}).value;
 
       if (!code || !name) {
         showToast('Vui lòng nhập Mã nhân viên và Họ tên!');
         return;
+      }
+
+      if (curU && curU.role === 'dept_head') {
+        dept = getUserGroup(curU);
+        if (!['employee', 'dept_head'].includes(role)) role = targetUser.role;
       }
 
       targetUser.employeeCode = code;
@@ -5887,9 +6018,28 @@ function attachInvoiceTableHandlers() {
     updateInvoiceTableView();
   }));
 
-  document.querySelectorAll('[data-invdate]').forEach(el => el.addEventListener('change', async () => {
+  document.querySelectorAll('[data-invdate]').forEach(el => el.addEventListener('change', async (e) => {
     const rec = STATE.invoices.find(r => r.id === el.dataset.invdate);
-    if (rec) { rec.date = el.value; await saveInvoices(); showToast('Đã lưu ngày lập'); }
+    if (rec) {
+      rec.date = e.target.value;
+      const txtInput = document.querySelector(`[data-invdatetext="${rec.id}"]`);
+      if (txtInput) txtInput.value = fmtDate(rec.date);
+      await saveInvoices();
+      showToast('Đã lưu ngày lập');
+    }
+  }));
+
+  document.querySelectorAll('[data-invdatetext]').forEach(el => el.addEventListener('change', async (e) => {
+    const rec = STATE.invoices.find(r => r.id === el.dataset.invdatetext);
+    if (rec) {
+      const parsedIso = parseFormattedDateToIso(e.target.value);
+      rec.date = parsedIso;
+      e.target.value = fmtDate(parsedIso);
+      const datePicker = document.querySelector(`[data-invdate="${rec.id}"]`);
+      if (datePicker) datePicker.value = parsedIso;
+      await saveInvoices();
+      showToast('Đã lưu ngày lập');
+    }
   }));
 
   document.querySelectorAll('[data-invseries]').forEach(el => el.addEventListener('change', async () => {
