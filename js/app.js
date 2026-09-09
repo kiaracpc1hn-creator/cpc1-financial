@@ -96,6 +96,13 @@ async function loadAll() {
         d.docNo = generateRandomVoucherCode(d.type);
         updated = true;
       }
+      if (!d.group || d.group === 'Không') {
+        const resolved = getDocGroup(d);
+        if (resolved && resolved !== 'Không') {
+          d.group = resolved;
+          updated = true;
+        }
+      }
     }
     if (updated) saveDocuments();
   } catch (e) { STATE.documents = []; }
@@ -479,7 +486,19 @@ function seedDocs() {
   pay.status = 'pending_signature';
   pay.history.push({ at: new Date().toISOString(), action: 'Trình ký', by: tuyen.name });
 
-  return [adv, pay];
+  const dang = (STATE.users || []).find(u => u.employeeCode === '018233') || { id: 'u_018233', name: 'Lê Minh Đăng', employeeCode: '018233', department: 'Phòng Thương mại quốc tế', group: 'Nhóm Docs' };
+  const payDocs = mkDoc('payment', dang, {
+    contentSummary: 'Thanh toán cước vận tải biển lô xuất khẩu Philippines',
+    currency: 'VND',
+    items: [
+      { stt: 1, date: '2026-06-10', invoiceNo: '26T|0511200', description: 'Phí cước tàu biển Bill BL682910', amount: 15000000 }
+    ],
+    paymentMethod: 'transfer'
+  });
+  payDocs.status = 'pending_signature';
+  payDocs.history.push({ at: new Date().toISOString(), action: 'Trình ký', by: dang.name });
+
+  return [adv, pay, payDocs];
 }
 
 /* ===================== DOC MODEL ===================== */
@@ -509,6 +528,7 @@ function mkDoc(type, requester, extra = {}) {
     requesterName: requester.name,
     employeeCode: requester.employeeCode,
     department: requester.department,
+    group: getUserGroup(requester),
     createdAt: new Date().toISOString(),
     documentDate: new Date().toISOString().slice(0, 10),
     status: 'draft',
@@ -2464,15 +2484,21 @@ function openManualInvoiceModal(initialData = {}) {
 
 function getDocGroup(doc) {
   if (!doc) return 'Không';
-  if (doc.group) return doc.group;
+  if (doc.group && doc.group !== 'Không') return doc.group;
   const creator = (STATE.users || []).find(u => 
     (doc.employeeCode && u.employeeCode && doc.employeeCode === u.employeeCode) ||
     (doc.requesterId && u.id && doc.requesterId === u.id) ||
     (doc.requesterName && u.name && doc.requesterName.trim().toLowerCase() === u.name.trim().toLowerCase())
   );
-  if (creator) return getUserGroup(creator);
-  if (doc.department) return getUserGroup({ department: doc.department });
-  return 'Không';
+  if (creator) {
+    const grp = getUserGroup(creator);
+    if (grp && grp !== 'Không') return grp;
+  }
+  if (doc.department) {
+    const grpFromDept = getUserGroup({ department: doc.department });
+    if (grpFromDept && grpFromDept !== 'Không') return grpFromDept;
+  }
+  return doc.group || 'Không';
 }
 
 function canUserAccessDoc(doc, user = currentUser()) {
