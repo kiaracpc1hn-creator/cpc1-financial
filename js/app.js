@@ -4493,7 +4493,7 @@ function renderSettings() {
 
       <!-- Clean Members Table with Dual Axis Scrollbar & Sticky Header -->
       <div class="member-table-container">
-        <table class="data-table" style="width:100%;min-width:980px;font-size:13px;border-collapse:collapse;">
+        <table class="data-table" style="width:100%;min-width:920px;font-size:13px;border-collapse:separate;border-spacing:0;">
           <thead>
             <tr style="background:#F8FAFC;border-bottom:1.5px solid #CBD5E1;text-align:left;color:#475569;">
               <th style="padding:11px 14px;white-space:nowrap;">Mã NV</th>
