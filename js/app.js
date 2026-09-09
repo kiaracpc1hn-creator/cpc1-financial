@@ -435,15 +435,15 @@ function seedUsers() {
   return [
     { id: 'u_017481', username: '017481', password: '123', pin: '1234', name: 'Vũ Thị Kim Tuyến', employeeCode: '017481', email: 'tuyen.vukim@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm EXP', role: 'employee', bank: { accountName: 'Vũ Thị Kim Tuyến', accountNumber: '17923381', bankName: 'ACB - Ngân hàng TMCP Á Châu' } },
     { id: 'u_015408', username: '015408', password: '123', pin: '1234', name: 'Nguyễn Phương Anh', employeeCode: '015408', email: 'anh.nguyenphuong@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm Docs', role: 'employee', bank: null },
-    { id: 'u_019690', username: '019690', password: '123', pin: '1234', name: 'Ngô Mai Anh', employeeCode: '019690', email: 'anh.ngomai@cpc1hn.com.vn', department: 'Phòng Kế toán', group: 'Nhóm EXP', role: 'employee', bank: null },
-    { id: 'u_017078', username: '017078', password: '123', pin: '1234', name: 'Khuất Phương Nhung', employeeCode: '017078', email: 'nhung.khuatphuong@cpc1hn.com.vn', department: 'Phòng Hành chính - Nhân sự', group: 'Nhóm EXP', role: 'employee', bank: null },
+    { id: 'u_019690', username: '019690', password: '123', pin: '1234', name: 'Ngô Mai Anh', employeeCode: '019690', email: 'anh.ngomai@cpc1hn.com.vn', department: 'Phòng Kế toán', group: 'Không', role: 'employee', bank: null },
+    { id: 'u_017078', username: '017078', password: '123', pin: '1234', name: 'Khuất Phương Nhung', employeeCode: '017078', email: 'nhung.khuatphuong@cpc1hn.com.vn', department: 'Phòng Hành chính - Nhân sự', group: 'Không', role: 'employee', bank: null },
     { id: 'u_018906', username: '018906', password: '123', pin: '1234', name: 'Đinh Ngọc Mai', employeeCode: '018906', email: 'mai.dinhngoc@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm EXP', role: 'employee', bank: null },
     { id: 'u_018233', username: '018233', password: '123', pin: '1234', name: 'Lê Minh Đăng', employeeCode: '018233', email: 'dang.leminh@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm Docs', role: 'employee', bank: null },
-    { id: 'u_018858', username: '018858', password: '123', pin: '1234', name: 'Phạm Thị Lan Hương', employeeCode: '018858', email: 'huong.phamthilan@cpc1hn.com.vn', department: 'Phòng Đảm bảo chất lượng', group: 'Nhóm EXP', role: 'employee', bank: null },
+    { id: 'u_018858', username: '018858', password: '123', pin: '1234', name: 'Phạm Thị Lan Hương', employeeCode: '018858', email: 'huong.phamthilan@cpc1hn.com.vn', department: 'Phòng Đảm bảo chất lượng', group: 'Không', role: 'employee', bank: null },
     { id: 'u_010023', username: '010023', password: '123', pin: '1234', name: 'Nguyễn Văn Hùng', employeeCode: '010023', email: 'hung.nguyenvan@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm EXP', role: 'dept_head', bank: null },
     { id: 'u_010024', username: '010024', password: '123', pin: '1234', name: 'Nguyễn Thị Nga', employeeCode: '010024', email: 'nga.nguyenthi@cpc1hn.com.vn', department: 'Phòng Thương mại quốc tế', group: 'Nhóm Docs', role: 'dept_head', bank: null },
-    { id: 'u_010005', username: '010005', password: '123', pin: '1234', name: 'Trần Thị Lan', employeeCode: '010005', email: 'lan.tranthi@cpc1hn.com.vn', department: 'Phòng Kế toán', group: 'Nhóm EXP', role: 'chief_accountant', bank: null },
-    { id: 'u_010001', username: '010001', password: '123', pin: '1234', name: 'Phạm Minh Đức', employeeCode: '010001', email: 'duc.phamminh@cpc1hn.com.vn', department: 'Ban Giám đốc', group: 'Nhóm EXP', role: 'director', bank: null }
+    { id: 'u_010005', username: '010005', password: '123', pin: '1234', name: 'Trần Thị Lan', employeeCode: '010005', email: 'lan.tranthi@cpc1hn.com.vn', department: 'Phòng Kế toán', group: 'Không', role: 'chief_accountant', bank: null },
+    { id: 'u_010001', username: '010001', password: '123', pin: '1234', name: 'Phạm Minh Đức', employeeCode: '010001', email: 'duc.phamminh@cpc1hn.com.vn', department: 'Ban Giám đốc', group: 'Không', role: 'director', bank: null }
   ];
 }
 
@@ -1847,30 +1847,37 @@ async function renderAttachmentPreview(attId) {
 
 /* ===================== GROUP ACCESS & INVOICE REPOSITORY ===================== */
 function getUserGroup(user) {
-  if (!user) return 'Nhóm EXP';
-  if (user.group) return user.group;
+  if (!user) return 'Không';
+  if (user.group) {
+    const g = user.group.trim();
+    if (g.toLowerCase() === 'không' || g.toLowerCase().includes('khong')) return 'Không';
+    if (/DOC/i.test(g)) return 'Nhóm Docs';
+    if (/EXP/i.test(g)) return 'Nhóm EXP';
+    return g;
+  }
   const dept = (user.department || '').trim();
-  if (!dept) return 'Nhóm EXP';
+  if (!dept) return 'Không';
   if (/EXP/i.test(dept)) return 'Nhóm EXP';
   if (/DOC/i.test(dept) || /CHỨNG TỪ/i.test(dept)) return 'Nhóm Docs';
-  return dept;
+  return 'Không';
 }
 
 function normalizeGroupKey(groupStr) {
-  if (!groupStr) return '';
+  if (!groupStr) return 'NONE';
   const s = groupStr.toString().trim().toUpperCase();
   if (s.includes('EXP')) return 'EXP';
   if (s.includes('DOC') || s.includes('CHỨNG TỪ')) return 'DOCS';
+  if (s === 'KHÔNG' || s.includes('KHONG') || s === 'NONE') return 'NONE';
   return s;
 }
 
 function getInvoiceGroup(rec) {
-  if (!rec) return 'Nhóm EXP';
+  if (!rec) return 'Không';
   if (rec.group) return rec.group;
   const uploader = (STATE.users || []).find(u => u.id === rec.requesterId || u.name === rec.requesterName || u.employeeCode === rec.requesterName);
   if (uploader) return getUserGroup(uploader);
   if (rec.department) return getUserGroup({ department: rec.department });
-  return 'Nhóm EXP';
+  return 'Không';
 }
 
 function getAccessibleInvoices() {
@@ -3359,6 +3366,7 @@ function renderInvoices() {
         <option value="all" ${groupFilter === 'all' ? 'selected' : ''}>🏢 Tất cả kho nhóm</option>
         <option value="Nhóm EXP" ${groupFilter === 'Nhóm EXP' ? 'selected' : ''}>📁 Kho Nhóm EXP</option>
         <option value="Nhóm Docs" ${groupFilter === 'Nhóm Docs' ? 'selected' : ''}>📁 Kho Nhóm Docs</option>
+        <option value="Không" ${groupFilter === 'Không' ? 'selected' : ''}>🚫 Hóa đơn không phân nhóm (Phòng khác)</option>
       </select>
       ` : ''}
       <select id="filter-inv-month">
@@ -4483,18 +4491,18 @@ function renderSettings() {
         ${isDeptHeadOnly ? `Trưởng nhóm có quyền tự thêm thành viên mới vào <b>${myGroup}</b>, quản lý quyền hạn và đặt lại Mật khẩu & Mã PIN cho nhân viên trong nhóm.` : 'Thêm nhân viên mới, cấp quyền Trưởng nhóm / Admin hoặc đặt lại Mật khẩu & Mã PIN cho nhân viên trực tiếp trên giao diện web.'}
       </p>
 
-      <!-- Clean Members Table -->
-      <div style="overflow-x:auto;margin-bottom:24px;border:1px solid #E2E8F0;border-radius:10px;">
-        <table class="data-table" style="width:100%;font-size:13px;border-collapse:collapse;">
+      <!-- Clean Members Table with Dual Axis Scrollbar & Sticky Header -->
+      <div class="member-table-container">
+        <table class="data-table" style="width:100%;min-width:980px;font-size:13px;border-collapse:collapse;">
           <thead>
-            <tr style="background:#F8FAFC;border-bottom:1px solid #E2E8F0;text-align:left;color:#475569;">
-              <th style="padding:10px 14px;">Mã NV</th>
-              <th style="padding:10px 14px;">Họ và tên</th>
-              <th style="padding:10px 14px;">Email nhận thông báo</th>
-              <th style="padding:10px 14px;">Bộ phận công tác</th>
-              <th style="padding:10px 14px;">Nhóm kho hoá đơn</th>
-              <th style="padding:10px 14px;">Vai trò / Quyền</th>
-              <th style="padding:10px 14px;text-align:right;">Thao tác</th>
+            <tr style="background:#F8FAFC;border-bottom:1.5px solid #CBD5E1;text-align:left;color:#475569;">
+              <th style="padding:11px 14px;white-space:nowrap;">Mã NV</th>
+              <th style="padding:11px 14px;white-space:nowrap;">Họ và tên</th>
+              <th style="padding:11px 14px;white-space:nowrap;">Email nhận thông báo</th>
+              <th style="padding:11px 14px;white-space:nowrap;">Bộ phận công tác</th>
+              <th style="padding:11px 14px;white-space:nowrap;">Nhóm kho hoá đơn</th>
+              <th style="padding:11px 14px;white-space:nowrap;">Vai trò / Quyền</th>
+              <th style="padding:11px 14px;text-align:right;white-space:nowrap;">Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -4511,6 +4519,7 @@ function renderSettings() {
                       <select id="eu-group-${u.id}" ${isDeptHeadOnly ? 'disabled style="background:#E2E8F0;"' : ''} style="padding:6px 8px;font-size:12px;font-weight:700;border-radius:6px;border:1px solid #0D9488;color:#0D9488;">
                         <option value="Nhóm EXP" ${uGroup === 'Nhóm EXP' ? 'selected' : ''}>📁 Nhóm EXP</option>
                         <option value="Nhóm Docs" ${uGroup === 'Nhóm Docs' ? 'selected' : ''}>📁 Nhóm Docs</option>
+                        <option value="Không" ${uGroup === 'Không' ? 'selected' : ''}>🚫 Không (Phòng khác)</option>
                       </select>
                     </td>
                     <td style="padding:10px;">
@@ -4580,6 +4589,7 @@ function renderSettings() {
             <select id="new-user-group" ${isDeptHeadOnly ? 'disabled style="background:#F1F5F9;"' : ''} style="padding:10px;border-radius:6px;border:1px solid #CBD5E1;font-size:13px;font-weight:700;color:#0D9488;">
               <option value="Nhóm EXP" ${myGroup === 'Nhóm EXP' ? 'selected' : ''}>📁 Nhóm EXP</option>
               <option value="Nhóm Docs" ${myGroup === 'Nhóm Docs' ? 'selected' : ''}>📁 Nhóm Docs</option>
+              <option value="Không" ${myGroup === 'Không' ? 'selected' : ''}>🚫 Không (Phòng khác)</option>
             </select>
           </div>
           <div class="field">
