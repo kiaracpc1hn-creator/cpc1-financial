@@ -1577,3 +1577,61 @@ table {
     margin: 15mm 15mm;
   }
 }
+
+/* Custom Scrollbars & Alignment for Member Table */
+.member-table-container {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  max-height: 400px !important;
+  margin-bottom: 24px;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.03);
+  background: #FFFFFF;
+  position: relative;
+}
+
+.member-table-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.member-table-container::-webkit-scrollbar-track {
+  background: #F1F5F9;
+  border-radius: 4px;
+}
+.member-table-container::-webkit-scrollbar-thumb {
+  background: #0D9488;
+  border-radius: 4px;
+}
+.member-table-container::-webkit-scrollbar-thumb:hover {
+  background: #0F766E;
+}
+
+.member-table-container table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+.member-table-container thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #F8FAFC !important;
+  color: #475569;
+  font-weight: 700;
+  text-align: left;
+  padding: 12px 14px;
+  white-space: nowrap !important;
+  border-bottom: 2px solid #CBD5E1;
+}
+
+.member-table-container tbody td {
+  padding: 12px 14px;
+  white-space: nowrap !important;
+  vertical-align: middle;
+  border-bottom: 1px solid #F1F5F9;
+}
