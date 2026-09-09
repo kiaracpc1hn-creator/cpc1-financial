@@ -4588,13 +4588,6 @@ function renderSettings() {
       </div>
     </div>
     ` : ''}
-          <button type="button" class="btn btn-primary btn-sm" id="add-new-user-btn" style="padding:10px 20px;">
-            ➕ Thêm nhân viên
-          </button>
-        </div>
-      </div>
-    </div>
-    ` : ''}
 
     <!-- CARD 3: ĐỔI MẬT KHẨU & PIN (HIỂN THỊ CHO TẤT CẢ MỌI NGƯỜI) -->
     <div class="form-card" style="width:100%;max-width:100%;margin-bottom:0;">
