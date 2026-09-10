@@ -1111,6 +1111,10 @@ function cleanDuplicateInvoicesInRepo() {
         patched = true;
       }
     }
+    if (r.invoiceRef && (r.invoiceRef === r.statementRefs || (r.statementRefs && r.statementRefs.includes(r.invoiceRef)) || /^(EBL|OICE|SERIAL|SERIES|NUMBER|INVOICE|PATTERN)/i.test(r.invoiceRef.trim()))) {
+      r.invoiceRef = '';
+      patched = true;
+    }
   }
 
   const seen = new Set();
@@ -2101,7 +2105,7 @@ async function uploadInvoiceFiles(fileList) {
         currency: extracted.currency === 'USD' ? 'USD' : 'VND',
         attachmentId: attId,
         fileName: file.name,
-        invoiceRef: extracted.invoiceRef || extracted.statementRefs || '',
+        invoiceRef: extracted.invoiceRef || '',
         statementRefs: extracted.statementRefs || '',
         rawText: extracted.rawText || ''
       });
@@ -6533,7 +6537,6 @@ async function reparseAllExistingInvoices() {
             }
             if (extracted.rawText) r.rawText = extracted.rawText;
             if (extracted.statementRefs) r.statementRefs = extracted.statementRefs;
-            if (!r.invoiceRef && extracted.statementRefs) r.invoiceRef = extracted.statementRefs;
           }
         } catch (err) {
           console.warn('Lỗi reparse invoice:', r.fileName, err);
@@ -6773,7 +6776,6 @@ async function autoIndexUnscannedInvoices() {
         if (extracted) {
           if (extracted.rawText) r.rawText = extracted.rawText;
           if (extracted.statementRefs) r.statementRefs = extracted.statementRefs;
-          if (!r.invoiceRef && extracted.statementRefs) r.invoiceRef = extracted.statementRefs;
           changedInvoices = true;
         }
       } catch (e) {

@@ -593,9 +593,7 @@ async function extractInvoiceDataFromPdfFile(file, dataUrl = null) {
 
   parsed.rawText = fullText || '';
   parsed.statementRefs = extractStatementRefs(fullText);
-  if (!parsed.invoiceRef && parsed.statementRefs) {
-    parsed.invoiceRef = parsed.statementRefs;
-  }
+  parsed.invoiceRef = '';
 
   return parsed;
 }
