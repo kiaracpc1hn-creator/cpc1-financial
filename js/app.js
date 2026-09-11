@@ -1257,6 +1257,13 @@ function cleanDuplicateInvoicesInRepo() {
         patched = true;
       }
     }
+    if (!r.group || r.group === 'Không') {
+      const computedGrp = getInvoiceGroup(r);
+      if (computedGrp && computedGrp !== 'Không') {
+        r.group = computedGrp;
+        patched = true;
+      }
+    }
   }
 
   const seen = new Set();
@@ -2257,30 +2264,37 @@ function getUserGroup(user) {
   if (user.group) {
     const g = user.group.trim();
     if (g.toLowerCase() === 'không' || g.toLowerCase().includes('khong')) return 'Không';
-    if (/DOC/i.test(g)) return 'Nhóm Docs';
-    if (/EXP/i.test(g)) return 'Nhóm EXP';
+    if (/DOC|CHỨNG TỪ|CHUNG TU|NHẬP|NHAP|IMPORT/i.test(g)) return 'Nhóm Docs';
+    if (/EXP|XUẤT|XUAT|EXPORT/i.test(g)) return 'Nhóm EXP';
     return g;
   }
   const dept = (user.department || '').trim();
   if (!dept) return 'Không';
-  if (/EXP/i.test(dept)) return 'Nhóm EXP';
-  if (/DOC/i.test(dept) || /CHỨNG TỪ/i.test(dept)) return 'Nhóm Docs';
-  return 'Không';
+  if (/EXP|XUẤT|XUAT|EXPORT/i.test(dept)) return 'Nhóm EXP';
+  if (/DOC|CHỨNG TỪ|CHUNG TU|NHẬP|NHAP|IMPORT/i.test(dept)) return 'Nhóm Docs';
+  return dept;
 }
 
 function normalizeGroupKey(groupStr) {
   if (!groupStr) return 'NONE';
   const s = groupStr.toString().trim().toUpperCase();
-  if (s.includes('EXP')) return 'EXP';
-  if (s.includes('DOC') || s.includes('CHỨNG TỪ')) return 'DOCS';
+  if (s.includes('EXP') || s.includes('XUẤT') || s.includes('XUAT') || s.includes('EXPORT')) return 'EXP';
+  if (s.includes('DOC') || s.includes('CHỨNG TỪ') || s.includes('CHUNG TU') || s.includes('NHẬP') || s.includes('NHAP') || s.includes('IMPORT')) return 'DOCS';
   if (s === 'KHÔNG' || s.includes('KHONG') || s === 'NONE') return 'NONE';
   return s;
 }
 
 function getInvoiceGroup(rec) {
   if (!rec) return 'Không';
-  if (rec.group) return rec.group;
-  const uploader = (STATE.users || []).find(u => u.id === rec.requesterId || u.name === rec.requesterName || u.employeeCode === rec.requesterName);
+  if (rec.group && rec.group !== 'Không') return rec.group;
+  const reqNameClean = (rec.requesterName || '').trim().toLowerCase();
+  const uploader = (STATE.users || []).find(u => {
+    if (u.id && rec.requesterId && u.id === rec.requesterId) return true;
+    const uNameClean = (u.name || '').trim().toLowerCase();
+    if (uNameClean && uNameClean === reqNameClean) return true;
+    if (u.employeeCode && rec.requesterName && u.employeeCode.toLowerCase() === reqNameClean) return true;
+    return false;
+  });
   if (uploader) return getUserGroup(uploader);
   if (rec.department) return getUserGroup({ department: rec.department });
   return 'Không';
@@ -2290,17 +2304,19 @@ function getAccessibleInvoices() {
   const user = currentUser();
   if (!user) return [];
 
-  if (['admin', 'chief_accountant', 'director'].includes(user.role)) {
+  const isGlobalAdmin = ['admin', 'chief_accountant', 'director'].includes(user.role);
+  if (isGlobalAdmin) {
     const groupFilter = STATE._invGroupFilter || 'all';
     if (groupFilter === 'all') return [...STATE.invoices];
     return STATE.invoices.filter(r => normalizeGroupKey(getInvoiceGroup(r)) === normalizeGroupKey(groupFilter));
   }
 
+  // Đồng bộ nội bộ nhóm: 100% hóa đơn của tất cả thành viên trong cùng nhóm được chia sẻ và hiển thị đầy đủ
   const userGroupKey = normalizeGroupKey(getUserGroup(user));
   return STATE.invoices.filter(r => {
     if (r.requesterId === user.id || r.requesterName === user.name) return true;
     const invGroupKey = normalizeGroupKey(getInvoiceGroup(r));
-    return invGroupKey === userGroupKey;
+    return userGroupKey !== 'NONE' && invGroupKey === userGroupKey;
   });
 }
 
@@ -3810,6 +3826,11 @@ function renderInvoices() {
   const allMonths = [...new Set(accessibleInvoices.map(r => monthKey(r.date || r.uploadedAt)))].sort((a, b) => a < b ? 1 : -1);
   const allRequesters = [...new Set(accessibleInvoices.map(r => r.requesterName))].sort((a, b) => a.localeCompare(b));
   const allBeneficiaries = [...new Set(accessibleInvoices.map(r => r.beneficiaryName || '(chưa rõ)'))].sort((a, b) => a.localeCompare(b));
+
+  const knownGroupsFromUsers = (STATE.users || []).map(u => getUserGroup(u));
+  const knownGroupsFromInvoices = (STATE.invoices || []).map(r => getInvoiceGroup(r));
+  const allGroups = [...new Set([...knownGroupsFromUsers, ...knownGroupsFromInvoices])].filter(g => g && g !== 'Không').sort();
+
   const statusOptions = [
     { key: 'not_submitted', label: 'Mới nhập' },
     { key: 'draft', label: 'Nháp' },
@@ -3822,7 +3843,7 @@ function renderInvoices() {
     <div>
       <h1 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <span>Kho Hoá đơn điện tử</span>
-        ${!isGlobalAdmin ? `<span class="badge badge-teal" style="font-size:13px;padding:4px 10px;font-weight:700;">👥 Kho: ${userGrp}</span>` : ''}
+        ${isGlobalAdmin ? `<span class="badge badge-teal" style="font-size:13px;padding:4px 10px;font-weight:700;">👑 Quản trị: Tất cả kho nhóm</span>` : `<span class="badge badge-teal" style="font-size:13px;padding:4px 10px;font-weight:700;">🔒 Kho nhóm: ${userGrp}</span>`}
       </h1>
       <p id="inv-header-count">Tải lên hoá đơn PDF hoặc bấm "＋ Thêm chứng từ nhập tay" để nhập hoá đơn scan/biên lai giấy. (${records.length} hoá đơn ${isGlobalAdmin ? 'khả dụng' : `trực thuộc ${userGrp}`})</p>
     </div>
@@ -3855,9 +3876,8 @@ function renderInvoices() {
       ${isGlobalAdmin ? `
       <select id="filter-inv-group" style="font-weight:700;color:var(--teal);border-color:var(--teal);">
         <option value="all" ${groupFilter === 'all' ? 'selected' : ''}>🏢 Tất cả kho nhóm</option>
-        <option value="Nhóm EXP" ${groupFilter === 'Nhóm EXP' ? 'selected' : ''}>📁 Kho Nhóm EXP</option>
-        <option value="Nhóm Docs" ${groupFilter === 'Nhóm Docs' ? 'selected' : ''}>📁 Kho Nhóm Docs</option>
-        <option value="Không" ${groupFilter === 'Không' ? 'selected' : ''}>🚫 Hóa đơn không phân nhóm (Phòng khác)</option>
+        ${allGroups.map(g => `<option value="${g}" ${groupFilter === g ? 'selected' : ''}>📁 Kho ${g}</option>`).join('')}
+        <option value="Không" ${groupFilter === 'Không' ? 'selected' : ''}>🚫 Hóa đơn không phân nhóm</option>
       </select>
       ` : ''}
       <select id="filter-inv-month">
