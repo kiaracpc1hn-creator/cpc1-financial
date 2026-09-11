@@ -75,7 +75,33 @@
       return isFirebaseReady && !!firestoreDb;
     },
 
-    async get(key, isBinary = false) {
+    async get(key, isBinary = false, forceCloud = false) {
+      // 0. System metadata keys (like 'users' for cross-device authentication) or forceCloud: query Firestore directly if connected
+      if ((key === 'users' || forceCloud) && this.isFirebaseConnected()) {
+        try {
+          const docSnap = await firestoreDb.collection(FIREBASE_COLLECTION).doc(key).get();
+          if (docSnap.exists) {
+            const data = docSnap.data();
+            if (data) {
+              let val = data.value;
+              if (data.isChunked && data.totalChunks > 0) {
+                const parts = [];
+                for (let i = 0; i < data.totalChunks; i++) {
+                  parts.push(data['chunk_' + i] || '');
+                }
+                val = parts.join('');
+              }
+              if (val !== undefined && val !== null) {
+                this._setLocal(key, val).catch(() => {});
+                return { key, value: val };
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`[CPC1 Cloud] Cloud fetch error for "${key}":`, err.message);
+        }
+      }
+
       // 1. Try local IndexedDB first for instant UI response
       const db = await openDB();
       let localResult = null;
@@ -118,10 +144,20 @@
           const docSnap = await firestoreDb.collection(FIREBASE_COLLECTION).doc(key).get();
           if (docSnap.exists) {
             const data = docSnap.data();
-            if (data && data.value !== undefined && data.value !== null) {
-              // Cache locally into IndexedDB for instant future reads
-              this._setLocal(key, data.value).catch(() => {});
-              return { key, value: data.value };
+            if (data) {
+              let val = data.value;
+              if (data.isChunked && data.totalChunks > 0) {
+                const parts = [];
+                for (let i = 0; i < data.totalChunks; i++) {
+                  parts.push(data['chunk_' + i] || '');
+                }
+                val = parts.join('');
+              }
+              if (val !== undefined && val !== null) {
+                // Cache locally into IndexedDB for instant future reads
+                this._setLocal(key, val).catch(() => {});
+                return { key, value: val };
+              }
             }
           }
         } catch (err) {
@@ -161,11 +197,26 @@
       // 2. Sync to Firebase Cloud Firestore if connected
       if (this.isFirebaseConnected()) {
         try {
-          if (typeof value === 'string' && value.length > 1040000) {
-            console.warn(`[CPC1 Cloud] File "${key}" (${Math.round(value.length/1024)}KB) exceeds Firestore 1MB document limit.`);
+          if (typeof value === 'string' && value.length > 750000) {
+            // Chunk base64 string into 700KB chunks to bypass Firestore 1MB single document limit
+            const chunkSize = 700000;
+            const totalChunks = Math.ceil(value.length / chunkSize);
+            const payload = {
+              key: key,
+              isChunked: true,
+              totalChunks: totalChunks,
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            for (let i = 0; i < totalChunks; i++) {
+              payload['chunk_' + i] = value.slice(i * chunkSize, (i + 1) * chunkSize);
+            }
+            firestoreDb.collection(FIREBASE_COLLECTION).doc(key).set(payload, { merge: true }).catch(err => {
+              console.warn(`[CPC1 Cloud] Firestore chunked set error for "${key}":`, err.message);
+            });
           } else {
             firestoreDb.collection(FIREBASE_COLLECTION).doc(key).set({
               key: key,
+              isChunked: false,
               value: value,
               updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             }, { merge: true }).catch(err => {

@@ -303,6 +303,11 @@ async function loadAll() {
     STATE.documents = seedDocs();
     await saveDocuments();
   }
+
+  // Trigger background sync for any local attachments to Cloud Firestore
+  setTimeout(() => {
+    autoSyncLocalAttachmentsToCloud().catch(() => {});
+  }, 3000);
 }
 
 async function isFreshInstall() {
@@ -801,6 +806,142 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+/* ===================== HISTORY & AUDIT LOGGING ===================== */
+function formatDateTimeVN(isoStr) {
+  if (!isoStr) return '—';
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
+  } catch (e) {
+    return isoStr;
+  }
+}
+
+function logHistory(rec, actionStr, detailsStr = '') {
+  if (!rec) return;
+  if (!Array.isArray(rec.history)) rec.history = [];
+  const u = currentUser();
+  const byStr = u ? `${u.name || 'Người dùng'} (${u.employeeCode || 'NV'})` : 'Hệ thống';
+  rec.history.unshift({
+    at: new Date().toISOString(),
+    action: actionStr,
+    by: byStr,
+    details: detailsStr
+  });
+}
+
+function getHistoryBadgeInfo(action) {
+  if (!action) return { bg: '#E2E8F0', color: '#475569', icon: '📝' };
+  const a = action.toLowerCase();
+  if (a.includes('khởi tạo') || a.includes('tạo')) return { bg: '#DBEAFE', color: '#1E40AF', icon: '✨' };
+  if (a.includes('chỉnh sửa') || a.includes('cập nhật')) return { bg: '#FEF3C7', color: '#92400E', icon: '✏️' };
+  if (a.includes('khóa') || a.includes('khoá')) return { bg: '#E0E7FF', color: '#3730A3', icon: '🔒' };
+  if (a.includes('mở khóa') || a.includes('mở khoá')) return { bg: '#FCE7F3', color: '#9D174D', icon: '🔓' };
+  if (a.includes('ký') || a.includes('duyệt')) return { bg: '#D1FAE5', color: '#065F46', icon: '✍️' };
+  if (a.includes('tải bản') || a.includes('đính kèm')) return { bg: '#CCFBF1', color: '#115E59', icon: '📎' };
+  if (a.includes('xóa') || a.includes('thùng rác')) return { bg: '#FEE2E2', color: '#991B1B', icon: '🗑️' };
+  if (a.includes('khôi phục')) return { bg: '#E0F2FE', color: '#075985', icon: '♻️' };
+  return { bg: '#F1F5F9', color: '#334155', icon: '📝' };
+}
+
+function renderHistoryTimelineList(historyList) {
+  if (!Array.isArray(historyList) || historyList.length === 0) {
+    return `<div style="text-align:center;padding:18px;color:var(--ink-muted);font-size:13px;font-style:italic;">Chưa có lịch sử ghi nhận cho mục này.</div>`;
+  }
+
+  return `
+    <div style="display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;padding-right:4px;">
+      ${historyList.map(item => {
+        const timeStr = item.at || item.timestamp ? formatDateTimeVN(item.at || item.timestamp) : '—';
+        const badge = getHistoryBadgeInfo(item.action);
+        const byUser = item.by || item.user || 'Hệ thống';
+        return `
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <div style="width:30px;height:30px;border-radius:50%;background:${badge.bg};color:${badge.color};display:flex;align-items:center;justify-content:center;font-size:13.5px;flex-shrink:0;margin-top:2px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+              ${badge.icon}
+            </div>
+            <div style="flex:1;background:#F8FAFC;border:1px solid var(--line);border-radius:8px;padding:10px 14px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px;">
+                <span style="font-weight:700;font-size:13px;color:var(--ink);">${escapeHtml(item.action || 'Thao tác')}</span>
+                <span style="font-size:11.5px;color:var(--ink-muted);">${timeStr}</span>
+              </div>
+              <div style="font-size:12px;color:var(--teal);font-weight:600;margin-bottom:2px;">
+                👤 ${escapeHtml(byUser)}
+              </div>
+              ${item.details ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:4px;background:#fff;padding:6px 10px;border-radius:6px;border:1px dashed var(--line);">${escapeHtml(item.details)}</div>` : ''}
+            </div>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function openInvoiceHistoryModal(invId) {
+  const inv = (STATE.invoices || []).find(r => r.id === invId) || (STATE.trash || []).find(r => r.id === invId);
+  if (!inv) return;
+
+  const existing = document.getElementById('inv-history-modal-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'inv-history-modal-overlay';
+  overlay.className = 'modal-overlay active';
+  overlay.style.zIndex = '99999';
+
+  const invName = inv.invoiceNumber ? `Hóa đơn #${inv.seriesNo ? inv.seriesNo + '|' : ''}${inv.invoiceNumber}` : (inv.fileName || 'Chứng từ');
+
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:680px;width:95%;padding:24px 26px;max-height:85vh;display:flex;flex-direction:column;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:12px;flex-shrink:0;">
+        <div>
+          <h3 style="font-size:17px;margin:0 0 4px;color:var(--ink);display:flex;align-items:center;gap:8px;">
+            <span>📜</span> <span>Lịch sử chỉnh sửa & Thao tác</span>
+          </h3>
+          <p style="margin:0;font-size:13px;color:var(--ink-soft);font-weight:600;">
+            ${escapeHtml(invName)} ${inv.amount ? '— ' + (typeof fmtMoney === 'function' ? fmtMoney(inv.amount, inv.currency) : inv.amount) : ''}
+          </p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="ihm-close" style="font-size:16px;padding:4px 8px;line-height:1;">✕</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding-right:4px;">
+        ${renderHistoryTimelineList(inv.history)}
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('ihm-close').addEventListener('click', () => overlay.remove());
+}
+
+async function autoSyncLocalAttachmentsToCloud() {
+  if (!window.storage || !window.storage.isFirebaseConnected()) return;
+  try {
+    const attIds = new Set();
+    (STATE.invoices || []).forEach(r => { if (r.attachmentId) attIds.add(r.attachmentId); });
+    (STATE.documents || []).forEach(d => {
+      if (Array.isArray(d.attachments)) {
+        d.attachments.forEach(a => { if (a && a.id) attIds.add(a.id); });
+      }
+    });
+
+    for (const attId of attIds) {
+      try {
+        const local = await window.storage.get('attachment:' + attId);
+        if (local && local.value) {
+          await window.storage.set('attachment:' + attId, local.value, true);
+        }
+      } catch (e) {}
+    }
+  } catch (err) {
+    console.warn('Auto sync attachments warning:', err);
+  }
 }
 
 function openSignedUploadModal(doc) {
@@ -1964,10 +2105,16 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
   toolbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#1E293B;color:#F8FAFC;font-size:13px;flex-shrink:0;gap:8px;border-bottom:1px solid #334155;';
 
   toolbar.innerHTML = `
-    <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:40%;display:flex;align-items:center;gap:6px;">
+    <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:35%;display:flex;align-items:center;gap:6px;">
       <span>📄</span> <span title="${safeFileName}">${safeFileName}</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div style="display:inline-flex;align-items:center;background:#334155;border-radius:5px;padding:2px 6px;gap:2px;" title="Phóng to / Thu nhỏ">
+        <button type="button" class="btn btn-xs btn-zoom-out" style="color:#F8FAFC;padding:3px 7px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;" title="Thu nhỏ (-)">➖</button>
+        <span class="pdf-zoom-val" style="font-size:12px;color:#F8FAFC;font-weight:700;min-width:40px;text-align:center;">100%</span>
+        <button type="button" class="btn btn-xs btn-zoom-in" style="color:#F8FAFC;padding:3px 7px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;" title="Phóng to (+)">➕</button>
+        <button type="button" class="btn btn-xs btn-zoom-reset" style="color:#94A3B8;padding:3px 5px;font-size:11px;border:none;background:none;cursor:pointer;" title="Về 100%">↺</button>
+      </div>
       <button type="button" class="btn btn-xs btn-print-pdf-act" style="background:#8B5CF6;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:4px;box-shadow:0 1px 3px rgba(0,0,0,0.2);cursor:pointer;">
         <span>🖨️</span> <span>In hóa đơn</span>
       </button>
@@ -1989,14 +2136,48 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
   const contentArea = document.createElement('div');
   contentArea.className = 'pdf-preview-content';
   contentArea.style.cssText = 'flex:1;width:100%;max-height:80vh;overflow-y:auto;overflow-x:auto;position:relative;background:#525659;padding:16px;box-sizing:border-box;';
-  contentArea.innerHTML = `<div id="pdf-loading-msg" style="text-align:center;color:#F8FAFC;padding:40px 20px;font-size:14px;">⏳ Đang tải chứng từ PDF…</div>`;
+  contentArea.innerHTML = `<div id="pdf-loading-msg" style="text-align:center;color:#F8FAFC;padding:40px 20px;font-size:14px;">⏳ Đang tải chứng từ PDF (Độ phân giải Ultra-HD)…</div>`;
 
   wrapper.appendChild(contentArea);
   container.appendChild(wrapper);
 
+  // Zoom Controls Logic
+  let currentZoom = 100;
+  const updateZoomUI = () => {
+    const zoomValText = toolbar.querySelector('.pdf-zoom-val');
+    if (zoomValText) zoomValText.textContent = `${currentZoom}%`;
+    const canvases = contentArea.querySelectorAll('.pdf-page-canvas');
+    canvases.forEach(cv => {
+      cv.style.maxWidth = `${Math.round(880 * (currentZoom / 100))}px`;
+      cv.style.width = `${currentZoom}%`;
+    });
+  };
+
+  const btnZoomIn = toolbar.querySelector('.btn-zoom-in');
+  if (btnZoomIn) btnZoomIn.addEventListener('click', () => {
+    if (currentZoom < 250) {
+      currentZoom += 25;
+      updateZoomUI();
+    }
+  });
+
+  const btnZoomOut = toolbar.querySelector('.btn-zoom-out');
+  if (btnZoomOut) btnZoomOut.addEventListener('click', () => {
+    if (currentZoom > 50) {
+      currentZoom -= 25;
+      updateZoomUI();
+    }
+  });
+
+  const btnZoomReset = toolbar.querySelector('.btn-zoom-reset');
+  if (btnZoomReset) btnZoomReset.addEventListener('click', () => {
+    currentZoom = 100;
+    updateZoomUI();
+  });
+
   let renderedCanvas = false;
 
-  // Primary PDF.js Canvas Rendering for 100% Reliability & High Definition Output
+  // Primary PDF.js Canvas Rendering for 100% Reliability & High Definition Retina Output (2.5x Scale)
   if (window.pdfjsLib && blob) {
     try {
       const arrayBuffer = await blob.arrayBuffer();
@@ -2006,14 +2187,22 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
       if (pdfDoc && pdfDoc.numPages > 0) {
         contentArea.innerHTML = ''; // clear loading indicator
 
+        const highDefScale = 2.5; // Render at 2.5x density (300 DPI Ultra-HD Sharpness)
+
         for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
           const page = await pdfDoc.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 1.3 });
+          const viewport = page.getViewport({ scale: highDefScale });
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
-          canvas.style.cssText = 'margin:0 auto 16px;max-width:100%;box-shadow:0 4px 14px rgba(0,0,0,0.35);border-radius:4px;background:#fff;display:block;';
+
+          canvas.height = Math.floor(viewport.height);
+          canvas.width = Math.floor(viewport.width);
+
+          context.imageSmoothingEnabled = true;
+          context.imageSmoothingQuality = 'high';
+
+          canvas.className = 'pdf-page-canvas';
+          canvas.style.cssText = 'margin:0 auto 16px;width:95%;max-width:880px;height:auto;box-shadow:0 6px 18px rgba(0,0,0,0.35);border-radius:4px;background:#fff;display:block;transition:max-width 0.2s ease, width 0.2s ease;';
 
           await page.render({ canvasContext: context, viewport: viewport }).promise;
           contentArea.appendChild(canvas);
@@ -2131,7 +2320,8 @@ function getManageableUsers() {
 function mkInvoiceRecord(extra = {}) {
   const u = currentUser();
   const userGrp = getUserGroup(u);
-  return Object.assign({
+  const byStr = u ? `${u.name || 'Người dùng'} (${u.employeeCode || 'NV'})` : 'Hệ thống';
+  const rec = Object.assign({
     id: uid('inv'),
     date: '',
     seriesNo: '',
@@ -2147,8 +2337,20 @@ function mkInvoiceRecord(extra = {}) {
     department: u.department,
     attachmentId: null,
     fileName: '',
-    uploadedAt: new Date().toISOString()
+    uploadedAt: new Date().toISOString(),
+    history: []
   }, extra);
+
+  if (!rec.history || rec.history.length === 0) {
+    rec.history = [{
+      at: new Date().toISOString(),
+      action: 'Khởi tạo hóa đơn',
+      by: byStr,
+      details: 'Tải hóa đơn lên Kho Hóa đơn điện tử'
+    }];
+  }
+
+  return rec;
 }
 
 function invoiceCombinedNo(rec) {
@@ -3575,6 +3777,7 @@ function renderInvoiceTableHtml(records, selected) {
                     <input type="file" data-attachmanual="${r.id}" style="display:none;">
                   </label>
                 `}
+                <button class="icon-btn" data-viewinvhistory="${r.id}" title="Xem lịch sử chỉnh sửa & thao tác">📜</button>
                 ${st.docId ? `<button class="icon-btn" data-gotodoc="${st.docId}" title="Xem phiếu liên kết">🔗</button>` : ''}
                 ${(st.key === 'pending_signature' || st.key === 'submitted') ? `
                   <button class="icon-btn" data-delinvoice="${r.id}" title="Hoá đơn ở trạng thái ${st.label}, không thể xoá!" style="opacity:0.4;cursor:not-allowed;">🔒</button>
@@ -4686,6 +4889,17 @@ function renderDetail() {
           <input type="file" id="detail-attach-input" multiple style="display:none;">
         </div>` : ''}
     </div>
+  </div>
+
+  <!-- Audit Log & Edit History Timeline -->
+  <div class="card" style="margin-top:20px;padding:22px 26px;border-radius:12px;background:#fff;border:1px solid var(--line);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:10px;">
+      <h4 style="margin:0;font-size:15px;color:var(--ink);display:flex;align-items:center;gap:8px;">
+        <span>📜</span> <span>Lịch sử chỉnh sửa & Nhật ký thao tác</span>
+      </h4>
+      <span style="font-size:12px;color:var(--ink-soft);font-weight:600;">${(doc.history || []).length} lượt ghi nhận</span>
+    </div>
+    ${renderHistoryTimelineList(doc.history)}
   </div>
   `;
 }
@@ -6526,6 +6740,10 @@ function attachInvoiceTableHandlers() {
 
   document.querySelectorAll('[data-viewinvoice]').forEach(el => el.addEventListener('click', () => {
     viewInvoicePdf(el.dataset.viewinvoice, el.dataset.invoicename);
+  }));
+
+  document.querySelectorAll('[data-viewinvhistory]').forEach(el => el.addEventListener('click', () => {
+    openInvoiceHistoryModal(el.dataset.viewinvhistory);
   }));
 
   document.querySelectorAll('[data-delinvoice]').forEach(el => el.addEventListener('click', () => {
