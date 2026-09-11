@@ -1844,13 +1844,19 @@ function cleanupOrphanedAttachments(doc) {
   });
 }
 
-function dataURLtoBlob(dataurl) {
+function dataURLtoBlob(dataurl, forcePdf = false) {
   try {
     if (!dataurl || typeof dataurl !== 'string') return null;
     const parts = dataurl.split(',');
     if (parts.length < 2) return null;
-    const mimeMatch = parts[0].match(/:(.*?);/);
-    const mime = mimeMatch ? mimeMatch[1] : 'application/pdf';
+    let mimeMatch = parts[0].match(/:(.*?);/);
+    let mime = mimeMatch ? mimeMatch[1] : 'application/pdf';
+    
+    const isPdfMagicHeader = parts[1].slice(0, 30).includes('JVBERi'); // JVBERi is Base64 for "%PDF"
+    if (forcePdf || isPdfMagicHeader || mime === 'application/octet-stream' || mime === 'application/x-pdf' || !mime) {
+      mime = 'application/pdf';
+    }
+    
     const bstr = atob(parts[1]);
     let n = bstr.length;
     const u8arr = new Uint8Array(n);
@@ -1878,7 +1884,8 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
     return;
   }
 
-  const blob = dataURLtoBlob(dataUrl);
+  const isPdf = fileName.toLowerCase().endsWith('.pdf') || dataUrl.includes('JVBERi') || dataUrl.startsWith('data:application/pdf');
+  const blob = dataURLtoBlob(dataUrl, isPdf);
   const blobUrl = blob ? URL.createObjectURL(blob) : dataUrl;
   const safeFileName = escapeHtml(fileName || 'HoaDon.pdf');
 
@@ -1891,7 +1898,7 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
   toolbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#1E293B;color:#F8FAFC;font-size:13px;flex-shrink:0;gap:8px;border-bottom:1px solid #334155;';
 
   toolbar.innerHTML = `
-    <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%;display:flex;align-items:center;gap:6px;">
+    <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%;display:flex;align-items:center;gap:6px;">
       <span>📄</span> <span title="${safeFileName}">${safeFileName}</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -1907,17 +1914,15 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
 
   const contentArea = document.createElement('div');
   contentArea.className = 'pdf-preview-content';
-  contentArea.style.cssText = 'flex:1;width:100%;height:calc(100% - 44px);min-height:440px;overflow:auto;position:relative;background:#525659;';
-
-  const iframe = document.createElement('iframe');
-  iframe.src = blobUrl;
-  iframe.style.cssText = 'width:100%;height:100%;min-height:440px;border:none;display:block;';
-  contentArea.appendChild(iframe);
+  contentArea.style.cssText = 'flex:1;width:100%;height:calc(100% - 44px);min-height:440px;overflow:auto;position:relative;background:#525659;padding:16px;box-sizing:border-box;';
+  contentArea.innerHTML = `<div id="pdf-loading-msg" style="text-align:center;color:#F8FAFC;padding:40px 20px;font-size:14px;">⏳ Đang tải chứng từ PDF…</div>`;
 
   wrapper.appendChild(contentArea);
   container.appendChild(wrapper);
 
-  // PDF.js Canvas Render Fallback
+  let renderedCanvas = false;
+
+  // Primary PDF.js Canvas Rendering for 100% Reliability
   if (window.pdfjsLib && blob) {
     try {
       const arrayBuffer = await blob.arrayBuffer();
@@ -1925,39 +1930,34 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
       const pdfDoc = await loadingTask.promise;
 
       if (pdfDoc && pdfDoc.numPages > 0) {
-        const canvasContainer = document.createElement('div');
-        canvasContainer.className = 'pdfjs-canvas-container';
-        canvasContainer.style.cssText = 'display:none;padding:16px;background:#525659;text-align:center;overflow-y:auto;height:100%;max-height:75vh;';
+        contentArea.innerHTML = ''; // clear loading indicator
 
         for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
           const page = await pdfDoc.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 1.3 });
+          const viewport = page.getViewport({ scale: 1.25 });
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
           canvas.height = viewport.height;
           canvas.width = viewport.width;
-          canvas.style.cssText = 'margin:0 auto 16px;max-width:98%;box-shadow:0 4px 12px rgba(0,0,0,0.3);border-radius:4px;background:#fff;display:block;';
+          canvas.style.cssText = 'margin:0 auto 16px;max-width:100%;box-shadow:0 4px 14px rgba(0,0,0,0.35);border-radius:4px;background:#fff;display:block;';
 
           await page.render({ canvasContext: context, viewport: viewport }).promise;
-          canvasContainer.appendChild(canvas);
+          contentArea.appendChild(canvas);
         }
-
-        setTimeout(() => {
-          try {
-            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-            if (!iframeDoc || !iframeDoc.body || iframeDoc.body.children.length === 0 || iframeDoc.body.innerHTML.trim() === '') {
-              iframe.style.display = 'none';
-              canvasContainer.style.display = 'block';
-              contentArea.appendChild(canvasContainer);
-            }
-          } catch (err) {
-            // PDF plugin iframe cross-origin restriction is normal when plugin takes over
-          }
-        }, 500);
+        renderedCanvas = true;
       }
     } catch (pdfErr) {
-      console.warn('PDF.js fallback error:', pdfErr);
+      console.warn('PDF.js canvas rendering warning:', pdfErr);
     }
+  }
+
+  // Fallback if PDF.js failed or canvas wasn't rendered: Embed iframe with blobUrl
+  if (!renderedCanvas) {
+    contentArea.innerHTML = '';
+    const iframe = document.createElement('iframe');
+    iframe.src = blobUrl;
+    iframe.style.cssText = 'width:100%;height:100%;min-height:440px;border:none;display:block;border-radius:4px;';
+    contentArea.appendChild(iframe);
   }
 }
 
