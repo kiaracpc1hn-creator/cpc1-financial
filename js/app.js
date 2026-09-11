@@ -1111,10 +1111,6 @@ function cleanDuplicateInvoicesInRepo() {
         patched = true;
       }
     }
-    if (r.invoiceRef && (r.invoiceRef === r.statementRefs || (r.statementRefs && r.statementRefs.includes(r.invoiceRef)) || /^(EBL|OICE|SERIAL|SERIES|NUMBER|INVOICE|PATTERN)/i.test(r.invoiceRef.trim()))) {
-      r.invoiceRef = '';
-      patched = true;
-    }
   }
 
   const seen = new Set();
@@ -6136,6 +6132,36 @@ function attachInvoiceTableHandlers() {
   document.querySelectorAll('[data-lockinv]').forEach(el => el.addEventListener('click', async () => {
     const rec = STATE.invoices.find(r => r.id === el.dataset.lockinv);
     if (!rec) return;
+
+    const tr = el.closest('tr');
+    if (tr) {
+      const refEl = tr.querySelector('[data-invref]');
+      if (refEl) rec.invoiceRef = refEl.value.trim();
+
+      const noteEl = tr.querySelector('[data-invnote]');
+      if (noteEl) rec.note = noteEl.value.trim();
+
+      const seriesEl = tr.querySelector('[data-invseries]');
+      if (seriesEl) rec.seriesNo = seriesEl.value.trim().toUpperCase();
+
+      const numEl = tr.querySelector('[data-invnum]');
+      if (numEl) rec.invoiceNumber = numEl.value.trim();
+
+      const amtEl = tr.querySelector('[data-invamount]');
+      if (amtEl) {
+        const digits = amtEl.value.replace(/[^\d]/g, '');
+        rec.amount = digits ? Number(digits) : 0;
+      }
+
+      const benEl = tr.querySelector('[data-invbeneficiary]');
+      if (benEl) {
+        const typed = benEl.value.trim();
+        const stdName = findBestPayeeMatch(typed);
+        rec.beneficiaryName = stdName;
+        if (stdName) autoSyncPayeeToDirectory(stdName);
+      }
+    }
+
     const currentlyLocked = rec.isLocked !== false;
     rec.isLocked = !currentlyLocked;
     await saveInvoices();
@@ -6222,10 +6248,18 @@ function attachInvoiceTableHandlers() {
     if (rec) { rec.note = el.value.trim(); await saveInvoices(); showToast('Đã lưu nội dung'); }
   }));
 
-  document.querySelectorAll('[data-invref]').forEach(el => el.addEventListener('change', async () => {
-    const rec = STATE.invoices.find(r => r.id === el.dataset.invref);
-    if (rec) { rec.invoiceRef = el.value; await saveInvoices(); showToast('Đã lưu số Invoice'); }
-  }));
+  document.querySelectorAll('[data-invref]').forEach(el => {
+    const updateRef = async () => {
+      const rec = STATE.invoices.find(r => r.id === el.dataset.invref);
+      if (rec && rec.invoiceRef !== el.value.trim()) {
+        rec.invoiceRef = el.value.trim();
+        await saveInvoices();
+        showToast('Đã lưu số Invoice');
+      }
+    };
+    el.addEventListener('change', updateRef);
+    el.addEventListener('blur', updateRef);
+  });
 
   document.querySelectorAll('[data-invamount]').forEach(el => {
     el.addEventListener('blur', () => {
