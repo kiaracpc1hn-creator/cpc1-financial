@@ -362,9 +362,21 @@ async function savePayees() {
   } catch (e) { showToast('Lỗi lưu danh bạ'); }
 }
 
+function cleanOcrSpacedText(str) {
+  if (!str) return str;
+  let cleaned = str.toString().trim();
+  // Khắc phục kí tự bị tách rời khoảng trắng do OCR (VD: "B À O  HI Ế M", "Đ ÔNG  Đ Ô", "P V I")
+  cleaned = cleaned.replace(/(\b[A-ZÀ-Ỹ]\b\s+){2,}\b[A-ZÀ-Ỹ]\b/gi, match => {
+    return match.replace(/\s+/g, '');
+  });
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  return cleaned;
+}
+
 function normalizePayeeNameForMatch(str) {
   if (!str) return '';
-  return str
+  const cleaned = cleanOcrSpacedText(str);
+  return cleaned
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd')
@@ -376,37 +388,133 @@ function normalizePayeeNameForMatch(str) {
 
 function findBestPayeeMatch(rawName) {
   if (!rawName || !rawName.trim()) return rawName;
-  const trimmed = rawName.trim();
-  if (!STATE.payees || STATE.payees.length === 0) return trimmed;
+  const cleaned = cleanOcrSpacedText(rawName);
 
-  // 1. Khớp chính xác (không phân biệt hoa thường)
-  const exact = STATE.payees.find(p => p.name && p.name.trim().toLowerCase() === trimmed.toLowerCase());
-  if (exact) return exact.name;
+  if (!STATE.payees || STATE.payees.length === 0) return cleaned;
 
-  // 2. Khớp thông minh tên cốt lõi doanh nghiệp theo danh bạ
-  const normRaw = normalizePayeeNameForMatch(trimmed);
-  if (!normRaw || normRaw.length < 2) return trimmed;
+  const normCleaned = normalizePayeeNameForMatch(cleaned);
 
+  // 1. Khớp chính xác tên chuẩn hoặc tên ưu tiên
+  const exact = STATE.payees.find(p => p.name && p.name.trim().toLowerCase() === cleaned.toLowerCase());
+  if (exact) return exact.preferredName || exact.name;
+
+  // 2. Khớp theo Từ khóa / Alias cài đặt sẵn trong Danh Bạ
   for (const p of STATE.payees) {
     if (!p.name) continue;
-    const normP = normalizePayeeNameForMatch(p.name);
-    if (normP && (normP === normRaw || (normP.length >= 3 && normRaw.length >= 3 && (normP.includes(normRaw) || normRaw.includes(normP))))) {
-      return p.name; // Chuẩn hoá theo tên người nhận trong Danh Bạ!
+    if (p.aliases && p.aliases.trim()) {
+      const aliasList = p.aliases.split(',').map(a => a.trim()).filter(Boolean);
+      for (const alias of aliasList) {
+        const normAlias = normalizePayeeNameForMatch(alias);
+        if (normAlias && normAlias.length >= 2) {
+          if (normCleaned.includes(normAlias) || normAlias.includes(normCleaned) || cleaned.toLowerCase().includes(alias.toLowerCase())) {
+            return p.preferredName || p.name;
+          }
+        }
+      }
     }
   }
 
-  return trimmed;
+  // 3. Khớp thông minh tên cốt lõi doanh nghiệp
+  if (normCleaned && normCleaned.length >= 2) {
+    for (const p of STATE.payees) {
+      if (!p.name) continue;
+      const normP = normalizePayeeNameForMatch(p.name);
+      if (normP && (normP === normCleaned || (normP.length >= 3 && normCleaned.length >= 3 && (normP.includes(normCleaned) || normCleaned.includes(normP))))) {
+        return p.preferredName || p.name;
+      }
+    }
+  }
+
+  return cleaned;
+}
+
+function ensurePresetPayeeRules() {
+  if (!STATE.payees) STATE.payees = [];
+
+  const presets = [
+    {
+      name: 'CÔNG TY BẢO HIỂM PVI ĐÔNG ĐÔ',
+      aliases: 'PVI, BÀO HIỂM PVI, B À O HI Ế M PVI, PVI ĐÔNG ĐÔ, BÀ O HIỂM PVI ĐÔNG ĐÔ',
+      isChiHo: false,
+      note: ''
+    },
+    {
+      name: 'SỞ CÔNG THƯƠNG THÀNH PHỐ HÀ NỘI',
+      aliases: 'SỞ CÔNG THƯƠNG, SO CONG THUONG, SỞ CÔNG THƯƠNG HÀ NỘI',
+      isChiHo: true,
+      note: 'Hóa đơn chi hộ của MTL'
+    },
+    {
+      name: 'CỤC XUẤT NHẬP KHẨU CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM',
+      aliases: 'CỤC XUẤT NHẬP KHẨU, CUC XUAT NHAP KHAU, CỤC XUẤT NHẬP CẢNH',
+      isChiHo: true,
+      note: 'Hóa đơn chi hộ của MTL'
+    },
+    {
+      name: 'CÔNG TY TNHH LIÊN KẾT NĂNG ĐỘNG (Chi hộ MTL)',
+      aliases: 'NĂNG ĐỘNG, NANG DONG, CHI HỘ, NĂNG ĐỘNG CHI HỘ, NANG DONG CHI HO',
+      isChiHo: true,
+      note: 'Hóa đơn chi hộ của MTL'
+    }
+  ];
+
+  let changed = false;
+  for (const pr of presets) {
+    const normPr = normalizePayeeNameForMatch(pr.name);
+    const existing = STATE.payees.find(p => p.name && (normalizePayeeNameForMatch(p.name) === normPr || p.name.trim().toLowerCase() === pr.name.toLowerCase()));
+    if (existing) {
+      if (!existing.aliases) { existing.aliases = pr.aliases; changed = true; }
+      if (pr.isChiHo && !existing.isChiHo) { existing.isChiHo = true; changed = true; }
+      if (pr.note && !existing.note) { existing.note = pr.note; changed = true; }
+    } else {
+      STATE.payees.push({
+        id: uid('p'),
+        name: pr.name,
+        aliases: pr.aliases,
+        accountNumber: '',
+        bankName: '',
+        isChiHo: pr.isChiHo,
+        note: pr.note,
+        isInternal: false
+      });
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    savePayees();
+  }
+}
+
+function cleanAndStandardizeAllInvoiceBeneficiaries() {
+  if (!STATE.invoices || STATE.invoices.length === 0) return 0;
+  ensurePresetPayeeRules();
+
+  let count = 0;
+  for (const r of STATE.invoices) {
+    const oldName = r.beneficiaryName || '';
+    const newName = findBestPayeeMatch(oldName);
+    if (newName && newName !== oldName) {
+      r.beneficiaryName = newName;
+      count++;
+    }
+  }
+  if (count > 0) {
+    saveInvoices();
+  }
+  return count;
 }
 
 function autoSyncPayeeToDirectory(name) {
   if (!name || !name.trim()) return;
-  const trimmed = name.trim();
+  const trimmed = cleanOcrSpacedText(name);
   if (!STATE.payees) STATE.payees = [];
   const exists = STATE.payees.some(p => p.name && p.name.trim().toLowerCase() === trimmed.toLowerCase());
   if (!exists) {
     STATE.payees.push({
       id: uid('p'),
       name: trimmed,
+      aliases: '',
       accountNumber: '',
       bankName: '',
       isInternal: false
@@ -1248,6 +1356,9 @@ function showDuplicateInvoiceModal(info) {
 
 function cleanDuplicateInvoicesInRepo() {
   if (!STATE.invoices || STATE.invoices.length === 0) return;
+
+  ensurePresetPayeeRules();
+  cleanAndStandardizeAllInvoiceBeneficiaries();
 
   let patched = false;
   for (const r of STATE.invoices) {
@@ -2142,11 +2253,119 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
 
   const contentArea = document.createElement('div');
   contentArea.className = 'pdf-preview-content';
-  contentArea.style.cssText = 'flex:1;width:100%;max-height:80vh;overflow-y:auto;overflow-x:auto;position:relative;background:#525659;padding:16px;box-sizing:border-box;';
+  contentArea.style.cssText = 'flex:1;width:100%;max-height:75vh;overflow-y:auto;overflow-x:auto;position:relative;background:#525659;padding:16px;box-sizing:border-box;cursor:grab;';
   contentArea.innerHTML = `<div id="pdf-loading-msg" style="text-align:center;color:#F8FAFC;padding:40px 20px;font-size:14px;">⏳ Đang tải chứng từ PDF (Độ phân giải Ultra-HD)…</div>`;
 
   wrapper.appendChild(contentArea);
+
+  // Sticky Horizontal Scrollbar Bar at the Bottom of PDF Viewer
+  const bottomBar = document.createElement('div');
+  bottomBar.className = 'pdf-preview-bottom-bar';
+  bottomBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#1E293B;color:#F8FAFC;font-size:12.5px;flex-shrink:0;gap:10px;border-top:1px solid #334155;';
+
+  bottomBar.innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px;font-weight:600;color:#94A3B8;white-space:nowrap;">
+      <span>↔️</span> <span>Thanh cuộn ngang:</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex:1;max-width:550px;">
+      <button type="button" class="btn btn-xs btn-hscroll-left" style="background:#334155;color:#F8FAFC;border:none;padding:5px 12px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;" title="Cuộn sang trái">◀ Sang trái</button>
+      <div class="pdf-hscroll-track" style="flex:1;height:14px;background:#0F172A;border-radius:7px;overflow:hidden;position:relative;cursor:pointer;border:1px solid #475569;" title="Bấm hoặc kéo slider để di chuyển trang ngang">
+        <div class="pdf-hscroll-thumb" style="height:100%;width:100%;background:#38BDF8;border-radius:6px;transition:transform 0.05s ease;"></div>
+      </div>
+      <button type="button" class="btn btn-xs btn-hscroll-right" style="background:#334155;color:#F8FAFC;border:none;padding:5px 12px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;" title="Cuộn sang phải">Sang phải ▶</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <button type="button" class="btn btn-xs btn-hscroll-center" style="background:#334155;color:#94A3B8;border:none;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;" title="Căn giữa trang">🎯 Giữa trang</button>
+    </div>`;
+
+  wrapper.appendChild(bottomBar);
   container.appendChild(wrapper);
+
+  // Sync Slider Track & Scroll Buttons
+  const hTrack = bottomBar.querySelector('.pdf-hscroll-track');
+  const hThumb = bottomBar.querySelector('.pdf-hscroll-thumb');
+  const btnScrollLeft = bottomBar.querySelector('.btn-hscroll-left');
+  const btnScrollRight = bottomBar.querySelector('.btn-hscroll-right');
+  const btnScrollCenter = bottomBar.querySelector('.btn-hscroll-center');
+
+  const syncHScrollUI = () => {
+    const maxScroll = contentArea.scrollWidth - contentArea.clientWidth;
+    if (maxScroll <= 5) {
+      if (hThumb) {
+        hThumb.style.width = '100%';
+        hThumb.style.transform = 'translateX(0)';
+      }
+      return;
+    }
+    const ratio = contentArea.clientWidth / contentArea.scrollWidth;
+    const thumbWidthPercent = Math.max(18, Math.round(ratio * 100));
+    if (hThumb) {
+      hThumb.style.width = `${thumbWidthPercent}%`;
+      const scrollPercent = contentArea.scrollLeft / maxScroll;
+      const maxThumbTranslate = 100 - thumbWidthPercent;
+      hThumb.style.transform = `translateX(${scrollPercent * maxThumbTranslate * (100 / thumbWidthPercent)}%)`;
+    }
+  };
+
+  contentArea.addEventListener('scroll', syncHScrollUI);
+
+  if (btnScrollLeft) btnScrollLeft.addEventListener('click', () => {
+    contentArea.scrollBy({ left: -220, behavior: 'smooth' });
+  });
+
+  if (btnScrollRight) btnScrollRight.addEventListener('click', () => {
+    contentArea.scrollBy({ left: 220, behavior: 'smooth' });
+  });
+
+  if (btnScrollCenter) btnScrollCenter.addEventListener('click', () => {
+    const maxScroll = contentArea.scrollWidth - contentArea.clientWidth;
+    contentArea.scrollTo({ left: Math.max(0, maxScroll / 2), behavior: 'smooth' });
+  });
+
+  if (hTrack) {
+    hTrack.addEventListener('click', (e) => {
+      const rect = hTrack.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const ratio = clickX / rect.width;
+      const maxScroll = contentArea.scrollWidth - contentArea.clientWidth;
+      contentArea.scrollTo({ left: Math.max(0, ratio * maxScroll), behavior: 'smooth' });
+    });
+  }
+
+  // Mouse Drag-to-Pan (Kéo giữ chuột di chuyển ngang/dọc)
+  let isDragging = false;
+  let startX = 0, startY = 0, scrollLeftStart = 0, scrollTopStart = 0;
+
+  contentArea.addEventListener('mousedown', (e) => {
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A' || e.target.tagName === 'INPUT') return;
+    isDragging = true;
+    contentArea.style.cursor = 'grabbing';
+    startX = e.pageX - contentArea.offsetLeft;
+    startY = e.pageY - contentArea.offsetTop;
+    scrollLeftStart = contentArea.scrollLeft;
+    scrollTopStart = contentArea.scrollTop;
+  });
+
+  contentArea.addEventListener('mouseleave', () => {
+    isDragging = false;
+    contentArea.style.cursor = 'grab';
+  });
+
+  contentArea.addEventListener('mouseup', () => {
+    isDragging = false;
+    contentArea.style.cursor = 'grab';
+  });
+
+  contentArea.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    e.preventDefault();
+    const x = e.pageX - contentArea.offsetLeft;
+    const y = e.pageY - contentArea.offsetTop;
+    const walkX = (x - startX) * 1.5;
+    const walkY = (y - startY) * 1.5;
+    contentArea.scrollLeft = scrollLeftStart - walkX;
+    contentArea.scrollTop = scrollTopStart - walkY;
+  });
 
   // Zoom Controls Logic
   let currentZoom = 100;
@@ -2155,9 +2374,11 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
     if (zoomValText) zoomValText.textContent = `${currentZoom}%`;
     const canvases = contentArea.querySelectorAll('.pdf-page-canvas');
     canvases.forEach(cv => {
-      cv.style.maxWidth = `${Math.round(880 * (currentZoom / 100))}px`;
-      cv.style.width = `${currentZoom}%`;
+      const targetWidth = Math.round(880 * (currentZoom / 100));
+      cv.style.maxWidth = `${targetWidth}px`;
+      cv.style.width = `${targetWidth}px`;
     });
+    setTimeout(syncHScrollUI, 50);
   };
 
   const btnZoomIn = toolbar.querySelector('.btn-zoom-in');
@@ -2209,12 +2430,14 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
           context.imageSmoothingQuality = 'high';
 
           canvas.className = 'pdf-page-canvas';
-          canvas.style.cssText = 'margin:0 auto 16px;width:95%;max-width:880px;height:auto;box-shadow:0 6px 18px rgba(0,0,0,0.35);border-radius:4px;background:#fff;display:block;transition:max-width 0.2s ease, width 0.2s ease;';
+          const initialWidth = Math.round(880 * (currentZoom / 100));
+          canvas.style.cssText = `margin:0 auto 16px;width:${initialWidth}px;max-width:${initialWidth}px;height:auto;box-shadow:0 6px 18px rgba(0,0,0,0.35);border-radius:4px;background:#fff;display:block;transition:max-width 0.2s ease, width 0.2s ease;`;
 
           await page.render({ canvasContext: context, viewport: viewport }).promise;
           contentArea.appendChild(canvas);
         }
         renderedCanvas = true;
+        setTimeout(syncHScrollUI, 100);
       }
     } catch (pdfErr) {
       console.warn('PDF.js canvas rendering warning:', pdfErr);
@@ -3966,6 +4189,7 @@ function renderInvoices() {
         <option value="all">Tất cả người thụ hưởng</option>
         ${allBeneficiaries.map(b => `<option value="${b}" ${beneficiaryFilter === b ? 'selected' : ''}>${b}</option>`).join('')}
       </select>
+      <button type="button" class="btn btn-outline btn-sm" id="btn-standardize-beneficiaries" style="height:34px;white-space:nowrap;font-size:12px;color:var(--teal);border-color:var(--teal);" title="Chuẩn hóa tên thụ hưởng bị phân mảnh ký tự OCR">🧹 Chuẩn hóa tên</button>
       <select id="filter-inv-status">
         <option value="all">Tất cả trạng thái</option>
         ${statusOptions.map(s => `<option value="${s.key}" ${statusFilter === s.key ? 'selected' : ''}>${s.label}</option>`).join('')}
@@ -4999,44 +5223,78 @@ function renderDetail() {
 }
 
 function renderPayees() {
+  ensurePresetPayeeRules();
+
   return `
-  <div class="page-header">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
     <div>
-      <h1>Danh bạ người nhận tiền</h1>
-      <p>Lưu sẵn thông tin tài khoản ngân hàng để chọn nhanh khi tạo phiếu chuyển khoản.</p>
+      <h1>Danh bạ người nhận tiền & Quy tắc Người thụ hưởng</h1>
+      <p>Lưu thông tin tài khoản ngân hàng, từ khóa quy đổi OCR và thiết lập hóa đơn chi hộ (MTL, Sở Công Thương, PVI, Cục XNK...)</p>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button type="button" class="btn btn-outline btn-sm" id="seed-payee-rules-btn">⚡ Nạp quy tắc mẫu (Chi hộ MTL & PVI)</button>
     </div>
   </div>
 
-  <div class="form-card" style="max-width:640px;margin-bottom:20px;">
+  <div class="form-card" style="max-width:780px;margin-bottom:20px;">
     <div class="field-row">
-      <div class="field"><label>Tên người / đơn vị nhận</label><input id="np-name" placeholder="VD: Nguyễn Văn A hoặc Cty TNHH..."></div>
-      <div class="field"><label>Số tài khoản</label><input id="np-account" placeholder="Số tài khoản"></div>
+      <div class="field" style="flex:2;"><label>Tên chuẩn người / đơn vị nhận</label><input id="np-name" placeholder="VD: CÔNG TY BẢO HIỂM PVI ĐÔNG ĐÔ hoặc SỞ CÔNG THƯƠNG HÀ NỘI"></div>
+      <div class="field" style="flex:1;"><label>Số tài khoản</label><input id="np-account" placeholder="Số tài khoản (nếu có)"></div>
     </div>
-    <div class="field"><label>Ngân hàng & Chi nhánh</label><input id="np-bank" placeholder="VD: Vietcombank - CN Hà Nội"></div>
-    <button class="btn btn-primary btn-sm" id="add-payee">＋ Thêm vào danh bạ</button>
+    <div class="field-row">
+      <div class="field" style="flex:1;"><label>Ngân hàng & Chi nhánh</label><input id="np-bank" placeholder="VD: Vietcombank - CN Hà Nội"></div>
+      <div class="field" style="flex:2;"><label>Từ khóa nhận diện / Tên viết tắt OCR (phân cách bằng dấu phẩy)</label><input id="np-aliases" placeholder="VD: PVI, BÀO HIỂM PVI, SỞ CÔNG THƯƠNG, CỤC XUẤT NHẬP CẢNH"></div>
+    </div>
+    <div class="field-row" style="align-items:center;">
+      <div class="field" style="flex:2;"><label>Ghi chú / Quy tắc xử lý</label><input id="np-note" placeholder="VD: Hóa đơn chi hộ của MTL"></div>
+      <div class="field" style="flex:1;display:flex;align-items:center;margin-top:16px;">
+        <label style="display:flex;align-items:center;gap:6px;font-weight:600;cursor:pointer;user-select:none;">
+          <input type="checkbox" id="np-chiho">
+          <span>🏷️ Hóa đơn chi hộ MTL</span>
+        </label>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-sm" id="add-payee" style="margin-top:8px;">＋ Thêm vào danh bạ người nhận</button>
   </div>
 
   <div class="payee-list">
     ${STATE.payees.map(p => {
       if (STATE.editingPayeeId === p.id) {
         return `
-        <div class="payee-row" style="display:block;">
+        <div class="payee-row" style="display:block;background:var(--paper-white);border:1.5px solid var(--teal);padding:14px;border-radius:8px;margin-bottom:10px;">
           <div class="field-row" style="margin-bottom:10px;">
-            <div class="field" style="margin-bottom:0;"><label>Tên người / đơn vị nhận</label><input id="ep-name-${p.id}" value="${p.name}"></div>
-            <div class="field" style="margin-bottom:0;"><label>Số tài khoản</label><input id="ep-account-${p.id}" value="${p.accountNumber}"></div>
+            <div class="field" style="margin-bottom:0;flex:2;"><label>Tên người / đơn vị nhận</label><input id="ep-name-${p.id}" value="${p.name || ''}"></div>
+            <div class="field" style="margin-bottom:0;flex:1;"><label>Số tài khoản</label><input id="ep-account-${p.id}" value="${p.accountNumber || ''}"></div>
           </div>
-          <div class="field" style="margin-bottom:10px;"><label>Ngân hàng</label><input id="ep-bank-${p.id}" value="${p.bankName}"></div>
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-primary btn-sm" data-savepayee="${p.id}">Lưu</button>
+          <div class="field-row" style="margin-bottom:10px;">
+            <div class="field" style="margin-bottom:0;flex:1;"><label>Ngân hàng</label><input id="ep-bank-${p.id}" value="${p.bankName || ''}"></div>
+            <div class="field" style="margin-bottom:0;flex:2;"><label>Từ khóa nhận diện OCR (Aliases)</label><input id="ep-aliases-${p.id}" value="${p.aliases || ''}" placeholder="PVI, SỞ CÔNG THƯƠNG..."></div>
+          </div>
+          <div class="field-row" style="margin-bottom:10px;align-items:center;">
+            <div class="field" style="margin-bottom:0;flex:2;"><label>Ghi chú / Quy tắc</label><input id="ep-note-${p.id}" value="${p.note || ''}"></div>
+            <div class="field" style="margin-bottom:0;flex:1;display:flex;align-items:center;margin-top:16px;">
+              <label style="display:flex;align-items:center;gap:6px;font-weight:600;cursor:pointer;">
+                <input type="checkbox" id="ep-chiho-${p.id}" ${p.isChiHo ? 'checked' : ''}>
+                <span>🏷️ Hóa đơn chi hộ MTL</span>
+              </label>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="btn btn-primary btn-sm" data-savepayee="${p.id}">💾 Lưu thay đổi</button>
             <button class="btn btn-outline btn-sm" data-canceleditpayee="${p.id}">Huỷ</button>
           </div>
         </div>`;
       }
       return `
-      <div class="payee-row">
+      <div class="payee-row" style="margin-bottom:10px;">
         <div class="info">
-          <b>${p.name}</b>
-          <span>Số TK: <b>${p.accountNumber}</b> · ${p.bankName}</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <b style="font-size:15px;">${p.name}</b>
+            ${p.isChiHo ? `<span class="badge badge-amber" style="font-size:11px;padding:2px 8px;border-radius:12px;">🏷️ Hóa đơn chi hộ MTL</span>` : ''}
+          </div>
+          ${p.accountNumber ? `<span>Số TK: <b>${p.accountNumber}</b> ${p.bankName ? `· ${p.bankName}` : ''}</span>` : ''}
+          ${p.aliases ? `<span style="font-size:12px;color:var(--teal);display:block;margin-top:2px;">🔑 Từ khóa OCR quy đổi: <code>${p.aliases}</code></span>` : ''}
+          ${p.note ? `<span style="font-size:12px;color:var(--ink-soft);display:block;margin-top:2px;">📌 ${p.note}</span>` : ''}
         </div>
         <div style="display:flex;gap:6px;">
           <button class="btn btn-outline btn-sm" data-editpayee="${p.id}">Sửa</button>
@@ -5994,59 +6252,6 @@ function attachHandlers() {
   }
   const pickRepoBtn = document.getElementById('pick-invoice-repo-btn');
   if (pickRepoBtn) pickRepoBtn.addEventListener('click', () => showPickInvoiceRepoModal());
-  // Overview Month Switcher
-  const ovm = document.getElementById('overview-month-select');
-  if (ovm) ovm.addEventListener('change', e => {
-    STATE._overviewMonth = e.target.value;
-    render();
-  });
-
-  // Overview Send Overdue Email (Class listener for all triggers)
-  document.querySelectorAll('.send-overdue-email-btn-trigger').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      sendOverdueAdvanceEmailNotification();
-    });
-  });
-
-  // Overview Quick Create Voucher from Unlinked Invoice
-  document.querySelectorAll('[data-quickcreateinvoice]').forEach(el => {
-    el.addEventListener('click', () => {
-      const invId = el.dataset.quickcreateinvoice;
-      STATE.selectedInvoiceIds = [invId];
-      STATE.formType = 'payment';
-      STATE.draftForm = null;
-      STATE.selectedId = null;
-      STATE.page = 'form';
-      render();
-    });
-  });
-  const emailBtn = document.getElementById('send-overdue-email-btn');
-  if (emailBtn) emailBtn.addEventListener('click', () => sendOverdueAdvanceEmailNotification());
-
-  const emailCfgBtn = document.getElementById('send-overdue-email-cfg-btn');
-  if (emailCfgBtn) emailCfgBtn.addEventListener('click', () => {
-    const inp = document.getElementById('cfg-accounting-email');
-    if (inp) STATE.accountingEmail = inp.value;
-    sendOverdueAdvanceEmailNotification();
-  });
-
-  // Navigation
-  document.querySelectorAll('[data-nav]').forEach(el => el.addEventListener('click', (e) => {
-    e.stopPropagation();
-    STATE.page = el.dataset.nav;
-    if (el.dataset.statuscat !== undefined) {
-      STATE._listStatusCategory = el.dataset.statuscat;
-    } else if (el.dataset.nav === 'list') {
-      STATE._listStatusCategory = 'all';
-    }
-    STATE.draftForm = null;
-    STATE.editingPayeeId = null;
-    render();
-  }));
-
-  // Status Category Tabs
-  document.querySelectorAll('[data-statuscat]').forEach(el => el.addEventListener('click', (e) => {
     e.stopPropagation();
     STATE._listStatusCategory = el.dataset.statuscat;
     if (STATE.page !== 'list') STATE.page = 'list';
@@ -6334,6 +6539,19 @@ function attachHandlers() {
 
   const fib = document.getElementById('filter-inv-beneficiary');
   if (fib) fib.addEventListener('change', e => { STATE._invBeneficiaryFilter = e.target.value; updateInvoiceTableView(); });
+
+  const stdBtn = document.getElementById('btn-standardize-beneficiaries');
+  if (stdBtn) {
+    stdBtn.addEventListener('click', async () => {
+      const count = cleanAndStandardizeAllInvoiceBeneficiaries();
+      if (count > 0) {
+        showToast(`🧹 Đã chuẩn hóa ${count} tên người thụ hưởng!`);
+      } else {
+        showToast(`Tất cả tên người thụ hưởng đã chuẩn hóa!`);
+      }
+      render();
+    });
+  }
 
   const fis = document.getElementById('filter-inv-status');
   if (fis) fis.addEventListener('change', e => { STATE._invStatusFilter = e.target.value; updateInvoiceTableView(); });
