@@ -2618,9 +2618,76 @@ function deleteInvoiceRecord(id) {
   });
 }
 
-async function viewInvoicePdf(attId, fileName) {
-  if (!attId) return;
-  let dataUrl;
+function openReattachModal(recId, fileName) {
+  const existing = document.getElementById('reattach-modal-overlay');
+  if (existing) existing.remove();
+
+  const rec = (STATE.invoices || []).find(r => r.id === recId);
+  const displayName = fileName || (rec ? rec.fileName : '') || 'Hóa đơn';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'reattach-modal-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:480px;width:92%;padding:24px;text-align:center;box-sizing:border-box;">
+      <div style="font-size:42px;margin-bottom:10px;">⚠️</div>
+      <h3 style="margin-bottom:8px;color:var(--ink);font-size:17px;font-weight:700;">Chưa tìm thấy tệp đính kèm Cloud</h3>
+      <p style="font-size:13.5px;color:var(--ink-soft);line-height:1.5;margin-bottom:20px;">
+        Tệp đính kèm của hóa đơn <b>"${escapeHtml(displayName)}"</b> chưa có trên Cloud (hoặc bị gián đoạn khi tải lên trước đây). Vui lòng bấm bên dưới để đính kèm lại tệp PDF / Ảnh cho hóa đơn này.
+      </p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+        <label class="btn btn-primary btn-sm" style="cursor:pointer;margin:0;padding:8px 16px;font-weight:700;display:inline-flex;align-items:center;gap:6px;">
+          <span>📎</span> <span>Đính kèm lại tệp PDF / Ảnh</span>
+          <input type="file" id="reattach-file-input" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.webp">
+        </label>
+        <button type="button" class="btn btn-ghost btn-sm" id="reattach-close-btn" style="padding:8px 16px;">Đóng</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  const closeBtn = document.getElementById('reattach-close-btn');
+  if (closeBtn) closeBtn.addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  const fileInput = document.getElementById('reattach-file-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      if (file.size > MAX_ATTACH_BYTES) {
+        showAlertModal('File quá lớn', `File "${file.name}" vượt giới hạn ~3.5MB.`);
+        return;
+      }
+      showToast(`Đang lưu và đồng bộ file "${file.name}" lên Cloud…`);
+      try {
+        const dataUrl = await readFileAsDataURL(file);
+        const newAttId = uid('att');
+        await window.storage.set('attachment:' + newAttId, dataUrl, true);
+        if (rec) {
+          rec.attachmentId = newAttId;
+          rec.fileName = file.name;
+          await saveInvoices();
+        }
+        showToast('✓ Đã đồng bộ file đính kèm thành công!');
+        overlay.remove();
+        render();
+        viewInvoicePdf(newAttId, file.name, recId);
+      } catch (err) {
+        console.error(err);
+        showAlertModal('Lỗi lưu file', 'Không thể lưu file chứng từ.');
+      }
+    });
+  }
+}
+
+async function viewInvoicePdf(attId, fileName, recId = null) {
+  if (!attId) {
+    if (recId) openReattachModal(recId, fileName);
+    else showAlertModal('Không tải được file', 'Hóa đơn chưa có tệp đính kèm.');
+    return;
+  }
+  let dataUrl = null;
   try {
     let r = await window.storage.get('attachment:' + attId, true);
     if (!r || !r.value) {
@@ -2628,11 +2695,14 @@ async function viewInvoicePdf(attId, fileName) {
     }
     dataUrl = r ? r.value : null;
   } catch (e) {
-    showAlertModal('Không tải được file', 'Không tìm thấy nội dung file chứng từ.');
-    return;
+    dataUrl = null;
   }
   if (!dataUrl) {
-    showAlertModal('Không tải được file', 'Không tìm thấy nội dung file chứng từ.');
+    if (recId) {
+      openReattachModal(recId, fileName);
+    } else {
+      showAlertModal('Không tải được file', 'Không tìm thấy nội dung file chứng từ trên hệ thống Cloud.');
+    }
     return;
   }
   const existing = document.getElementById('pdf-view-overlay');
@@ -3786,11 +3856,15 @@ function renderInvoiceTableHtml(records, selected) {
                   <button class="btn btn-sm" data-lockinv="${r.id}" style="padding:2px 7px;font-size:11.5px;color:#FFFFFF;background:#059669;border:none;font-weight:700;" title="Bấm để hoàn tất chỉnh sửa, lưu và khoá hoá đơn này lại">🔒 Lưu & Khoá</button>
                 `}
                 ${r.attachmentId ? `
-                  <button class="icon-btn" data-viewinvoice="${r.attachmentId}" data-invoicename="${(r.fileName || '').replace(/"/g, '&quot;')}" title="Xem PDF/Ảnh">👁</button>
-                ` : `
-                  <label class="icon-btn" style="cursor:pointer;margin:0;" title="Đính kèm file scan (PDF hoặc Ảnh)">
+                  <button class="icon-btn" data-viewinvoice="${r.attachmentId}" data-invoicename="${(r.fileName || '').replace(/"/g, '&quot;')}" data-invrecid="${r.id}" title="Xem PDF/Ảnh">👁</button>
+                  <label class="icon-btn" style="cursor:pointer;margin:0;" title="Đính kèm/Cập nhật tệp PDF hoặc Ảnh scan">
                     📎
-                    <input type="file" data-attachmanual="${r.id}" style="display:none;">
+                    <input type="file" data-attachmanual="${r.id}" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.webp">
+                  </label>
+                ` : `
+                  <label class="icon-btn" style="cursor:pointer;margin:0;" title="Đính kèm tệp PDF hoặc Ảnh scan">
+                    📎
+                    <input type="file" data-attachmanual="${r.id}" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.webp">
                   </label>
                 `}
                 <button class="icon-btn" data-viewinvhistory="${r.id}" title="Xem lịch sử chỉnh sửa & thao tác">📜</button>
@@ -6619,27 +6693,27 @@ function attachInvoiceTableHandlers() {
 
     const currentlyLocked = rec.isLocked !== false;
     rec.isLocked = !currentlyLocked;
-    await saveInvoices();
+    updateInvoiceTableView();
     if (rec.isLocked) {
       showToast(`🔒 Đã lưu & khoá chứng từ ${rec.invoiceNumber ? 'số ' + rec.invoiceNumber : ''}`);
     } else {
       showToast(`🔓 Đã mở khoá chứng từ ${rec.invoiceNumber ? 'số ' + rec.invoiceNumber : ''} — Anh/chị có thể chỉnh sửa`);
     }
-    updateInvoiceTableView();
+    saveInvoices().catch(e => console.error(e));
   }));
 
-  document.querySelectorAll('[data-invdate]').forEach(el => el.addEventListener('change', async (e) => {
+  document.querySelectorAll('[data-invdate]').forEach(el => el.addEventListener('change', (e) => {
     const rec = STATE.invoices.find(r => r.id === el.dataset.invdate);
     if (rec) {
       rec.date = e.target.value;
       const txtInput = document.querySelector(`[data-invdatetext="${rec.id}"]`);
       if (txtInput) txtInput.value = fmtDate(rec.date);
-      await saveInvoices();
+      saveInvoices().catch(err => console.error(err));
       showToast('Đã lưu ngày lập');
     }
   }));
 
-  document.querySelectorAll('[data-invdatetext]').forEach(el => el.addEventListener('change', async (e) => {
+  document.querySelectorAll('[data-invdatetext]').forEach(el => el.addEventListener('change', (e) => {
     const rec = STATE.invoices.find(r => r.id === el.dataset.invdatetext);
     if (rec) {
       const parsedIso = parseFormattedDateToIso(e.target.value);
@@ -6647,12 +6721,12 @@ function attachInvoiceTableHandlers() {
       e.target.value = fmtDate(parsedIso);
       const datePicker = document.querySelector(`[data-invdate="${rec.id}"]`);
       if (datePicker) datePicker.value = parsedIso;
-      await saveInvoices();
+      saveInvoices().catch(err => console.error(err));
       showToast('Đã lưu ngày lập');
     }
   }));
 
-  document.querySelectorAll('[data-invseries]').forEach(el => el.addEventListener('change', async () => {
+  document.querySelectorAll('[data-invseries]').forEach(el => el.addEventListener('change', () => {
     const rec = STATE.invoices.find(r => r.id === el.dataset.invseries);
     if (rec) {
       rec.seriesNo = el.value.trim().toUpperCase();
@@ -6675,17 +6749,17 @@ function attachInvoiceTableHandlers() {
         const noteArea = document.querySelector(`[data-invnote="${rec.id}"]`);
         if (noteArea) noteArea.value = autoNote;
       }
-      await saveInvoices();
+      saveInvoices().catch(err => console.error(err));
       showToast('Đã lưu ký hiệu');
     }
   }));
 
-  document.querySelectorAll('[data-invnum]').forEach(el => el.addEventListener('change', async () => {
+  document.querySelectorAll('[data-invnum]').forEach(el => el.addEventListener('change', () => {
     const rec = STATE.invoices.find(r => r.id === el.dataset.invnum);
-    if (rec) { rec.invoiceNumber = el.value.trim(); await saveInvoices(); showToast('Đã lưu số hoá đơn'); }
+    if (rec) { rec.invoiceNumber = el.value.trim(); saveInvoices().catch(err => console.error(err)); showToast('Đã lưu số hoá đơn'); }
   }));
 
-  document.querySelectorAll('[data-invbeneficiary]').forEach(el => el.addEventListener('change', async () => {
+  document.querySelectorAll('[data-invbeneficiary]').forEach(el => el.addEventListener('change', () => {
     const rec = STATE.invoices.find(r => r.id === el.dataset.invbeneficiary);
     if (rec) {
       const typed = el.value.trim();
@@ -6693,22 +6767,22 @@ function attachInvoiceTableHandlers() {
       rec.beneficiaryName = stdName;
       el.value = stdName;
       if (stdName) autoSyncPayeeToDirectory(stdName);
-      await saveInvoices();
+      saveInvoices().catch(err => console.error(err));
       showToast('Đã lưu & chuẩn hoá người thụ hưởng theo Danh bạ');
     }
   }));
 
-  document.querySelectorAll('[data-invnote]').forEach(el => el.addEventListener('change', async () => {
+  document.querySelectorAll('[data-invnote]').forEach(el => el.addEventListener('change', () => {
     const rec = STATE.invoices.find(r => r.id === el.dataset.invnote);
-    if (rec) { rec.note = el.value.trim(); await saveInvoices(); showToast('Đã lưu nội dung'); }
+    if (rec) { rec.note = el.value.trim(); saveInvoices().catch(err => console.error(err)); showToast('Đã lưu nội dung'); }
   }));
 
   document.querySelectorAll('[data-invref]').forEach(el => {
-    const updateRef = async () => {
+    const updateRef = () => {
       const rec = STATE.invoices.find(r => r.id === el.dataset.invref);
       if (rec && rec.invoiceRef !== el.value.trim()) {
         rec.invoiceRef = el.value.trim();
-        await saveInvoices();
+        saveInvoices().catch(err => console.error(err));
         showToast('Đã lưu số Invoice');
       }
     };
@@ -6721,13 +6795,13 @@ function attachInvoiceTableHandlers() {
       const digits = el.value.replace(/[^\d]/g, '');
       el.value = digits ? Number(digits).toLocaleString('vi-VN') : '';
     });
-    el.addEventListener('change', async () => {
+    el.addEventListener('change', () => {
       const rec = STATE.invoices.find(r => r.id === el.dataset.invamount);
       const digits = el.value.replace(/[^\d]/g, '');
       if (rec) {
         rec.amount = digits ? Number(digits) : 0;
         el.value = rec.amount ? Number(rec.amount).toLocaleString('vi-VN') : '';
-        await saveInvoices();
+        saveInvoices().catch(err => console.error(err));
         showToast('Đã lưu số tiền');
       }
     });
@@ -6759,7 +6833,7 @@ function attachInvoiceTableHandlers() {
   }));
 
   document.querySelectorAll('[data-viewinvoice]').forEach(el => el.addEventListener('click', () => {
-    viewInvoicePdf(el.dataset.viewinvoice, el.dataset.invoicename);
+    viewInvoicePdf(el.dataset.viewinvoice, el.dataset.invoicename, el.dataset.invrecid);
   }));
 
   document.querySelectorAll('[data-viewinvhistory]').forEach(el => el.addEventListener('click', () => {
