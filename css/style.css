@@ -1635,3 +1635,40 @@ table {
   vertical-align: middle;
   border-bottom: 1px solid #F1F5F9;
 }
+
+/* Custom Visible Vertical & Horizontal Scrollbars for PDF Preview Containers */
+.pdf-preview-content::-webkit-scrollbar,
+#attach-preview-body::-webkit-scrollbar,
+.pdfjs-canvas-container::-webkit-scrollbar,
+.modal-box::-webkit-scrollbar,
+#pdf-modal-container::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.pdf-preview-content::-webkit-scrollbar-track,
+#attach-preview-body::-webkit-scrollbar-track,
+.pdfjs-canvas-container::-webkit-scrollbar-track,
+.modal-box::-webkit-scrollbar-track,
+#pdf-modal-container::-webkit-scrollbar-track {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.pdf-preview-content::-webkit-scrollbar-thumb,
+#attach-preview-body::-webkit-scrollbar-thumb,
+.pdfjs-canvas-container::-webkit-scrollbar-thumb,
+.modal-box::-webkit-scrollbar-thumb,
+#pdf-modal-container::-webkit-scrollbar-thumb {
+  background: #64748B;
+  border-radius: 5px;
+  border: 2px solid #334155;
+}
+
+.pdf-preview-content::-webkit-scrollbar-thumb:hover,
+#attach-preview-body::-webkit-scrollbar-thumb:hover,
+.pdfjs-canvas-container::-webkit-scrollbar-thumb:hover,
+.modal-box::-webkit-scrollbar-thumb:hover,
+#pdf-modal-container::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
