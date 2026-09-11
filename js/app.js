@@ -257,15 +257,20 @@ async function loadAll() {
     });
   }
 
-  // Khởi chạy đồng bộ các bảng khác (invoices, payees, trash) qua listenRealtime
+  // Khởi chạy đồng bộ các bảng khác (users, invoices, payees, trash) qua listenRealtime
   if (window.storage && window.storage.listenRealtime && !STATE._realtimeBound) {
     STATE._realtimeBound = true;
-    window.storage.listenRealtime(['invoices', 'payees', 'trash'], (key, val) => {
+    window.storage.listenRealtime(['users', 'invoices', 'payees', 'trash'], (key, val) => {
       try {
         if (!val) return;
         let changed = false;
 
-        if (key === 'invoices') {
+        if (key === 'users') {
+          if (STATE._rawStrUsers === val) return;
+          STATE._rawStrUsers = val;
+          STATE.users = JSON.parse(val) || [];
+          changed = true;
+        } else if (key === 'invoices') {
           if (STATE._rawStrInvoices === val) return;
           STATE._rawStrInvoices = val;
           STATE.invoices = JSON.parse(val) || [];
@@ -1839,6 +1844,123 @@ function cleanupOrphanedAttachments(doc) {
   });
 }
 
+function dataURLtoBlob(dataurl) {
+  try {
+    if (!dataurl || typeof dataurl !== 'string') return null;
+    const parts = dataurl.split(',');
+    if (parts.length < 2) return null;
+    const mimeMatch = parts[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'application/pdf';
+    const bstr = atob(parts[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  } catch (e) {
+    console.warn('dataURLtoBlob error:', e);
+    return null;
+  }
+}
+
+async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Document.pdf') {
+  if (!container || !dataUrl) return;
+  container.innerHTML = '';
+
+  const isImage = dataUrl.startsWith('data:image/');
+
+  if (isImage) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:12px;height:100%;overflow:auto;background:#F8FAFC;display:flex;align-items:center;justify-content:center;">
+        <img src="${dataUrl}" style="max-width:100%;max-height:100%;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.15);">
+      </div>`;
+    return;
+  }
+
+  const blob = dataURLtoBlob(dataUrl);
+  const blobUrl = blob ? URL.createObjectURL(blob) : dataUrl;
+  const safeFileName = escapeHtml(fileName || 'HoaDon.pdf');
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'pdf-preview-wrapper';
+  wrapper.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;background:#F1F5F9;border-radius:8px;overflow:hidden;border:1px solid var(--line);min-height:480px;';
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'pdf-preview-toolbar';
+  toolbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#1E293B;color:#F8FAFC;font-size:13px;flex-shrink:0;gap:8px;border-bottom:1px solid #334155;';
+
+  toolbar.innerHTML = `
+    <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%;display:flex;align-items:center;gap:6px;">
+      <span>📄</span> <span title="${safeFileName}">${safeFileName}</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <a href="${blobUrl}" target="_blank" class="btn btn-xs" style="background:#3B82F6;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:12px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:4px;box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+        <span>↗️</span> <span>Mở tab mới</span>
+      </a>
+      <a href="${blobUrl}" download="${safeFileName}" class="btn btn-xs" style="background:#10B981;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:12px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:4px;box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+        <span>📥</span> <span>Tải PDF</span>
+      </a>
+    </div>`;
+
+  wrapper.appendChild(toolbar);
+
+  const contentArea = document.createElement('div');
+  contentArea.className = 'pdf-preview-content';
+  contentArea.style.cssText = 'flex:1;width:100%;height:calc(100% - 44px);min-height:440px;overflow:auto;position:relative;background:#525659;';
+
+  const iframe = document.createElement('iframe');
+  iframe.src = blobUrl;
+  iframe.style.cssText = 'width:100%;height:100%;min-height:440px;border:none;display:block;';
+  contentArea.appendChild(iframe);
+
+  wrapper.appendChild(contentArea);
+  container.appendChild(wrapper);
+
+  // PDF.js Canvas Render Fallback
+  if (window.pdfjsLib && blob) {
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdfDoc = await loadingTask.promise;
+
+      if (pdfDoc && pdfDoc.numPages > 0) {
+        const canvasContainer = document.createElement('div');
+        canvasContainer.className = 'pdfjs-canvas-container';
+        canvasContainer.style.cssText = 'display:none;padding:16px;background:#525659;text-align:center;overflow-y:auto;height:100%;max-height:75vh;';
+
+        for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+          const page = await pdfDoc.getPage(pageNum);
+          const viewport = page.getViewport({ scale: 1.3 });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          canvas.style.cssText = 'margin:0 auto 16px;max-width:98%;box-shadow:0 4px 12px rgba(0,0,0,0.3);border-radius:4px;background:#fff;display:block;';
+
+          await page.render({ canvasContext: context, viewport: viewport }).promise;
+          canvasContainer.appendChild(canvas);
+        }
+
+        setTimeout(() => {
+          try {
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (!iframeDoc || !iframeDoc.body || iframeDoc.body.children.length === 0 || iframeDoc.body.innerHTML.trim() === '') {
+              iframe.style.display = 'none';
+              canvasContainer.style.display = 'block';
+              contentArea.appendChild(canvasContainer);
+            }
+          } catch (err) {
+            // PDF plugin iframe cross-origin restriction is normal when plugin takes over
+          }
+        }, 500);
+      }
+    } catch (pdfErr) {
+      console.warn('PDF.js fallback error:', pdfErr);
+    }
+  }
+}
+
 async function renderAttachmentPreview(attId) {
   const panelBody = document.getElementById('attach-preview-body');
   if (!panelBody) return;
@@ -1849,7 +1971,10 @@ async function renderAttachmentPreview(attId) {
   panelBody.innerHTML = `<div class="attach-panel-msg">Đang tải…</div>`;
   let dataUrl;
   try {
-    const r = await window.storage.get('attachment:' + attId, true);
+    let r = await window.storage.get('attachment:' + attId, true);
+    if (!r || !r.value) {
+      r = await window.storage.get('attachment:' + attId, true, true);
+    }
     dataUrl = r ? r.value : null;
   } catch (e) {
     panelBody.innerHTML = `<div class="attach-panel-msg">Không tải được file.</div>`;
@@ -1859,10 +1984,8 @@ async function renderAttachmentPreview(attId) {
     panelBody.innerHTML = `<div class="attach-panel-msg">Không tìm thấy nội dung file.</div>`;
     return;
   }
-  const isImage = dataUrl.startsWith('data:image/');
-  panelBody.innerHTML = isImage
-    ? `<div style="text-align:center;padding:12px;height:100%;overflow:auto;"><img src="${dataUrl}" style="max-width:100%;max-height:100%;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.15);"></div>`
-    : `<iframe src="${dataUrl}"></iframe>`;
+
+  await renderPdfOrImageIntoContainer(panelBody, dataUrl, 'ChungTu.pdf');
 }
 
 /* ===================== GROUP ACCESS & INVOICE REPOSITORY ===================== */
@@ -2207,14 +2330,17 @@ async function viewInvoicePdf(attId, fileName) {
   if (!attId) return;
   let dataUrl;
   try {
-    const r = await window.storage.get('attachment:' + attId, true);
+    let r = await window.storage.get('attachment:' + attId, true);
+    if (!r || !r.value) {
+      r = await window.storage.get('attachment:' + attId, true, true);
+    }
     dataUrl = r ? r.value : null;
   } catch (e) {
-    showAlertModal('Không tải được file', 'Không tìm thấy nội dung file.');
+    showAlertModal('Không tải được file', 'Không tìm thấy nội dung file chứng từ.');
     return;
   }
   if (!dataUrl) {
-    showAlertModal('Không tải được file', 'Không tìm thấy nội dung file.');
+    showAlertModal('Không tải được file', 'Không tìm thấy nội dung file chứng từ.');
     return;
   }
   const existing = document.getElementById('pdf-view-overlay');
@@ -2222,20 +2348,24 @@ async function viewInvoicePdf(attId, fileName) {
   const overlay = document.createElement('div');
   overlay.id = 'pdf-view-overlay';
   overlay.className = 'modal-overlay';
-  const isImage = dataUrl.startsWith('data:image/');
   overlay.innerHTML = `
-    <div class="modal-box" style="max-width:860px;width:95%;padding:18px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <b style="font-size:14px;color:var(--ink);">${fileName || 'Hoá đơn / Chứng từ'}</b>
-        <button class="btn btn-ghost btn-sm" id="pdf-view-close">✕ Đóng</button>
+    <div class="modal-box" style="max-width:920px;width:95%;padding:18px;max-height:90vh;display:flex;flex-direction:column;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0;">
+        <b style="font-size:15px;color:var(--ink);display:flex;align-items:center;gap:6px;">
+          <span>🧾</span> <span>${escapeHtml(fileName || 'Hoá đơn / Chứng từ')}</span>
+        </b>
+        <button class="btn btn-ghost btn-sm" id="pdf-view-close" style="font-size:14px;padding:4px 10px;">✕ Đóng</button>
       </div>
-      ${isImage
-        ? `<div style="text-align:center;max-height:75vh;overflow:auto;background:#F8FAFC;padding:12px;border-radius:8px;border:1px solid var(--line);"><img src="${dataUrl}" style="max-width:100%;height:auto;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.15);"></div>`
-        : `<iframe src="${dataUrl}" style="width:100%;height:75vh;border:1px solid var(--line);border-radius:8px;"></iframe>`}
+      <div id="pdf-modal-container" style="flex:1;width:100%;height:75vh;overflow:hidden;border-radius:8px;"></div>
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.getElementById('pdf-view-close').addEventListener('click', () => overlay.remove());
+
+  const container = document.getElementById('pdf-modal-container');
+  if (container) {
+    renderPdfOrImageIntoContainer(container, dataUrl, fileName || 'HoaDon.pdf');
+  }
 }
 
 /* Modal Popup Nhập Chứng từ Thủ công */
@@ -4959,6 +5089,18 @@ function attachLoginScreenHandlers() {
         return;
       }
 
+      // Force refresh user list from Cloud Firestore before credential matching
+      try {
+        if (window.storage && window.storage.get) {
+          const freshUsersRes = await window.storage.get('users', false, true);
+          if (freshUsersRes && freshUsersRes.value) {
+            STATE.users = JSON.parse(freshUsersRes.value) || STATE.users;
+          }
+        }
+      } catch (err) {
+        console.warn('Fresh user list fetch warning:', err);
+      }
+
       const matchedUser = STATE.users.find(u => {
         const code = (u.employeeCode || '').trim().toLowerCase();
         const uname = (u.username || '').trim().toLowerCase();
@@ -5000,6 +5142,11 @@ function attachLoginScreenHandlers() {
           errBox.style.display = 'block';
         }
         return;
+      }
+
+      if (STATE.pendingUser) {
+        const latestU = STATE.users.find(u => u.id === STATE.pendingUser.id);
+        if (latestU) STATE.pendingUser = latestU;
       }
 
       const userPin = STATE.pendingUser ? (STATE.pendingUser.pin || '1234') : '1234';
