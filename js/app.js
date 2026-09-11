@@ -6252,6 +6252,59 @@ function attachHandlers() {
   }
   const pickRepoBtn = document.getElementById('pick-invoice-repo-btn');
   if (pickRepoBtn) pickRepoBtn.addEventListener('click', () => showPickInvoiceRepoModal());
+  // Overview Month Switcher
+  const ovm = document.getElementById('overview-month-select');
+  if (ovm) ovm.addEventListener('change', e => {
+    STATE._overviewMonth = e.target.value;
+    render();
+  });
+
+  // Overview Send Overdue Email (Class listener for all triggers)
+  document.querySelectorAll('.send-overdue-email-btn-trigger').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sendOverdueAdvanceEmailNotification();
+    });
+  });
+
+  // Overview Quick Create Voucher from Unlinked Invoice
+  document.querySelectorAll('[data-quickcreateinvoice]').forEach(el => {
+    el.addEventListener('click', () => {
+      const invId = el.dataset.quickcreateinvoice;
+      STATE.selectedInvoiceIds = [invId];
+      STATE.formType = 'payment';
+      STATE.draftForm = null;
+      STATE.selectedId = null;
+      STATE.page = 'form';
+      render();
+    });
+  });
+  const emailBtn = document.getElementById('send-overdue-email-btn');
+  if (emailBtn) emailBtn.addEventListener('click', () => sendOverdueAdvanceEmailNotification());
+
+  const emailCfgBtn = document.getElementById('send-overdue-email-cfg-btn');
+  if (emailCfgBtn) emailCfgBtn.addEventListener('click', () => {
+    const inp = document.getElementById('cfg-accounting-email');
+    if (inp) STATE.accountingEmail = inp.value;
+    sendOverdueAdvanceEmailNotification();
+  });
+
+  // Navigation
+  document.querySelectorAll('[data-nav]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    STATE.page = el.dataset.nav;
+    if (el.dataset.statuscat !== undefined) {
+      STATE._listStatusCategory = el.dataset.statuscat;
+    } else if (el.dataset.nav === 'list') {
+      STATE._listStatusCategory = 'all';
+    }
+    STATE.draftForm = null;
+    STATE.editingPayeeId = null;
+    render();
+  }));
+
+  // Status Category Tabs
+  document.querySelectorAll('[data-statuscat]').forEach(el => el.addEventListener('click', (e) => {
     e.stopPropagation();
     STATE._listStatusCategory = el.dataset.statuscat;
     if (STATE.page !== 'list') STATE.page = 'list';
