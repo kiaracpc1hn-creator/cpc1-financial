@@ -1870,6 +1870,61 @@ function dataURLtoBlob(dataurl, forcePdf = false) {
   }
 }
 
+function printPdfOrImage(blobUrl, dataUrl) {
+  try {
+    const isImage = dataUrl && dataUrl.startsWith('data:image/');
+    if (isImage) {
+      const printWin = window.open('', '_blank');
+      if (printWin) {
+        printWin.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>In chứng từ / Hoá đơn</title>
+            <style>
+              body { margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; background: #fff; }
+              img { max-width: 100%; height: auto; }
+              @media print {
+                body { margin: 0; padding: 0; }
+                img { max-width: 100%; page-break-inside: avoid; }
+              }
+            </style>
+          </head>
+          <body>
+            <img src="${dataUrl}" onload="window.print(); setTimeout(function(){ window.close(); }, 500);">
+          </body>
+          </html>
+        `);
+        printWin.document.close();
+      }
+      return;
+    }
+
+    const printIframe = document.createElement('iframe');
+    printIframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;visibility:hidden;';
+    printIframe.src = blobUrl;
+    document.body.appendChild(printIframe);
+
+    printIframe.onload = function() {
+      try {
+        printIframe.contentWindow.focus();
+        printIframe.contentWindow.print();
+        setTimeout(() => { try { printIframe.remove(); } catch (e) {} }, 3000);
+      } catch (err) {
+        const w = window.open(blobUrl, '_blank');
+        if (w) {
+          w.focus();
+          setTimeout(() => { try { w.print(); } catch (e) {} }, 500);
+        }
+      }
+    };
+  } catch (err) {
+    console.warn('Print trigger warning:', err);
+    const w = window.open(blobUrl || dataUrl, '_blank');
+    if (w) { w.focus(); setTimeout(() => { try { w.print(); } catch (e) {} }, 500); }
+  }
+}
+
 async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Document.pdf') {
   if (!container || !dataUrl) return;
   container.innerHTML = '';
@@ -1877,10 +1932,21 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
   const isImage = dataUrl.startsWith('data:image/');
 
   if (isImage) {
+    const safeImgName = escapeHtml(fileName || 'AnhChungTu.jpg');
     container.innerHTML = `
-      <div style="text-align:center;padding:12px;height:100%;overflow:auto;background:#F8FAFC;display:flex;align-items:center;justify-content:center;">
-        <img src="${dataUrl}" style="max-width:100%;max-height:100%;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.15);">
+      <div style="display:flex;flex-direction:column;width:100%;height:100%;background:#F8FAFC;border-radius:8px;overflow:hidden;border:1px solid var(--line);">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#1E293B;color:#F8FAFC;font-size:13px;flex-shrink:0;">
+          <span style="font-weight:600;">🖼️ ${safeImgName}</span>
+          <button type="button" class="btn btn-xs btn-print-img" style="background:#8B5CF6;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
+            <span>🖨️</span> <span>In chứng từ</span>
+          </button>
+        </div>
+        <div style="text-align:center;padding:16px;flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;">
+          <img src="${dataUrl}" style="max-width:100%;max-height:100%;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.15);">
+        </div>
       </div>`;
+    const pBtn = container.querySelector('.btn-print-img');
+    if (pBtn) pBtn.addEventListener('click', () => printPdfOrImage(null, dataUrl));
     return;
   }
 
@@ -1891,17 +1957,20 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
 
   const wrapper = document.createElement('div');
   wrapper.className = 'pdf-preview-wrapper';
-  wrapper.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;background:#F1F5F9;border-radius:8px;overflow:hidden;border:1px solid var(--line);min-height:480px;';
+  wrapper.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;background:#F1F5F9;border-radius:8px;overflow:hidden;border:1px solid var(--line);min-height:500px;';
 
   const toolbar = document.createElement('div');
   toolbar.className = 'pdf-preview-toolbar';
   toolbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#1E293B;color:#F8FAFC;font-size:13px;flex-shrink:0;gap:8px;border-bottom:1px solid #334155;';
 
   toolbar.innerHTML = `
-    <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%;display:flex;align-items:center;gap:6px;">
+    <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:40%;display:flex;align-items:center;gap:6px;">
       <span>📄</span> <span title="${safeFileName}">${safeFileName}</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <button type="button" class="btn btn-xs btn-print-pdf-act" style="background:#8B5CF6;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:4px;box-shadow:0 1px 3px rgba(0,0,0,0.2);cursor:pointer;">
+        <span>🖨️</span> <span>In hóa đơn</span>
+      </button>
       <a href="${blobUrl}" target="_blank" class="btn btn-xs" style="background:#3B82F6;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:12px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:4px;box-shadow:0 1px 3px rgba(0,0,0,0.2);">
         <span>↗️</span> <span>Mở tab mới</span>
       </a>
@@ -1910,11 +1979,16 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
       </a>
     </div>`;
 
+  const printBtn = toolbar.querySelector('.btn-print-pdf-act');
+  if (printBtn) {
+    printBtn.addEventListener('click', () => printPdfOrImage(blobUrl, dataUrl));
+  }
+
   wrapper.appendChild(toolbar);
 
   const contentArea = document.createElement('div');
   contentArea.className = 'pdf-preview-content';
-  contentArea.style.cssText = 'flex:1;width:100%;height:calc(100% - 44px);min-height:440px;overflow:auto;position:relative;background:#525659;padding:16px;box-sizing:border-box;';
+  contentArea.style.cssText = 'flex:1;width:100%;max-height:80vh;overflow-y:auto;overflow-x:auto;position:relative;background:#525659;padding:16px;box-sizing:border-box;';
   contentArea.innerHTML = `<div id="pdf-loading-msg" style="text-align:center;color:#F8FAFC;padding:40px 20px;font-size:14px;">⏳ Đang tải chứng từ PDF…</div>`;
 
   wrapper.appendChild(contentArea);
@@ -1922,7 +1996,7 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
 
   let renderedCanvas = false;
 
-  // Primary PDF.js Canvas Rendering for 100% Reliability
+  // Primary PDF.js Canvas Rendering for 100% Reliability & High Definition Output
   if (window.pdfjsLib && blob) {
     try {
       const arrayBuffer = await blob.arrayBuffer();
@@ -1934,7 +2008,7 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
 
         for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
           const page = await pdfDoc.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 1.25 });
+          const viewport = page.getViewport({ scale: 1.3 });
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
           canvas.height = viewport.height;
@@ -1956,7 +2030,7 @@ async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Doc
     contentArea.innerHTML = '';
     const iframe = document.createElement('iframe');
     iframe.src = blobUrl;
-    iframe.style.cssText = 'width:100%;height:100%;min-height:440px;border:none;display:block;border-radius:4px;';
+    iframe.style.cssText = 'width:100%;height:100%;min-height:460px;border:none;display:block;border-radius:4px;';
     contentArea.appendChild(iframe);
   }
 }
