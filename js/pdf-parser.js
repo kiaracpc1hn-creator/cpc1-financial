@@ -497,6 +497,36 @@ async function extractInvoiceDataFromPdfFile(file, dataUrl = null) {
     }
   }
 
+  // 1.5. Client-Side Tesseract OCR fallback cho ảnh scan & PDF ảnh scan
+  if (fullText.trim().length <= 20 && window.Tesseract) {
+    try {
+      let imageSource = dataUrl;
+      if (isPdf && window.pdfjsLib && file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        if (pdf.numPages > 0) {
+          const page = await pdf.getPage(1);
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const ctx = canvas.getContext('2d');
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          imageSource = canvas.toDataURL('image/jpeg', 0.8);
+        }
+      }
+      if (imageSource) {
+        const res = await Tesseract.recognize(imageSource, 'eng+vie');
+        if (res && res.data && res.data.text) {
+          fullText += "\n" + res.data.text;
+          lines = lines.concat(res.data.text.split('\n').filter(l => l.trim()));
+        }
+      }
+    } catch (ocrErr) {
+      console.warn("Tesseract fallback OCR error:", ocrErr);
+    }
+  }
+
   // 2. Parse text lines offline (tên file hoặc văn bản PDF)
   const parsed = parseInvoiceText(fullText, lines, file ? file.name : "");
 
