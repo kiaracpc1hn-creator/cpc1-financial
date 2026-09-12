@@ -2820,42 +2820,43 @@ async function removeInvoiceFromDraftVouchers(rec) {
 }
 
 function deleteInvoiceRecord(id) {
-  const rec = STATE.invoices.find(r => r.id === id);
+  const rec = (STATE.invoices || []).find(r => r.id === id);
   if (!rec) return;
 
   const st = getInvoiceRecordStatus(rec);
+  let warningNote = '';
+
   if (st.key === 'pending_signature' || st.key === 'submitted') {
     const dupDoc = STATE.documents.find(d => d.id === st.docId);
-    const docCodeText = dupDoc ? (dupDoc.docNo || dupDoc.formCode) : 'ĐNTT';
+    const docCodeText = dupDoc ? (dupDoc.docNo || dupDoc.formCode) : 'phiếu';
     const statusLabel = dupDoc ? (STATUS_LABEL[dupDoc.status] || dupDoc.status) : st.label;
 
-    playWarningChime();
-    showAlertModal(
-      '🚫 KHÔNG THỂ XOÁ HOÁ ĐƠN ĐÃ TRÌNH KÝ',
-      `Hoá đơn số <b>${rec.invoiceNumber || 'N/A'}</b> ${rec.seriesNo ? `(Ký hiệu: <b>${rec.seriesNo}</b>)` : ''} đang nằm trong phiếu <b>${docCodeText}</b> [<span style="color:var(--stamp);font-weight:700;">${statusLabel}</span>].<br><br>📌 <b>Theo quy định tài chính</b>: Hoá đơn ở trạng thái <b>${st.label}</b> không thể bị xoá khỏi Kho Hoá đơn để đảm bảo tính toàn vẹn dữ liệu!`
-    );
-    return;
+    warningNote = `<br><br><div style="background:#FFF1F2;border:1.5px solid #FECDD3;padding:10px 12px;border-radius:8px;font-size:12.5px;color:#991B1B;">⚠️ <b>Lưu ý</b>: Hoá đơn này đang thuộc phiếu <b>${docCodeText}</b> [${statusLabel}]. Việc chuyển vào Thùng rác sẽ tự động gỡ đính kèm khỏi phiếu này.</div>`;
   }
 
-  showConfirmModal('Chuyển hoá đơn vào Thùng rác?', 'Chuyển hoá đơn này vào Thùng rác (có thể khôi phục lại) và tự động gỡ khỏi các phiếu Nháp liên quan?', async () => {
-    const trashInv = JSON.parse(JSON.stringify(rec));
-    trashInv.deletedAt = new Date().toISOString();
-    trashInv.deletedBy = currentUser().name;
-    trashInv.itemType = 'invoice';
+  showConfirmModal(
+    'Chuyển hoá đơn vào Thùng rác?',
+    `Chuyển hoá đơn <b>${rec.invoiceNumber || rec.fileName || 'này'}</b> vào Thùng rác (có thể khôi phục lại trong Thùng rác)?${warningNote}`,
+    async () => {
+      const trashInv = JSON.parse(JSON.stringify(rec));
+      trashInv.deletedAt = new Date().toISOString();
+      trashInv.deletedBy = currentUser().name;
+      trashInv.itemType = 'invoice';
 
-    if (!STATE.trash) STATE.trash = [];
-    STATE.trash.unshift(trashInv);
-    await saveTrash();
+      if (!STATE.trash) STATE.trash = [];
+      STATE.trash.unshift(trashInv);
+      await saveTrash();
 
-    await removeInvoiceFromDraftVouchers(rec);
-    STATE.invoices = STATE.invoices.filter(r => r.id !== id);
-    if (STATE.selectedInvoiceIds) {
-      STATE.selectedInvoiceIds = STATE.selectedInvoiceIds.filter(selId => selId !== id);
+      await removeInvoiceFromDraftVouchers(rec);
+      STATE.invoices = STATE.invoices.filter(r => r.id !== id);
+      if (STATE.selectedInvoiceIds) {
+        STATE.selectedInvoiceIds = STATE.selectedInvoiceIds.filter(selId => selId !== id);
+      }
+      await saveInvoices(true);
+      updateInvoiceTableView();
+      showToast('✓ Đã chuyển hoá đơn vào Thùng rác thành công!');
     }
-    await saveInvoices(true);
-    updateInvoiceTableView();
-    showToast('✓ Đã chuyển hoá đơn vào Thùng rác thành công!');
-  });
+  );
 }
 
 function openReattachModal(recId, fileName) {
@@ -4109,11 +4110,7 @@ function renderInvoiceTableHtml(records, selected) {
                 `}
                 <button class="icon-btn" data-viewinvhistory="${r.id}" title="Xem lịch sử chỉnh sửa & thao tác">📜</button>
                 ${st.docId ? `<button class="icon-btn" data-gotodoc="${st.docId}" title="Xem phiếu liên kết">🔗</button>` : ''}
-                ${(st.key === 'pending_signature' || st.key === 'submitted') ? `
-                  <button class="icon-btn" data-delinvoice="${r.id}" title="Hoá đơn ở trạng thái ${st.label}, không thể xoá!" style="opacity:0.4;cursor:not-allowed;">🔒</button>
-                ` : `
-                  <button class="icon-btn icon-btn-danger" data-delinvoice="${r.id}" title="Xoá dòng chứng từ này">🗑</button>
-                `}
+                <button class="icon-btn icon-btn-danger" data-delinvoice="${r.id}" title="${(st.key === 'pending_signature' || st.key === 'submitted') ? `Hoá đơn thuộc phiếu ${st.label} - Bấm để chuyển vào Thùng rác` : 'Xoá dòng chứng từ này'}">🗑</button>
               </div>
             </td>
           </tr>`;
