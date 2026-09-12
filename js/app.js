@@ -138,10 +138,8 @@ async function loadAll() {
     STATE.geminiApiKey = r ? r.value : '';
   } catch (e) { STATE.geminiApiKey = ''; }
 
-  if (!STATE.users || STATE.users.length === 0 || STATE.users.length < 5 || !STATE.users[0].password || !STATE.users[0].pin || !STATE.users[0].email) {
-    STATE.users = seedUsers();
-    await saveUsers();
-  }
+  STATE.users = ensureDefaultUsersMerged(STATE.users);
+  await saveUsers();
 
   if (STATE.payees.length === 0 && (await isFreshInstall())) {
     STATE.payees = seedPayees();
@@ -268,7 +266,8 @@ async function loadAll() {
         if (key === 'users') {
           if (STATE._rawStrUsers === val) return;
           STATE._rawStrUsers = val;
-          STATE.users = JSON.parse(val) || [];
+          const parsed = JSON.parse(val) || [];
+          STATE.users = ensureDefaultUsersMerged(parsed);
           changed = true;
         } else if (key === 'invoices') {
           if (STATE._rawStrInvoices === val) return;
@@ -375,8 +374,7 @@ function cleanOcrSpacedText(str) {
 
 function normalizePayeeNameForMatch(str) {
   if (!str) return '';
-  const cleaned = cleanOcrSpacedText(str);
-  return cleaned
+  return str
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd')
@@ -388,33 +386,14 @@ function normalizePayeeNameForMatch(str) {
 
 function findBestPayeeMatch(rawName) {
   if (!rawName || !rawName.trim()) return rawName;
-  const cleaned = cleanOcrSpacedText(rawName);
+  const cleaned = rawName.trim();
 
   if (!STATE.payees || STATE.payees.length === 0) return cleaned;
 
-  const normCleaned = normalizePayeeNameForMatch(cleaned);
-
-  // 1. Khớp chính xác tên chuẩn hoặc tên ưu tiên
   const exact = STATE.payees.find(p => p.name && p.name.trim().toLowerCase() === cleaned.toLowerCase());
   if (exact) return exact.preferredName || exact.name;
 
-  // 2. Khớp theo Từ khóa / Alias cài đặt sẵn trong Danh Bạ
-  for (const p of STATE.payees) {
-    if (!p.name) continue;
-    if (p.aliases && p.aliases.trim()) {
-      const aliasList = p.aliases.split(',').map(a => a.trim()).filter(Boolean);
-      for (const alias of aliasList) {
-        const normAlias = normalizePayeeNameForMatch(alias);
-        if (normAlias && normAlias.length >= 2) {
-          if (normCleaned.includes(normAlias) || normAlias.includes(normCleaned) || cleaned.toLowerCase().includes(alias.toLowerCase())) {
-            return p.preferredName || p.name;
-          }
-        }
-      }
-    }
-  }
-
-  // 3. Khớp thông minh tên cốt lõi doanh nghiệp
+  const normCleaned = normalizePayeeNameForMatch(cleaned);
   if (normCleaned && normCleaned.length >= 2) {
     for (const p of STATE.payees) {
       if (!p.name) continue;
@@ -426,101 +405,6 @@ function findBestPayeeMatch(rawName) {
   }
 
   return cleaned;
-}
-
-function ensurePresetPayeeRules() {
-  if (!STATE.payees) STATE.payees = [];
-
-  const presets = [
-    {
-      name: 'CÔNG TY BẢO HIỂM PVI ĐÔNG ĐÔ',
-      aliases: 'PVI, BÀO HIỂM PVI, B À O HI Ế M PVI, PVI ĐÔNG ĐÔ, BÀ O HIỂM PVI ĐÔNG ĐÔ',
-      isChiHo: false,
-      note: ''
-    },
-    {
-      name: 'SỞ CÔNG THƯƠNG THÀNH PHỐ HÀ NỘI',
-      aliases: 'SỞ CÔNG THƯƠNG, SO CONG THUONG, SỞ CÔNG THƯƠNG HÀ NỘI',
-      isChiHo: true,
-      note: 'Hóa đơn chi hộ của MTL'
-    },
-    {
-      name: 'CỤC XUẤT NHẬP KHẨU CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM',
-      aliases: 'CỤC XUẤT NHẬP KHẨU, CUC XUAT NHAP KHAU, CỤC XUẤT NHẬP CẢNH',
-      isChiHo: true,
-      note: 'Hóa đơn chi hộ của MTL'
-    },
-    {
-      name: 'CÔNG TY TNHH LIÊN KẾT NĂNG ĐỘNG (Chi hộ MTL)',
-      aliases: 'NĂNG ĐỘNG, NANG DONG, CHI HỘ, NĂNG ĐỘNG CHI HỘ, NANG DONG CHI HO',
-      isChiHo: true,
-      note: 'Hóa đơn chi hộ của MTL'
-    }
-  ];
-
-  let changed = false;
-  for (const pr of presets) {
-    const normPr = normalizePayeeNameForMatch(pr.name);
-    const existing = STATE.payees.find(p => p.name && (normalizePayeeNameForMatch(p.name) === normPr || p.name.trim().toLowerCase() === pr.name.toLowerCase()));
-    if (existing) {
-      if (!existing.aliases) { existing.aliases = pr.aliases; changed = true; }
-      if (pr.isChiHo && !existing.isChiHo) { existing.isChiHo = true; changed = true; }
-      if (pr.note && !existing.note) { existing.note = pr.note; changed = true; }
-    } else {
-      STATE.payees.push({
-        id: uid('p'),
-        name: pr.name,
-        aliases: pr.aliases,
-        accountNumber: '',
-        bankName: '',
-        isChiHo: pr.isChiHo,
-        note: pr.note,
-        isInternal: false
-      });
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    savePayees();
-  }
-}
-
-function cleanAndStandardizeAllInvoiceBeneficiaries() {
-  if (!STATE.invoices || STATE.invoices.length === 0) return 0;
-  ensurePresetPayeeRules();
-
-  let count = 0;
-  for (const r of STATE.invoices) {
-    const oldName = r.beneficiaryName || '';
-    const newName = findBestPayeeMatch(oldName);
-    if (newName && newName !== oldName) {
-      r.beneficiaryName = newName;
-      count++;
-    }
-  }
-  if (count > 0) {
-    saveInvoices();
-  }
-  return count;
-}
-
-function autoSyncPayeeToDirectory(name) {
-  if (!name || !name.trim()) return;
-  const trimmed = cleanOcrSpacedText(name);
-  if (!STATE.payees) STATE.payees = [];
-  const exists = STATE.payees.some(p => p.name && p.name.trim().toLowerCase() === trimmed.toLowerCase());
-  if (!exists) {
-    STATE.payees.push({
-      id: uid('p'),
-      name: trimmed,
-      aliases: '',
-      accountNumber: '',
-      bankName: '',
-      isInternal: false
-    });
-    savePayees();
-  }
 }
 async function saveInvoices() {
   try {
@@ -570,6 +454,30 @@ function seedUsers() {
     { id: 'u_010005', username: '010005', password: '123', pin: '1234', name: 'Trần Thị Lan', employeeCode: '010005', email: 'lan.tranthi@cpc1hn.com.vn', department: 'Phòng Kế toán', group: 'Không', role: 'chief_accountant', bank: null },
     { id: 'u_010001', username: '010001', password: '123', pin: '1234', name: 'Phạm Minh Đức', employeeCode: '010001', email: 'duc.phamminh@cpc1hn.com.vn', department: 'Ban Giám đốc', group: 'Không', role: 'director', bank: null }
   ];
+}
+
+function ensureDefaultUsersMerged(userList) {
+  if (!Array.isArray(userList)) userList = [];
+  const defaults = seedUsers();
+
+  for (const defU of defaults) {
+    const existing = userList.find(u =>
+      (u.employeeCode && String(u.employeeCode).trim().replace(/^0+/, '') === String(defU.employeeCode).trim().replace(/^0+/, '')) ||
+      (u.username && String(u.username).trim().toLowerCase() === String(defU.username).trim().toLowerCase()) ||
+      (u.id === defU.id)
+    );
+    if (existing) {
+      if (!existing.password) existing.password = defU.password;
+      if (!existing.pin) existing.pin = defU.pin;
+      if (!existing.username) existing.username = defU.username;
+      if (!existing.employeeCode) existing.employeeCode = defU.employeeCode;
+      if (!existing.group) existing.group = defU.group;
+      if (!existing.email) existing.email = defU.email;
+    } else {
+      userList.push(defU);
+    }
+  }
+  return userList;
 }
 
 function seedPayees() {
@@ -1356,9 +1264,6 @@ function showDuplicateInvoiceModal(info) {
 
 function cleanDuplicateInvoicesInRepo() {
   if (!STATE.invoices || STATE.invoices.length === 0) return;
-
-  ensurePresetPayeeRules();
-  cleanAndStandardizeAllInvoiceBeneficiaries();
 
   let patched = false;
   for (const r of STATE.invoices) {
@@ -4189,7 +4094,6 @@ function renderInvoices() {
         <option value="all">Tất cả người thụ hưởng</option>
         ${allBeneficiaries.map(b => `<option value="${b}" ${beneficiaryFilter === b ? 'selected' : ''}>${b}</option>`).join('')}
       </select>
-      <button type="button" class="btn btn-outline btn-sm" id="btn-standardize-beneficiaries" style="height:34px;white-space:nowrap;font-size:12px;color:var(--teal);border-color:var(--teal);" title="Chuẩn hóa tên thụ hưởng bị phân mảnh ký tự OCR">🧹 Chuẩn hóa tên</button>
       <select id="filter-inv-status">
         <option value="all">Tất cả trạng thái</option>
         ${statusOptions.map(s => `<option value="${s.key}" ${statusFilter === s.key ? 'selected' : ''}>${s.label}</option>`).join('')}
@@ -5223,78 +5127,44 @@ function renderDetail() {
 }
 
 function renderPayees() {
-  ensurePresetPayeeRules();
-
   return `
-  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <div class="page-header">
     <div>
-      <h1>Danh bạ người nhận tiền & Quy tắc Người thụ hưởng</h1>
-      <p>Lưu thông tin tài khoản ngân hàng, từ khóa quy đổi OCR và thiết lập hóa đơn chi hộ (MTL, Sở Công Thương, PVI, Cục XNK...)</p>
-    </div>
-    <div style="display:flex;gap:8px;">
-      <button type="button" class="btn btn-outline btn-sm" id="seed-payee-rules-btn">⚡ Nạp quy tắc mẫu (Chi hộ MTL & PVI)</button>
+      <h1>Danh bạ người nhận tiền</h1>
+      <p>Lưu sẵn thông tin tài khoản ngân hàng để chọn nhanh khi tạo phiếu chuyển khoản.</p>
     </div>
   </div>
 
-  <div class="form-card" style="max-width:780px;margin-bottom:20px;">
+  <div class="form-card" style="max-width:640px;margin-bottom:20px;">
     <div class="field-row">
-      <div class="field" style="flex:2;"><label>Tên chuẩn người / đơn vị nhận</label><input id="np-name" placeholder="VD: CÔNG TY BẢO HIỂM PVI ĐÔNG ĐÔ hoặc SỞ CÔNG THƯƠNG HÀ NỘI"></div>
-      <div class="field" style="flex:1;"><label>Số tài khoản</label><input id="np-account" placeholder="Số tài khoản (nếu có)"></div>
+      <div class="field"><label>Tên người / đơn vị nhận</label><input id="np-name" placeholder="VD: Nguyễn Văn A hoặc Cty TNHH..."></div>
+      <div class="field"><label>Số tài khoản</label><input id="np-account" placeholder="Số tài khoản"></div>
     </div>
-    <div class="field-row">
-      <div class="field" style="flex:1;"><label>Ngân hàng & Chi nhánh</label><input id="np-bank" placeholder="VD: Vietcombank - CN Hà Nội"></div>
-      <div class="field" style="flex:2;"><label>Từ khóa nhận diện / Tên viết tắt OCR (phân cách bằng dấu phẩy)</label><input id="np-aliases" placeholder="VD: PVI, BÀO HIỂM PVI, SỞ CÔNG THƯƠNG, CỤC XUẤT NHẬP CẢNH"></div>
-    </div>
-    <div class="field-row" style="align-items:center;">
-      <div class="field" style="flex:2;"><label>Ghi chú / Quy tắc xử lý</label><input id="np-note" placeholder="VD: Hóa đơn chi hộ của MTL"></div>
-      <div class="field" style="flex:1;display:flex;align-items:center;margin-top:16px;">
-        <label style="display:flex;align-items:center;gap:6px;font-weight:600;cursor:pointer;user-select:none;">
-          <input type="checkbox" id="np-chiho">
-          <span>🏷️ Hóa đơn chi hộ MTL</span>
-        </label>
-      </div>
-    </div>
-    <button class="btn btn-primary btn-sm" id="add-payee" style="margin-top:8px;">＋ Thêm vào danh bạ người nhận</button>
+    <div class="field"><label>Ngân hàng & Chi nhánh</label><input id="np-bank" placeholder="VD: Vietcombank - CN Hà Nội"></div>
+    <button class="btn btn-primary btn-sm" id="add-payee">＋ Thêm vào danh bạ</button>
   </div>
 
   <div class="payee-list">
     ${STATE.payees.map(p => {
       if (STATE.editingPayeeId === p.id) {
         return `
-        <div class="payee-row" style="display:block;background:var(--paper-white);border:1.5px solid var(--teal);padding:14px;border-radius:8px;margin-bottom:10px;">
+        <div class="payee-row" style="display:block;">
           <div class="field-row" style="margin-bottom:10px;">
-            <div class="field" style="margin-bottom:0;flex:2;"><label>Tên người / đơn vị nhận</label><input id="ep-name-${p.id}" value="${p.name || ''}"></div>
-            <div class="field" style="margin-bottom:0;flex:1;"><label>Số tài khoản</label><input id="ep-account-${p.id}" value="${p.accountNumber || ''}"></div>
+            <div class="field" style="margin-bottom:0;"><label>Tên người / đơn vị nhận</label><input id="ep-name-${p.id}" value="${p.name}"></div>
+            <div class="field" style="margin-bottom:0;"><label>Số tài khoản</label><input id="ep-account-${p.id}" value="${p.accountNumber}"></div>
           </div>
-          <div class="field-row" style="margin-bottom:10px;">
-            <div class="field" style="margin-bottom:0;flex:1;"><label>Ngân hàng</label><input id="ep-bank-${p.id}" value="${p.bankName || ''}"></div>
-            <div class="field" style="margin-bottom:0;flex:2;"><label>Từ khóa nhận diện OCR (Aliases)</label><input id="ep-aliases-${p.id}" value="${p.aliases || ''}" placeholder="PVI, SỞ CÔNG THƯƠNG..."></div>
-          </div>
-          <div class="field-row" style="margin-bottom:10px;align-items:center;">
-            <div class="field" style="margin-bottom:0;flex:2;"><label>Ghi chú / Quy tắc</label><input id="ep-note-${p.id}" value="${p.note || ''}"></div>
-            <div class="field" style="margin-bottom:0;flex:1;display:flex;align-items:center;margin-top:16px;">
-              <label style="display:flex;align-items:center;gap:6px;font-weight:600;cursor:pointer;">
-                <input type="checkbox" id="ep-chiho-${p.id}" ${p.isChiHo ? 'checked' : ''}>
-                <span>🏷️ Hóa đơn chi hộ MTL</span>
-              </label>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:8px;">
-            <button class="btn btn-primary btn-sm" data-savepayee="${p.id}">💾 Lưu thay đổi</button>
+          <div class="field" style="margin-bottom:10px;"><label>Ngân hàng</label><input id="ep-bank-${p.id}" value="${p.bankName}"></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary btn-sm" data-savepayee="${p.id}">Lưu</button>
             <button class="btn btn-outline btn-sm" data-canceleditpayee="${p.id}">Huỷ</button>
           </div>
         </div>`;
       }
       return `
-      <div class="payee-row" style="margin-bottom:10px;">
+      <div class="payee-row">
         <div class="info">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <b style="font-size:15px;">${p.name}</b>
-            ${p.isChiHo ? `<span class="badge badge-amber" style="font-size:11px;padding:2px 8px;border-radius:12px;">🏷️ Hóa đơn chi hộ MTL</span>` : ''}
-          </div>
-          ${p.accountNumber ? `<span>Số TK: <b>${p.accountNumber}</b> ${p.bankName ? `· ${p.bankName}` : ''}</span>` : ''}
-          ${p.aliases ? `<span style="font-size:12px;color:var(--teal);display:block;margin-top:2px;">🔑 Từ khóa OCR quy đổi: <code>${p.aliases}</code></span>` : ''}
-          ${p.note ? `<span style="font-size:12px;color:var(--ink-soft);display:block;margin-top:2px;">📌 ${p.note}</span>` : ''}
+          <b>${p.name}</b>
+          <span>Số TK: <b>${p.accountNumber}</b> · ${p.bankName}</span>
         </div>
         <div style="display:flex;gap:6px;">
           <button class="btn btn-outline btn-sm" data-editpayee="${p.id}">Sửa</button>
@@ -5596,6 +5466,17 @@ function renderLoginScreen() {
           <button type="submit" class="btn btn-primary" style="width:100%;background:#0D9488;color:#FFFFFF;border:none;padding:12.5px;font-size:15px;font-weight:700;border-radius:10px;cursor:pointer;box-shadow:0 4px 12px rgba(13,148,136,0.3);transition:all 0.15s;">
             TIẾP TỤC (XÁC THỰC MÃ PIN) ➔
           </button>
+
+          <div style="margin-top:16px;padding:12px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;font-size:12px;color:#475569;line-height:1.5;box-sizing:border-box;">
+            <div style="font-weight:700;color:#0F172A;margin-bottom:4px;display:flex;align-items:center;gap:4px;">
+              <span>💡 Thông tin tài khoản mặc định</span>
+            </div>
+            <div>• <b>Mật khẩu mặc định:</b> <code style="background:#E2E8F0;padding:2px 6px;border-radius:4px;color:#0D9488;font-weight:700;font-family:var(--font-mono);">123</code></div>
+            <div>• <b>Mã PIN xác thực mặc định:</b> <code style="background:#E2E8F0;padding:2px 6px;border-radius:4px;color:#0D9488;font-weight:700;font-family:var(--font-mono);">1234</code></div>
+            <div style="margin-top:6px;font-size:11.5px;color:#64748B;">
+              Mã NV mẫu: <b>017481</b> (Tuyến - EXP), <b>015408</b> (Phương Anh - Docs), <b>018233</b> (Đăng - Docs), <b>018906</b> (Mai - EXP), <b>010023</b> (Hùng - Nhóm trưởng), <b>010024</b> (Nga - Nhóm trưởng Docs), <b>010005</b> (Lan - KTT), <b>010001</b> (Đức - GD).
+            </div>
+          </div>
         </form>
         ` : `
         <form id="pin-form">
@@ -5734,18 +5615,34 @@ function attachLoginScreenHandlers() {
         if (window.storage && window.storage.get) {
           const freshUsersRes = await window.storage.get('users', false, true);
           if (freshUsersRes && freshUsersRes.value) {
-            STATE.users = JSON.parse(freshUsersRes.value) || STATE.users;
+            const parsed = JSON.parse(freshUsersRes.value) || [];
+            STATE.users = ensureDefaultUsersMerged(parsed);
+          } else {
+            STATE.users = ensureDefaultUsersMerged(STATE.users);
           }
+        } else {
+          STATE.users = ensureDefaultUsersMerged(STATE.users);
         }
       } catch (err) {
-        console.warn('Fresh user list fetch warning:', err);
+        STATE.users = ensureDefaultUsersMerged(STATE.users);
       }
 
       const matchedUser = STATE.users.find(u => {
         const code = (u.employeeCode || '').trim().toLowerCase();
         const uname = (u.username || '').trim().toLowerCase();
         const name = (u.name || '').trim().toLowerCase();
-        return userVal === code || userVal === uname || name === userVal;
+        const email = (u.email || '').trim().toLowerCase();
+
+        const rawCode = code.replace(/^0+/, '');
+        const rawUserVal = userVal.replace(/^0+/, '');
+
+        return (
+          userVal === code ||
+          userVal === uname ||
+          name === userVal ||
+          email === userVal ||
+          (rawUserVal && rawCode && rawUserVal === rawCode)
+        );
       });
 
       if (!matchedUser) {
