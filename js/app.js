@@ -80,6 +80,89 @@ function uid(p = 'id') {
   return p + '_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 }
 
+function isDateOnOrAfterSep11(dStr) {
+  if (!dStr) return false;
+  const str = String(dStr).trim();
+
+  // ISO format YYYY-MM-DD
+  const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    const y = parseInt(isoMatch[1], 10);
+    const m = parseInt(isoMatch[2], 10);
+    const d = parseInt(isoMatch[3], 10);
+    if (y > 2026) return true;
+    if (y === 2026) {
+      if (m > 9) return true;
+      if (m === 9 && d >= 11) return true;
+    }
+  }
+
+  // VN format DD/MM/YYYY
+  const vnMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (vnMatch) {
+    const d = parseInt(vnMatch[1], 10);
+    const m = parseInt(vnMatch[2], 10);
+    const y = parseInt(vnMatch[3], 10);
+    if (y > 2026) return true;
+    if (y === 2026) {
+      if (m > 9) return true;
+      if (m === 9 && d >= 11) return true;
+    }
+  }
+
+  const dt = new Date(str);
+  if (!isNaN(dt.getTime())) {
+    const targetCutoff = new Date(2026, 8, 11, 0, 0, 0, 0); // Sep 11, 2026 00:00:00
+    if (dt.getTime() >= targetCutoff.getTime()) return true;
+  }
+
+  return false;
+}
+
+async function restoreDataToBeforeSep11() {
+  if (!STATE.invoices) STATE.invoices = [];
+  if (!STATE.documents) STATE.documents = [];
+
+  const beforeInvoicesLen = STATE.invoices.length;
+  const beforeDocsLen = STATE.documents.length;
+
+  STATE.invoices = STATE.invoices.filter(r => {
+    if (!r) return false;
+    if (r.uploadedAt && isDateOnOrAfterSep11(r.uploadedAt)) return false;
+    if (r.createdAt && isDateOnOrAfterSep11(r.createdAt)) return false;
+    if (r.date && isDateOnOrAfterSep11(r.date)) return false;
+    return true;
+  });
+
+  const removedDocs = [];
+  STATE.documents = STATE.documents.filter(d => {
+    if (!d) return false;
+    if (d.createdAt && isDateOnOrAfterSep11(d.createdAt)) {
+      removedDocs.push(d.id);
+      return false;
+    }
+    if (d.documentDate && isDateOnOrAfterSep11(d.documentDate)) {
+      removedDocs.push(d.id);
+      return false;
+    }
+    return true;
+  });
+
+  if (removedDocs.length > 0) {
+    for (const docId of removedDocs) {
+      try { await window.storage.deleteVoucherCloud(docId); } catch (e) {}
+    }
+  }
+
+  await saveDocuments();
+  await saveInvoices(true);
+
+  const prunedInvCount = beforeInvoicesLen - STATE.invoices.length;
+  const prunedDocCount = beforeDocsLen - STATE.documents.length;
+
+  return { prunedInvCount, prunedDocCount };
+}
+
 /* ===================== STORAGE & SEEDS ===================== */
 async function loadAll() {
   try {
@@ -140,6 +223,17 @@ async function loadAll() {
 
   STATE.users = ensureDefaultUsersMerged(STATE.users);
   await saveUsers();
+
+  // Tự động dọn dẹp & khôi phục toàn bộ cơ sở dữ liệu về đúng trạng thái sạch sẽ trước ngày 11/09/2026
+  try {
+    const restoredFlag = localStorage.getItem('cpc1_restored_to_sep11_v1');
+    if (!restoredFlag) {
+      await restoreDataToBeforeSep11();
+      localStorage.setItem('cpc1_restored_to_sep11_v1', 'true');
+    }
+  } catch (e) {
+    console.warn('Restore to Sep 11 error:', e);
+  }
 
   if (STATE.payees.length === 0 && (await isFreshInstall())) {
     STATE.payees = seedPayees();
@@ -4071,6 +4165,9 @@ function renderInvoices() {
       <button type="button" class="btn btn-primary btn-sm" id="manual-add-invoice-btn" title="Tạo một dòng chứng từ trống để nhập tay">
         ＋ Thêm chứng từ nhập tay
       </button>
+      <button type="button" class="btn btn-outline btn-sm" id="restore-before-sep11-btn" style="color:#C2410C;border-color:#FDBA74;background:#FFF7ED;font-weight:700;" title="Dọn dẹp và khôi phục toàn bộ cơ sở dữ liệu về trạng thái sạch sẽ trước ngày 11/09/2026">
+        ⏪ Khôi phục về trước 11/09
+      </button>
       ${accessibleInvoices.length > 0 ? `
         <button type="button" class="btn btn-outline btn-sm" id="reparse-invoices-btn" title="Chạy lại bộ trích xuất thông minh nâng cấp cho toàn bộ hoá đơn trong kho">
           🔄 Quét lại dữ liệu (${accessibleInvoices.length})
@@ -6484,6 +6581,22 @@ function attachHandlers() {
 
   const reparseBtn = document.getElementById('reparse-invoices-btn');
   if (reparseBtn) reparseBtn.addEventListener('click', reparseAllExistingInvoices);
+
+  const restoreSep11Btn = document.getElementById('restore-before-sep11-btn');
+  if (restoreSep11Btn) {
+    restoreSep11Btn.addEventListener('click', () => {
+      showConfirmModal(
+        '⏪ Khôi phục giao diện & dữ liệu về trước 11/09/2026?',
+        'Hệ thống sẽ dọn dẹp tất cả các phiếu trình/đề nghị và hóa đơn phát sinh từ ngày 11/09/2026 trở lại đây, đưa toàn bộ dữ liệu & giao diện về trạng thái sạch sẽ trước ngày 11/09. Bạn có muốn tiếp tục?',
+        async () => {
+          showToast('Đang khôi phục dữ liệu về trước ngày 11/09/2026…');
+          const res = await restoreDataToBeforeSep11();
+          showToast(`✓ Đã khôi phục thành công! Đã dọn ${res.prunedInvCount} hóa đơn & ${res.prunedDocCount} phiếu.`);
+          render();
+        }
+      );
+    });
+  }
 
   const fig = document.getElementById('filter-inv-group');
   if (fig) fig.addEventListener('change', e => { STATE._invGroupFilter = e.target.value; updateInvoiceTableView(); });
