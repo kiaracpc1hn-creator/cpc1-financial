@@ -2755,8 +2755,11 @@ function deleteInvoiceRecord(id) {
 
     await removeInvoiceFromDraftVouchers(rec);
     STATE.invoices = STATE.invoices.filter(r => r.id !== id);
-    await saveInvoices();
-    render();
+    if (STATE.selectedInvoiceIds) {
+      STATE.selectedInvoiceIds = STATE.selectedInvoiceIds.filter(selId => selId !== id);
+    }
+    await saveInvoices(true);
+    updateInvoiceTableView();
     showToast('✓ Đã chuyển hoá đơn vào Thùng rác thành công!');
   });
 }
@@ -6830,8 +6833,11 @@ function formatVoucherItemNote(note, invoiceRef) {
 }
 
 function attachInvoiceTableHandlers() {
-  document.querySelectorAll('[data-lockinv]').forEach(el => el.addEventListener('click', async () => {
-    const rec = STATE.invoices.find(r => r.id === el.dataset.lockinv);
+  document.querySelectorAll('[data-lockinv]').forEach(el => el.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const recId = el.dataset.lockinv;
+    const rec = STATE.invoices.find(r => r.id === recId);
     if (!rec) return;
 
     const tr = el.closest('tr');
@@ -6865,13 +6871,13 @@ function attachInvoiceTableHandlers() {
 
     const currentlyLocked = rec.isLocked !== false;
     rec.isLocked = !currentlyLocked;
+    await saveInvoices(true);
     updateInvoiceTableView();
     if (rec.isLocked) {
       showToast(`🔒 Đã lưu & khoá chứng từ ${rec.invoiceNumber ? 'số ' + rec.invoiceNumber : ''}`);
     } else {
       showToast(`🔓 Đã mở khoá chứng từ ${rec.invoiceNumber ? 'số ' + rec.invoiceNumber : ''} — Anh/chị có thể chỉnh sửa`);
     }
-    saveInvoices().catch(e => console.error(e));
   }));
 
   document.querySelectorAll('[data-invdate]').forEach(el => el.addEventListener('change', (e) => {
@@ -7154,9 +7160,60 @@ function updateInvoiceActionBar() {
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-stamp btn-sm" id="inv-make-payment">→ Tạo phiếu thanh toán mới (ĐNTT)</button>
           ${draftDocs.length > 0 ? `<button class="btn btn-teal btn-sm" id="inv-add-to-draft-btn" style="background:#0D9488;color:#fff;border:none;font-weight:600;">📥 Thêm vào phiếu Nháp hiện có (${draftDocs.length})</button>` : ''}
+          <button class="btn btn-outline btn-sm" id="inv-bulk-delete-btn" style="color:#E11D48;border-color:#FECDD3;background:#FFF1F2;font-weight:600;" title="Xóa tất cả các hóa đơn đã chọn vào Thùng rác">🗑️ Xóa các hóa đơn đã chọn (${selected.length})</button>
           <button class="btn btn-ghost btn-sm" id="inv-clear-selection">Bỏ chọn</button>
         </div>
       </div>` : '';
+
+    const bulkDelBtn = document.getElementById('inv-bulk-delete-btn');
+    if (bulkDelBtn) bulkDelBtn.addEventListener('click', () => {
+      const ids = STATE.selectedInvoiceIds || [];
+      if (ids.length === 0) return;
+
+      const deletableIds = [];
+      const blockedInvs = [];
+      ids.forEach(id => {
+        const r = STATE.invoices.find(rec => rec.id === id);
+        if (r) {
+          const st = getInvoiceRecordStatus(r);
+          if (st.key === 'pending_signature' || st.key === 'submitted') {
+            blockedInvs.push(r);
+          } else {
+            deletableIds.push(id);
+          }
+        }
+      });
+
+      if (deletableIds.length === 0) {
+        showAlertModal('Không thể xoá', 'Tất cả các hoá đơn đã chọn đều đang nằm trong phiếu đã trình ký.');
+        return;
+      }
+
+      showConfirmModal(
+        `Xóa ${deletableIds.length} hóa đơn đã chọn?`,
+        `Bạn có chắc muốn chuyển <b>${deletableIds.length} hóa đơn</b> vào Thùng rác? ${blockedInvs.length > 0 ? `<br><span style="color:#E11D48;font-size:12px;">(${blockedInvs.length} hóa đơn đã trình ký sẽ được giữ lại)</span>` : ''}`,
+        async () => {
+          if (!STATE.trash) STATE.trash = [];
+          for (const id of deletableIds) {
+            const r = STATE.invoices.find(rec => rec.id === id);
+            if (r) {
+              const trashInv = JSON.parse(JSON.stringify(r));
+              trashInv.deletedAt = new Date().toISOString();
+              trashInv.deletedBy = currentUser().name;
+              trashInv.itemType = 'invoice';
+              STATE.trash.unshift(trashInv);
+              await removeInvoiceFromDraftVouchers(r);
+            }
+          }
+          await saveTrash();
+          STATE.invoices = STATE.invoices.filter(r => !deletableIds.includes(r.id));
+          STATE.selectedInvoiceIds = (STATE.selectedInvoiceIds || []).filter(id => !deletableIds.includes(id));
+          await saveInvoices(true);
+          updateInvoiceTableView();
+          showToast(`✓ Đã xóa ${deletableIds.length} hóa đơn vào Thùng rác`);
+        }
+      );
+    });
 
     const addDraftBtn = document.getElementById('inv-add-to-draft-btn');
     if (addDraftBtn) addDraftBtn.addEventListener('click', () => {
