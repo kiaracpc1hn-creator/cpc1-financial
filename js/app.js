@@ -5466,17 +5466,6 @@ function renderLoginScreen() {
           <button type="submit" class="btn btn-primary" style="width:100%;background:#0D9488;color:#FFFFFF;border:none;padding:12.5px;font-size:15px;font-weight:700;border-radius:10px;cursor:pointer;box-shadow:0 4px 12px rgba(13,148,136,0.3);transition:all 0.15s;">
             TIẾP TỤC (XÁC THỰC MÃ PIN) ➔
           </button>
-
-          <div style="margin-top:16px;padding:12px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;font-size:12px;color:#475569;line-height:1.5;box-sizing:border-box;">
-            <div style="font-weight:700;color:#0F172A;margin-bottom:4px;display:flex;align-items:center;gap:4px;">
-              <span>💡 Thông tin tài khoản mặc định</span>
-            </div>
-            <div>• <b>Mật khẩu mặc định:</b> <code style="background:#E2E8F0;padding:2px 6px;border-radius:4px;color:#0D9488;font-weight:700;font-family:var(--font-mono);">123</code></div>
-            <div>• <b>Mã PIN xác thực mặc định:</b> <code style="background:#E2E8F0;padding:2px 6px;border-radius:4px;color:#0D9488;font-weight:700;font-family:var(--font-mono);">1234</code></div>
-            <div style="margin-top:6px;font-size:11.5px;color:#64748B;">
-              Mã NV mẫu: <b>017481</b> (Tuyến - EXP), <b>015408</b> (Phương Anh - Docs), <b>018233</b> (Đăng - Docs), <b>018906</b> (Mai - EXP), <b>010023</b> (Hùng - Nhóm trưởng), <b>010024</b> (Nga - Nhóm trưởng Docs), <b>010005</b> (Lan - KTT), <b>010001</b> (Đức - GD).
-            </div>
-          </div>
         </form>
         ` : `
         <form id="pin-form">
