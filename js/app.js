@@ -406,12 +406,23 @@ function findBestPayeeMatch(rawName) {
 
   return cleaned;
 }
-async function saveInvoices() {
-  try {
-    const str = JSON.stringify(STATE.invoices);
-    STATE._rawStrInvoices = str;
-    await window.storage.set('invoices', str);
-  } catch (e) { showToast('Lỗi lưu kho hoá đơn'); }
+let _saveInvoicesTimer = null;
+async function saveInvoices(immediate = false) {
+  const saveTask = async () => {
+    try {
+      const str = JSON.stringify(STATE.invoices);
+      STATE._rawStrInvoices = str;
+      await window.storage.set('invoices', str);
+    } catch (e) { showToast('Lỗi lưu kho hoá đơn'); }
+  };
+
+  if (immediate) {
+    if (_saveInvoicesTimer) clearTimeout(_saveInvoicesTimer);
+    return await saveTask();
+  }
+
+  if (_saveInvoicesTimer) clearTimeout(_saveInvoicesTimer);
+  _saveInvoicesTimer = setTimeout(saveTask, 350);
 }
 async function saveTrash() {
   try {
@@ -3884,30 +3895,26 @@ function getFilteredInvoices() {
   if (statusFilter !== 'all') records = records.filter(r => getInvoiceRecordStatus(r).key === statusFilter);
   if (searchQuery) {
     records = records.filter(r => {
+      if (r.note && r.note.toLowerCase().includes(searchQuery)) return true;
+      if (r.seriesNo && r.seriesNo.toLowerCase().includes(searchQuery)) return true;
+      if (r.invoiceNumber && r.invoiceNumber.toLowerCase().includes(searchQuery)) return true;
+      if (r.invoiceRef && r.invoiceRef.toLowerCase().includes(searchQuery)) return true;
+      if (r.beneficiaryName && r.beneficiaryName.toLowerCase().includes(searchQuery)) return true;
+      if (r.requesterName && r.requesterName.toLowerCase().includes(searchQuery)) return true;
+      if (r.fileName && r.fileName.toLowerCase().includes(searchQuery)) return true;
+      if (r.date && r.date.toLowerCase().includes(searchQuery)) return true;
+      if (r.statementRefs && r.statementRefs.toLowerCase().includes(searchQuery)) return true;
+      if (r.rawText && r.rawText.toLowerCase().includes(searchQuery)) return true;
       const combined = invoiceCombinedNo(r);
-      const fields = [
-        r.note,
-        r.seriesNo,
-        r.invoiceNumber,
-        combined,
-        r.invoiceRef,
-        r.statementRefs,
-        r.rawText,
-        r.beneficiaryName,
-        r.requesterName,
-        r.fileName,
-        r.date,
-        fmtDate(r.date),
-        String(r.amount || ''),
-        fmtMoney(r.amount, r.currency)
-      ];
-      return fields.some(v => (v || '').toString().toLowerCase().includes(searchQuery));
+      if (combined && combined.toLowerCase().includes(searchQuery)) return true;
+      if (r.amount && String(r.amount).includes(searchQuery)) return true;
+      return false;
     });
   }
   records.sort((a, b) => {
-    const dA = new Date(a.date || a.uploadedAt || a.createdAt || 0);
-    const dB = new Date(b.date || b.uploadedAt || b.createdAt || 0);
-    return dB.getTime() - dA.getTime();
+    const tA = a._timeMs || (a._timeMs = new Date(a.date || a.uploadedAt || a.createdAt || 0).getTime());
+    const tB = b._timeMs || (b._timeMs = new Date(b.date || b.uploadedAt || b.createdAt || 0).getTime());
+    return tB - tA;
   });
   return records;
 }
