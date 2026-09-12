@@ -2717,7 +2717,12 @@ async function uploadInvoiceFiles(fileList) {
       }
 
       const attId = uid('att');
-      await window.storage.set('attachment:' + attId, dataUrl, true);
+      if (window.storage && window.storage._setLocal) {
+        await window.storage._setLocal('attachment:' + attId, dataUrl);
+        window.storage.set('attachment:' + attId, dataUrl, true).catch(() => {});
+      } else {
+        await window.storage.set('attachment:' + attId, dataUrl, false);
+      }
 
       // Kiểm tra cảnh báo trùng hoá đơn trong Kho
       const invNum = (extracted.invoiceNumber || '').trim();
@@ -2743,11 +2748,15 @@ async function uploadInvoiceFiles(fileList) {
       const stdSeller = findBestPayeeMatch(rawSeller);
       if (stdSeller) autoSyncPayeeToDirectory(stdSeller);
 
+      const todayStr = new Date().toISOString().split('T')[0];
+      const recordDate = extracted.date || todayStr;
+      const recordNote = extracted.description || (rawSeller ? `Chi phí hoá đơn ${rawSeller}` : `Hoá đơn ${file.name}`);
+
       const record = mkInvoiceRecord({
-        date: extracted.date || '',
+        date: recordDate,
         seriesNo: extracted.seriesNo || '',
         invoiceNumber: extracted.invoiceNumber || '',
-        note: extracted.description || '',
+        note: recordNote,
         beneficiaryName: stdSeller || rawSeller,
         amount: Number(extracted.amount) || 0,
         currency: extracted.currency === 'USD' ? 'USD' : 'VND',
@@ -4161,12 +4170,6 @@ function renderInvoices() {
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <button type="button" class="btn btn-primary btn-sm" id="manual-add-invoice-btn" title="Tạo một dòng chứng từ trống để nhập tay">
         ＋ Thêm chứng từ nhập tay
-      </button>
-      <button type="button" class="btn btn-outline btn-sm" id="clean-strange-invoices-btn" style="color:#DC2626;border-color:#FCA5A5;background:#FEF2F2;font-weight:700;" title="Tự động dọn dẹp các dòng hóa đơn lạ phát sinh không có Số HĐ hoặc Ký hiệu">
-        🧹 Dọn sạch hóa đơn lạ
-      </button>
-      <button type="button" class="btn btn-outline btn-sm" id="restore-before-sep11-btn" style="color:#C2410C;border-color:#FDBA74;background:#FFF7ED;font-weight:700;" title="Dọn dẹp và khôi phục toàn bộ cơ sở dữ liệu về trạng thái sạch sẽ trước ngày 11/09/2026">
-        ⏪ Khôi phục về trước 11/09
       </button>
       ${accessibleInvoices.length > 0 ? `
         <button type="button" class="btn btn-outline btn-sm" id="reparse-invoices-btn" title="Chạy lại bộ trích xuất thông minh nâng cấp cho toàn bộ hoá đơn trong kho">

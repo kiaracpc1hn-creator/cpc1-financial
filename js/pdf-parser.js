@@ -132,16 +132,52 @@ function parseInvoiceText(fullText, lines, filename) {
     }
   }
 
-  // If missing from text, extract from filename (e.g. C26TYY-00003992-SVJWYG7PXX7-DPH.pdf)
+  // If missing from text, extract from filename (e.g. C26TML-00002175-XWS41MQ4XJ2-DPH.pdf or 1C26TYY_00000541)
   if (filename) {
-    const fnMatch = filename.match(/([A-Z0-9]{4,10})[-_](\d{4,10})/i) || filename.match(/([A-Z0-9]+)[-_\|](\d{4,10})/i);
-    if (fnMatch) {
-      if (!seriesNo) {
-        const cand = fnMatch[1].toUpperCase();
-        if (!INVALID_SERIES.has(cand)) seriesNo = cand;
+    const cleanFn = filename.replace(/\.[a-z0-9]+$/i, '');
+    const tokens = cleanFn.split(/[-_\|\s]+/);
+
+    // 1. Series No from Filename
+    if (!seriesNo) {
+      for (const tok of tokens) {
+        const uTok = tok.toUpperCase();
+        if (/^([12]?[A-Z]{1,4}\d{2}[A-Z]{1,4}|C26TML|VC-?24E|26T)$/i.test(uTok) && !INVALID_SERIES.has(uTok)) {
+          seriesNo = uTok;
+          break;
+        }
       }
-      if (!invoiceNumber) {
-        invoiceNumber = fnMatch[2];
+    }
+
+    // 2. Invoice Number from Filename
+    if (!invoiceNumber) {
+      for (const tok of tokens) {
+        if (/^\d{1,8}$/.test(tok)) {
+          if (tok.length === 8 && (tok.startsWith('202') || tok.startsWith('201'))) continue;
+          invoiceNumber = tok;
+          break;
+        }
+      }
+    }
+
+    // 3. Fallback pattern match
+    if (!seriesNo || !invoiceNumber) {
+      const fnMatch = cleanFn.match(/([12]?[A-Z0-9]{3,8})[-_\|](\d{1,8})/i);
+      if (fnMatch) {
+        if (!seriesNo && !INVALID_SERIES.has(fnMatch[1].toUpperCase())) seriesNo = fnMatch[1].toUpperCase();
+        if (!invoiceNumber) invoiceNumber = fnMatch[2];
+      }
+    }
+
+    // 4. Date from Filename (YYYYMMDD, DDMMYYYY, YYYY-MM-DD, DD-MM-YYYY)
+    if (!dateStr) {
+      const dMatch = cleanFn.match(/\b(202[0-9])[-_.]?(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12][0-9]|3[01])\b/)
+        || cleanFn.match(/\b(0[1-9]|[12][0-9]|3[01])[-_.]?(0[1-9]|1[0-2])[-_.]?(202[0-9])\b/);
+      if (dMatch) {
+        if (dMatch[1].length === 4) {
+          dateStr = `${dMatch[1]}-${String(dMatch[2]).padStart(2, '0')}-${String(dMatch[3]).padStart(2, '0')}`;
+        } else {
+          dateStr = `${dMatch[3]}-${String(dMatch[2]).padStart(2, '0')}-${String(dMatch[1]).padStart(2, '0')}`;
+        }
       }
     }
   }
@@ -158,15 +194,29 @@ function parseInvoiceText(fullText, lines, filename) {
   // -------------------------------------------------------------
   // 2. Issue Date (Ngày lập)
   // -------------------------------------------------------------
-  const dateMatch = fullText.match(/Ngày(?:\s*\([^)]*\))?\s*(\d{1,2})\s*tháng(?:\s*\([^)]*\))?\s*(\d{1,2})\s*năm(?:\s*\([^)]*\))?\s*(\d{4})/i)
-    || fullText.match(/Date\s*[:\s]*(\d{1,2})\s*[\/\.-]\s*(\d{1,2})\s*[\/\.-]\s*(\d{4})/i)
-    || fullText.match(/(?:Hà\s*Nội|TP\.?\s*HCM|Đà\s*Nẵng|Hải\s*Phòng|Ngày|Date)[^0-9]*(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/i)
-    || fullText.match(/\b(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\b/);
-  if (dateMatch) {
-    const d = String(dateMatch[1]).padStart(2, "0");
-    const m = String(dateMatch[2]).padStart(2, "0");
-    const y = dateMatch[3];
-    dateStr = `${y}-${m}-${d}`;
+  if (!dateStr) {
+    const dateMatch = fullText.match(/Ngày(?:\s*\([^)]*\))?\s*(\d{1,2})\s*tháng(?:\s*\([^)]*\))?\s*(\d{1,2})\s*năm(?:\s*\([^)]*\))?\s*(\d{4})/i)
+      || fullText.match(/Date\s*[:\s]*(\d{1,2})\s*[\/\.-]\s*(\d{1,2})\s*[\/\.-]\s*(\d{4})/i)
+      || fullText.match(/(?:Hà\s*Nội|TP\.?\s*HCM|Đà\s*Nẵng|Hải\s*Phòng|Ngày|Date)[^0-9]*(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/i)
+      || fullText.match(/\b(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\b/)
+      || fullText.match(/\b(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})\b/);
+    if (dateMatch) {
+      if (dateMatch[1].length === 4) {
+        const y = dateMatch[1];
+        const m = String(dateMatch[2]).padStart(2, "0");
+        const d = String(dateMatch[3]).padStart(2, "0");
+        dateStr = `${y}-${m}-${d}`;
+      } else {
+        const d = String(dateMatch[1]).padStart(2, "0");
+        const m = String(dateMatch[2]).padStart(2, "0");
+        const y = dateMatch[3];
+        dateStr = `${y}-${m}-${d}`;
+      }
+    }
+  }
+
+  if (!dateStr) {
+    dateStr = new Date().toISOString().split('T')[0];
   }
 
   // -------------------------------------------------------------
