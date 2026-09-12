@@ -4162,6 +4162,9 @@ function renderInvoices() {
       <button type="button" class="btn btn-primary btn-sm" id="manual-add-invoice-btn" title="Tạo một dòng chứng từ trống để nhập tay">
         ＋ Thêm chứng từ nhập tay
       </button>
+      <button type="button" class="btn btn-outline btn-sm" id="clean-strange-invoices-btn" style="color:#DC2626;border-color:#FCA5A5;background:#FEF2F2;font-weight:700;" title="Tự động dọn dẹp các dòng hóa đơn lạ phát sinh không có Số HĐ hoặc Ký hiệu">
+        🧹 Dọn sạch hóa đơn lạ
+      </button>
       <button type="button" class="btn btn-outline btn-sm" id="restore-before-sep11-btn" style="color:#C2410C;border-color:#FDBA74;background:#FFF7ED;font-weight:700;" title="Dọn dẹp và khôi phục toàn bộ cơ sở dữ liệu về trạng thái sạch sẽ trước ngày 11/09/2026">
         ⏪ Khôi phục về trước 11/09
       </button>
@@ -6579,6 +6582,19 @@ function attachHandlers() {
   const reparseBtn = document.getElementById('reparse-invoices-btn');
   if (reparseBtn) reparseBtn.addEventListener('click', reparseAllExistingInvoices);
 
+  const cleanStrangeBtn = document.getElementById('clean-strange-invoices-btn');
+  if (cleanStrangeBtn) {
+    cleanStrangeBtn.addEventListener('click', () => {
+      showConfirmModal(
+        '🧹 Dọn sạch tất cả hóa đơn lạ?',
+        'Hệ thống sẽ tự động quét và lọc bỏ tất cả các dòng hóa đơn rác/hóa đơn lạ (không có Số HĐ, Ký hiệu hoặc không phải file hóa đơn thực sự). Bạn có muốn tiếp tục?',
+        async () => {
+          await cleanAllStrangeInvoices();
+        }
+      );
+    });
+  }
+
   const restoreSep11Btn = document.getElementById('restore-before-sep11-btn');
   if (restoreSep11Btn) {
     restoreSep11Btn.addEventListener('click', () => {
@@ -7403,6 +7419,30 @@ function updateInvoiceTableView() {
     const table = wrapper.querySelector('table');
     inner.style.width = (table ? table.scrollWidth : 0) + 'px';
   }
+}
+
+async function cleanAllStrangeInvoices() {
+  if (!STATE.invoices) STATE.invoices = [];
+  const beforeLen = STATE.invoices.length;
+
+  STATE.invoices = STATE.invoices.filter(r => {
+    if (!r) return false;
+    const invNum = (r.invoiceNumber || '').trim();
+    const sNo = (r.seriesNo || '').trim();
+    const ref = (r.invoiceRef || '').trim();
+
+    if (invNum || sNo || ref) return true;
+    if (r.fileName && !/^(document|file|doc)\.(pdf|jpg|png)$/i.test(r.fileName.trim())) {
+      return true;
+    }
+
+    return false;
+  });
+
+  const removed = beforeLen - STATE.invoices.length;
+  await saveInvoices(true);
+  updateInvoiceTableView();
+  showToast(`✓ Đã dọn sạch ${removed} hóa đơn lạ thành công!`);
 }
 
 async function reparseAllExistingInvoices() {

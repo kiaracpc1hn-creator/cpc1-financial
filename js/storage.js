@@ -162,21 +162,31 @@
     async _setLocal(key, value) {
       const db = await openDB();
       if (db) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
           try {
             const tx = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
             const req = store.put({ key, value });
             req.onsuccess = () => resolve(true);
-            req.onerror = () => {
-              try { localStorage.setItem('cpc1_' + key, value); resolve(true); } catch (e) { reject(e); }
+            req.onerror = (err) => {
+              try { localStorage.setItem('cpc1_' + key, value); resolve(true); } catch (e) {
+                console.warn(`[CPC1 Storage] Could not save "${key}" to local cache:`, e);
+                resolve(false);
+              }
             };
           } catch (err) {
-            try { localStorage.setItem('cpc1_' + key, value); resolve(true); } catch (e) { reject(e); }
+            try { localStorage.setItem('cpc1_' + key, value); resolve(true); } catch (e) {
+              console.warn(`[CPC1 Storage] Local cache error for "${key}":`, err);
+              resolve(false);
+            }
           }
         });
       } else {
-        localStorage.setItem('cpc1_' + key, value);
+        try {
+          localStorage.setItem('cpc1_' + key, value);
+        } catch (e) {
+          console.warn(`[CPC1 Storage] LocalStorage set item failed for "${key}":`, e);
+        }
         return true;
       }
     },
