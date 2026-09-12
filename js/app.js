@@ -2708,7 +2708,18 @@ async function uploadInvoiceFiles(fileList) {
       continue;
     }
     try {
-      const dataUrl = await readFileAsDataURL(file);
+      let dataUrl = '';
+      try {
+        dataUrl = await readFileAsDataURL(file);
+      } catch (readErr) {
+        console.error('FileReader error for:', file.name, readErr);
+      }
+
+      if (!dataUrl) {
+        showAlertModal('Lỗi đọc file', `Trình duyệt không thể đọc file "${file.name}".\n\nCó thể file đang mở ở phần mềm khác, bị khóa hoặc bị hỏng luồng dữ liệu. Bạn vui lòng mở file lên -> Bấm Ctrl+P -> Chọn "Lưu dưới dạng PDF" rồi tải lại bản mới nhé.`);
+        continue;
+      }
+
       let extracted = {};
       try {
         extracted = await extractInvoiceDataFromPdfFile(file, dataUrl);
@@ -2770,7 +2781,8 @@ async function uploadInvoiceFiles(fileList) {
       await saveInvoices();
     } catch (e) {
       console.error(e);
-      showAlertModal('Lỗi xử lý file', `Không thể lưu file "${file.name}".`);
+      const detailMsg = e && e.message ? ` (${e.message})` : '';
+      showAlertModal('Lỗi xử lý file', `Không thể lưu file "${file.name}"${detailMsg}.\n\nVui lòng thử mở file -> Bấm Ctrl+P -> Chọn "Lưu dưới dạng PDF" để tải lại.`);
     }
   }
 
