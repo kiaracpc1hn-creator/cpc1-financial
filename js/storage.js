@@ -109,7 +109,7 @@
 
     async get(key, isBinary = false, forceCloud = false) {
       // 0. Metadata or forceCloud directly from Firestore
-      if ((key === 'users' || key === 'invoices' || forceCloud) && this.isFirebaseConnected()) {
+      if ((key === 'users' || forceCloud) && this.isFirebaseConnected()) {
         const cloudRes = await this._getCloud(key);
         if (cloudRes) return cloudRes;
       }

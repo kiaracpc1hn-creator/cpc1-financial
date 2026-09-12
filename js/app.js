@@ -694,37 +694,10 @@ function readFileAsDataURL(file) {
   });
 }
 
-function parseIsoOrVnDate(dateStr) {
-  if (!dateStr) return null;
-  if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
-  const str = String(dateStr).trim();
-  if (!str) return null;
-
-  const vnMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (vnMatch) {
-    const day = parseInt(vnMatch[1], 10);
-    const month = parseInt(vnMatch[2], 10) - 1;
-    const year = parseInt(vnMatch[3], 10);
-    const d = new Date(year, month, day);
-    return isNaN(d.getTime()) ? null : d;
-  }
-
-  const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (isoMatch) {
-    const year = parseInt(isoMatch[1], 10);
-    const month = parseInt(isoMatch[2], 10) - 1;
-    const day = parseInt(isoMatch[3], 10);
-    const d = new Date(year, month, day);
-    return isNaN(d.getTime()) ? null : d;
-  }
-
-  const d = new Date(str);
-  return isNaN(d.getTime()) ? null : d;
-}
-
 function monthKey(dateStr) {
-  const d = parseIsoOrVnDate(dateStr);
-  if (!d) return 'unknown';
+  if (!dateStr) return 'unknown';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 'unknown';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
@@ -1290,114 +1263,19 @@ function showDuplicateInvoiceModal(info) {
   document.getElementById('dup-inv-close-btn').addEventListener('click', close);
 }
 
-function autoRestoreInvoicesFromVouchersAndCloud() {
-  if (!STATE.documents || STATE.documents.length === 0) return 0;
-  if (!STATE.invoices) STATE.invoices = [];
-
-  let restoredCount = 0;
-
-  for (const doc of STATE.documents) {
-    if (!doc || !doc.items || !Array.isArray(doc.items)) continue;
-
-    const docGroup = doc.group || getDocGroup(doc) || 'Nhóm EXP';
-
-    for (const it of doc.items) {
-      if (!it) continue;
-      const invNoStr = (it.invoiceNo || '').trim();
-      const attId = it.attachmentId;
-
-      if (!invNoStr && !attId) continue;
-
-      // Check if this invoice is already in STATE.invoices
-      const exists = STATE.invoices.some(r => {
-        if (attId && r.attachmentId && r.attachmentId === attId) return true;
-        if (invNoStr && r.invoiceNumber) {
-          const invNum = (r.invoiceNumber || '').trim();
-          const sNo = (r.seriesNo || '').trim().toUpperCase();
-          const combined = sNo ? `${sNo}|${invNum}` : invNum;
-          if (isSameInvoiceNo(combined, invNoStr)) return true;
-        }
-        return false;
-      });
-
-      if (!exists) {
-        let sNo = '';
-        let invNum = invNoStr;
-        if (invNoStr.includes('|')) {
-          const parts = invNoStr.split('|').map(p => p.trim());
-          sNo = parts[0];
-          invNum = parts[1] || parts[0];
-        }
-
-        const fallbackDate = doc.createdAt ? doc.createdAt.split('T')[0] : '';
-        const newInv = {
-          id: uid('inv'),
-          seriesNo: sNo,
-          invoiceNumber: invNum,
-          date: it.date || doc.documentDate || fallbackDate,
-          amount: Number(it.amount) || 0,
-          currency: doc.currency || 'VND',
-          beneficiaryName: getBeneficiaryName(doc) || '',
-          requesterName: doc.requesterName || '',
-          requesterId: doc.requesterId || '',
-          group: docGroup,
-          note: it.description || doc.contentSummary || '',
-          invoiceRef: it.invoiceRef || '',
-          attachmentId: attId || null,
-          uploadedAt: doc.createdAt || doc.documentDate || new Date().toISOString(),
-          isLocked: true
-        };
-
-        STATE.invoices.unshift(newInv);
-        restoredCount++;
-      }
-    }
-
-    // Also check doc.attachments
-    if (doc.attachments && Array.isArray(doc.attachments)) {
-      for (const att of doc.attachments) {
-        if (!att || !att.id) continue;
-        const exists = STATE.invoices.some(r => r.attachmentId === att.id);
-        if (!exists) {
-          const fallbackDate = doc.createdAt ? doc.createdAt.split('T')[0] : '';
-          const newInv = {
-            id: uid('inv'),
-            seriesNo: '',
-            invoiceNumber: '',
-            date: doc.documentDate || fallbackDate,
-            amount: computeTotal(doc) || 0,
-            currency: doc.currency || 'VND',
-            beneficiaryName: getBeneficiaryName(doc) || '',
-            requesterName: doc.requesterName || '',
-            requesterId: doc.requesterId || '',
-            group: docGroup,
-            note: doc.contentSummary || att.name || '',
-            invoiceRef: '',
-            attachmentId: att.id,
-            fileName: att.name || 'document.pdf',
-            uploadedAt: doc.createdAt || doc.documentDate || new Date().toISOString(),
-            isLocked: true
-          };
-          STATE.invoices.unshift(newInv);
-          restoredCount++;
-        }
-      }
-    }
-  }
-
-  if (restoredCount > 0) {
-    saveInvoices();
-  }
-  return restoredCount;
-}
-
 function cleanDuplicateInvoicesInRepo() {
   if (!STATE.invoices) STATE.invoices = [];
-  autoRestoreInvoicesFromVouchersAndCloud();
   if (STATE.invoices.length === 0) return;
 
+  const seen = new Set();
+  const cleaned = [];
   let patched = false;
+
   for (const r of STATE.invoices) {
+    if (!r.id) {
+      r.id = uid('inv');
+      patched = true;
+    }
     if (!r.seriesNo || r.seriesNo.trim() === '') {
       if (r.invoiceNumber === '1762375' || (r.fileName && /308788310630|BIÊN\s*LAI|CSHT/i.test(r.fileName))) {
         r.seriesNo = 'VC-24E';
@@ -1411,22 +1289,20 @@ function cleanDuplicateInvoicesInRepo() {
         patched = true;
       }
     }
+
+    const sNo = (r.seriesNo || '').trim().toUpperCase();
+    const invNum = (r.invoiceNumber || '').trim();
+    const key = `${sNo}|${invNum}`;
+
+    if (key !== '|' && seen.has(key)) {
+      continue;
+    }
+    if (key !== '|') seen.add(key);
+    cleaned.push(r);
   }
 
-  const seenIds = new Set();
-  const filtered = [];
-  for (const r of STATE.invoices) {
-    if (r && r.id) {
-      if (!seenIds.has(r.id)) {
-        seenIds.add(r.id);
-        filtered.push(r);
-      }
-    } else if (r) {
-      filtered.push(r);
-    }
-  }
-  if (patched || filtered.length < STATE.invoices.length) {
-    STATE.invoices = filtered;
+  if (cleaned.length !== STATE.invoices.length || patched) {
+    STATE.invoices = cleaned;
     saveInvoices();
   }
 }
@@ -4029,8 +3905,8 @@ function getFilteredInvoices() {
     });
   }
   records.sort((a, b) => {
-    const dA = parseIsoOrVnDate(a.date) || parseIsoOrVnDate(a.uploadedAt) || parseIsoOrVnDate(a.createdAt) || new Date(0);
-    const dB = parseIsoOrVnDate(b.date) || parseIsoOrVnDate(b.uploadedAt) || parseIsoOrVnDate(b.createdAt) || new Date(0);
+    const dA = new Date(a.date || a.uploadedAt || a.createdAt || 0);
+    const dB = new Date(b.date || b.uploadedAt || b.createdAt || 0);
     return dB.getTime() - dA.getTime();
   });
   return records;
