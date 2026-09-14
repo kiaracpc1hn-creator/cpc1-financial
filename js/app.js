@@ -2809,7 +2809,8 @@ async function uploadInvoiceFiles(fileList) {
   }
 
   STATE.invoiceUploading = false;
-  showToast('✓ Đã xử lý xong hoá đơn tải lên');
+  STATE._invSearch = '';
+  showToast('✓ Đã xử lý xong hoá đơn tải lên (hiển thị ngay ở đầu danh sách)');
   render();
 }
 
@@ -4053,9 +4054,22 @@ function getFilteredInvoices() {
     });
   }
   records.sort((a, b) => {
-    const tA = a._timeMs || (a._timeMs = new Date(a.date || a.uploadedAt || a.createdAt || 0).getTime());
-    const tB = b._timeMs || (b._timeMs = new Date(b.date || b.uploadedAt || b.createdAt || 0).getTime());
-    return tB - tA;
+    const getTs = r => {
+      if (r.uploadedAt) {
+        const t = new Date(r.uploadedAt).getTime();
+        if (!isNaN(t)) return t;
+      }
+      if (r.createdAt) {
+        const t = new Date(r.createdAt).getTime();
+        if (!isNaN(t)) return t;
+      }
+      if (r.date) {
+        const t = new Date(r.date).getTime();
+        if (!isNaN(t)) return t;
+      }
+      return 0;
+    };
+    return getTs(b) - getTs(a);
   });
   return records;
 }
