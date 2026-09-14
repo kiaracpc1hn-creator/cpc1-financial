@@ -7409,7 +7409,7 @@ function attachInvoiceTableHandlers() {
       }
     }
 
-    const processCreatePaymentDoc = async () => {
+    const processCreatePaymentDoc = () => {
       const currency = recs[0].currency || 'VND';
       showToast('Đang tạo Giấy đề nghị thanh toán từ các hoá đơn đã chọn…');
 
@@ -7423,25 +7423,17 @@ function attachInvoiceTableHandlers() {
           description: formatVoucherItemNote(r.note, r.invoiceRef),
           amount: r.amount || 0,
           invoiceRef: r.invoiceRef || '',
-          attachmentId: null
+          attachmentId: r.attachmentId || null
         };
-        if (r.attachmentId) {
-          try {
-            const stored = await window.storage.get('attachment:' + r.attachmentId, true);
-            if (stored) {
-              const newAttId = uid('att');
-              await window.storage.set('attachment:' + newAttId, stored.value, true);
-              doc.attachments.push({
-                id: newAttId,
-                fileName: r.fileName || 'hoa-don.pdf',
-                mimeType: 'application/pdf',
-                size: 0,
-                uploadedAt: new Date().toISOString(),
-                uploadedBy: currentUser().name
-              });
-              item.attachmentId = newAttId;
-            }
-          } catch (e) { console.error(e); }
+        if (r.attachmentId && !doc.attachments.some(a => a.id === r.attachmentId)) {
+          doc.attachments.push({
+            id: r.attachmentId,
+            fileName: r.fileName || 'hoa-don.pdf',
+            mimeType: 'application/pdf',
+            size: 0,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: currentUser().name
+          });
         }
         doc.items.push(item);
       }
@@ -7558,13 +7550,12 @@ function updateInvoiceActionBar() {
       updateInvoiceTableView();
     });
     const makePayBtn = document.getElementById('inv-make-payment');
-    if (makePayBtn) makePayBtn.addEventListener('click', async () => {
+    if (makePayBtn) makePayBtn.addEventListener('click', () => {
       const ids = STATE.selectedInvoiceIds || [];
       const recs = STATE.invoices.filter(r => ids.includes(r.id));
       if (recs.length === 0) return;
       checkDifferentBeneficiariesWarning(recs);
       const currency = recs[0].currency || 'VND';
-      showToast('Đang tạo Giấy đề nghị thanh toán từ các hoá đơn đã chọn…');
 
       const doc = mkDoc('payment', currentUser(), { currency, items: [], paymentMethod: 'cash' });
       for (let i = 0; i < recs.length; i++) {
@@ -7576,25 +7567,17 @@ function updateInvoiceActionBar() {
           description: formatVoucherItemNote(r.note, r.invoiceRef),
           amount: r.amount || 0,
           invoiceRef: r.invoiceRef || '',
-          attachmentId: null
+          attachmentId: r.attachmentId || null
         };
-        if (r.attachmentId) {
-          try {
-            const stored = await window.storage.get('attachment:' + r.attachmentId, true);
-            if (stored) {
-              const newAttId = uid('att');
-              await window.storage.set('attachment:' + newAttId, stored.value, true);
-              doc.attachments.push({
-                id: newAttId,
-                fileName: r.fileName || 'hoa-don.pdf',
-                mimeType: 'application/pdf',
-                size: 0,
-                uploadedAt: new Date().toISOString(),
-                uploadedBy: currentUser().name
-              });
-              item.attachmentId = newAttId;
-            }
-          } catch (e) { console.error(e); }
+        if (r.attachmentId && !doc.attachments.some(a => a.id === r.attachmentId)) {
+          doc.attachments.push({
+            id: r.attachmentId,
+            fileName: r.fileName || 'hoa-don.pdf',
+            mimeType: 'application/pdf',
+            size: 0,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: currentUser().name
+          });
         }
         doc.items.push(item);
       }
@@ -7604,7 +7587,7 @@ function updateInvoiceActionBar() {
       STATE.selectedInvoiceIds = [];
       STATE.page = 'form';
       render();
-      showToast(`Đã tạo ĐNTT nháp từ ${recs.length} hoá đơn`);
+      showToast(`✓ Đã tạo ĐNTT nháp từ ${recs.length} hoá đơn`);
     });
   }
 }
