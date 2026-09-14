@@ -1400,55 +1400,18 @@ function showDuplicateInvoiceModal(info) {
 }
 
 async function autoPurgeCorruptedInvoices() {
-  if (!STATE.invoices || STATE.invoices.length === 0) return 0;
-  const initialLen = STATE.invoices.length;
-
-  STATE.invoices = STATE.invoices.filter(inv => {
-    if (!inv) return false;
-    const note = (inv.note || '').toLowerCase();
-    const invNo = (inv.invoiceNumber || '').trim();
-    const sNo = (inv.seriesNo || '').trim();
-    const amountStr = String(inv.amount || inv.totalAmount || '').replace(/\D/g, '');
-    const dStr = (inv.date || inv.uploadedAt || '').trim();
-
-    // 1. Matches exact duplicate bugged rows from 19/08/2026: CPC1HN thanh toán hóa đơn chỉ hộ MTL / MTL (amount 2.842.200 or 7.020.000) with no series/number
-    if (!sNo && !invNo && (amountStr === '2842200' || amountStr === '7020000') && dStr.includes('2026-08-19')) {
-      return false;
-    }
-
-    // 2. Matches exact bugged row from 08/07/2026: Phí xin xác nhận ĐSQ Panama (invoice 0019205, amount 2.392.200)
-    if (!sNo && invNo === '0019205' && amountStr === '2392200' && note.includes('panama')) {
-      return false;
-    }
-
-    return true;
-  });
-
-  const purgedCount = initialLen - STATE.invoices.length;
-  if (purgedCount > 0) {
-    await saveInvoices(true);
-  }
-  return purgedCount;
+  return 0;
 }
 
 function cleanDuplicateInvoicesInRepo() {
   if (!STATE.invoices) STATE.invoices = [];
   if (STATE.invoices.length === 0) return;
 
-  const seen = new Set();
-  const cleaned = [];
   let patched = false;
-
   for (const r of STATE.invoices) {
     if (!r.id) {
       r.id = uid('inv');
       patched = true;
-    }
-    if (!r.seriesNo || r.seriesNo.trim() === '') {
-      if (r.invoiceNumber === '1762375' || (r.fileName && /308788310630|BIÊN\s*LAI|CSHT/i.test(r.fileName))) {
-        r.seriesNo = 'VC-24E';
-        patched = true;
-      }
     }
     if (!r.group || r.group === 'Không') {
       const computedGrp = getInvoiceGroup(r);
@@ -1457,23 +1420,12 @@ function cleanDuplicateInvoicesInRepo() {
         patched = true;
       }
     }
-
-    const sNo = (r.seriesNo || '').trim().toUpperCase();
-    const invNum = (r.invoiceNumber || '').trim();
-    // Unique key: if sNo or invNum exists, deduplicate by series & number. If both empty, use r.id to preserve all rows.
-    const key = (sNo || invNum) ? `${sNo}|${invNum}` : r.id;
-
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    cleaned.push(r);
   }
 
-  if (cleaned.length !== STATE.invoices.length || patched) {
-    STATE.invoices = cleaned;
+  if (patched) {
     saveInvoices();
   }
+}
 }
 
 function isSameInvoiceNo(inv1, inv2) {
@@ -2856,6 +2808,11 @@ async function uploadInvoiceFiles(fileList) {
 
   STATE.invoiceUploading = false;
   STATE._invSearch = '';
+  STATE._invMonthFilter = 'all';
+  STATE._invStatusFilter = 'all';
+  STATE._invRequesterFilter = 'all';
+  STATE._invBeneficiaryFilter = 'all';
+  STATE._invGroupFilter = 'all';
   showToast('✓ Đã xử lý xong hoá đơn tải lên (hiển thị ngay ở đầu danh sách)');
   render();
 }
@@ -3341,9 +3298,15 @@ function openManualInvoiceModal(initialData = {}) {
       isManual: true
     });
 
+    STATE._invSearch = '';
+    STATE._invMonthFilter = 'all';
+    STATE._invStatusFilter = 'all';
+    STATE._invRequesterFilter = 'all';
+    STATE._invBeneficiaryFilter = 'all';
+    STATE._invGroupFilter = 'all';
     STATE.invoices.unshift(newRecord);
     await saveInvoices();
-    showToast(`✓ Đã lưu chứng từ "${invoiceNumber}" vào kho`);
+    showToast(`✓ Đã lưu chứng từ "${invoiceNumber}" vào kho (hiển thị ngay ở đầu danh sách)`);
     render();
 
     if (addMore) {
