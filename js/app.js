@@ -1397,19 +1397,15 @@ async function autoPurgeCorruptedInvoices() {
     const invNo = (inv.invoiceNumber || '').trim();
     const sNo = (inv.seriesNo || '').trim();
     const amountStr = String(inv.amount || inv.totalAmount || '').replace(/\D/g, '');
+    const dStr = (inv.date || inv.uploadedAt || '').trim();
 
-    // 1. Matches duplicate bugged rows: CPC1HN thanh toán hóa đơn chỉ hộ MTL (amount 2.842.200)
-    if (note.includes('cpc1hn thanh toán hóa đơn chỉ hộ mtl') || (amountStr === '2842200' && !sNo && !invNo)) {
+    // 1. Matches exact duplicate bugged rows from 19/08/2026: CPC1HN thanh toán hóa đơn chỉ hộ MTL / MTL (amount 2.842.200 or 7.020.000) with no series/number
+    if (!sNo && !invNo && (amountStr === '2842200' || amountStr === '7020000') && dStr.includes('2026-08-19')) {
       return false;
     }
 
-    // 2. Matches bugged row: Phí xin xác nhận ĐSQ Panama (invoice 0019205, amount 2.392.200)
-    if ((invNo === '0019205' && amountStr === '2392200') || (note.includes('panama') && amountStr === '2392200')) {
-      return false;
-    }
-
-    // 3. Matches duplicate bugged rows: CPC1HN thanh toán hóa đơn MTL tháng 07.2026 (amount 7.020.000)
-    if (note.includes('cpc1hn thanh toán hóa đơn mtl tháng 07.2026') || note.includes('cpc1hn thanh toán hóa đơn mtl') || (amountStr === '7020000' && !sNo && !invNo)) {
+    // 2. Matches exact bugged row from 08/07/2026: Phí xin xác nhận ĐSQ Panama (invoice 0019205, amount 2.392.200)
+    if (!sNo && invNo === '0019205' && amountStr === '2392200' && note.includes('panama')) {
       return false;
     }
 
@@ -1452,16 +1448,8 @@ function cleanDuplicateInvoicesInRepo() {
 
     const sNo = (r.seriesNo || '').trim().toUpperCase();
     const invNum = (r.invoiceNumber || '').trim();
-    let key = `${sNo}|${invNum}`;
-
-    if (key === '|') {
-      // For empty series & invoice number, generate unique key from date, amount, note, seller to filter duplicate blank rows
-      const d = (r.date || '').trim();
-      const amt = String(r.amount || r.totalAmount || '').replace(/\D/g, '');
-      const nt = (r.note || '').trim().toLowerCase();
-      const seller = (r.sellerName || r.beneficiaryName || '').trim().toLowerCase();
-      key = `EMPTY|${d}|${amt}|${nt}|${seller}`;
-    }
+    // Unique key: if sNo or invNum exists, deduplicate by series & number. If both empty, use r.id to preserve all rows.
+    const key = (sNo || invNum) ? `${sNo}|${invNum}` : r.id;
 
     if (seen.has(key)) {
       continue;
@@ -4533,8 +4521,11 @@ function renderForm() {
 
     <div class="field-row">
       <div class="field">
-        <label>Ngày lập phiếu</label>
-        <input type="date" id="f-documentDate" value="${doc.documentDate}">
+        <label>Ngày lập phiếu (ngày/tháng/năm)</label>
+        <div style="position:relative;display:inline-block;width:100%;">
+          <input type="text" id="f-documentDateText" value="${fmtDate(doc.documentDate) || ''}" placeholder="dd/mm/yyyy" style="width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-weight:700;color:#0F172A;box-sizing:border-box;" title="Nhập ngày dạng dd/mm/yyyy hoặc chọn từ lịch">
+          <input type="date" id="f-documentDate" value="${doc.documentDate || ''}" style="position:absolute;top:0;right:0;width:32px;height:100%;opacity:0;cursor:pointer;" title="Mở lịch chọn ngày">
+        </div>
       </div>
       <div class="field">
         <label>Loại tiền tệ</label>
@@ -4913,7 +4904,7 @@ function computeBodyBlock(doc) {
           ${(doc.items || []).map((it, i) => `
             <tr>
               <td style="text-align:center;">${i + 1}</td>
-              <td style="text-align:center;">${it.date || ''}</td>
+              <td style="text-align:center;">${fmtDate(it.date)}</td>
               <td style="text-align:center;">${it.description || ''}</td>
               <td class="amount-cell" style="text-align:center;">${fmtMoney(it.amount, doc.currency)}</td>
             </tr>`).join('')}
@@ -7162,38 +7153,64 @@ function attachInvoiceTableHandlers() {
     }
   }));
 
-  document.querySelectorAll('[data-invnum]').forEach(el => el.addEventListener('change', () => {
-    const rec = STATE.invoices.find(r => r.id === el.dataset.invnum);
-    if (rec) { rec.invoiceNumber = el.value.trim(); saveInvoices().catch(err => console.error(err)); showToast('Đã lưu số hoá đơn'); }
-  }));
+  document.querySelectorAll('[data-invnum]').forEach(el => {
+    const updateNum = () => {
+      const rec = STATE.invoices.find(r => r.id === el.dataset.invnum);
+      if (rec) {
+        rec.invoiceNumber = el.value.trim();
+        saveInvoices().catch(err => console.error(err));
+      }
+    };
+    el.addEventListener('input', updateNum);
+    el.addEventListener('change', updateNum);
+    el.addEventListener('blur', updateNum);
+  });
 
-  document.querySelectorAll('[data-invbeneficiary]').forEach(el => el.addEventListener('change', () => {
-    const rec = STATE.invoices.find(r => r.id === el.dataset.invbeneficiary);
-    if (rec) {
-      const typed = el.value.trim();
-      const stdName = findBestPayeeMatch(typed);
-      rec.beneficiaryName = stdName;
-      el.value = stdName;
-      if (stdName) autoSyncPayeeToDirectory(stdName);
-      saveInvoices().catch(err => console.error(err));
-      showToast('Đã lưu & chuẩn hoá người thụ hưởng theo Danh bạ');
-    }
-  }));
+  document.querySelectorAll('[data-invbeneficiary]').forEach(el => {
+    const updateBen = () => {
+      const rec = STATE.invoices.find(r => r.id === el.dataset.invbeneficiary);
+      if (rec) {
+        rec.beneficiaryName = el.value.trim();
+        saveInvoices().catch(err => console.error(err));
+      }
+    };
+    el.addEventListener('input', updateBen);
+    el.addEventListener('change', () => {
+      const rec = STATE.invoices.find(r => r.id === el.dataset.invbeneficiary);
+      if (rec) {
+        const typed = el.value.trim();
+        const stdName = findBestPayeeMatch(typed);
+        rec.beneficiaryName = stdName;
+        el.value = stdName;
+        if (stdName) autoSyncPayeeToDirectory(stdName);
+        saveInvoices().catch(err => console.error(err));
+      }
+    });
+    el.addEventListener('blur', updateBen);
+  });
 
-  document.querySelectorAll('[data-invnote]').forEach(el => el.addEventListener('change', () => {
-    const rec = STATE.invoices.find(r => r.id === el.dataset.invnote);
-    if (rec) { rec.note = el.value.trim(); saveInvoices().catch(err => console.error(err)); showToast('Đã lưu nội dung'); }
-  }));
+  document.querySelectorAll('[data-invnote]').forEach(el => {
+    const updateNote = () => {
+      const rec = STATE.invoices.find(r => r.id === el.dataset.invnote);
+      if (rec) {
+        rec.note = el.value.trim();
+        saveInvoices().catch(err => console.error(err));
+      }
+    };
+    el.addEventListener('input', updateNote);
+    el.addEventListener('change', updateNote);
+    el.addEventListener('blur', updateNote);
+  });
 
   document.querySelectorAll('[data-invref]').forEach(el => {
     const updateRef = () => {
       const rec = STATE.invoices.find(r => r.id === el.dataset.invref);
-      if (rec && rec.invoiceRef !== el.value.trim()) {
+      if (rec) {
         rec.invoiceRef = el.value.trim();
         saveInvoices().catch(err => console.error(err));
-        showToast('Đã lưu số Invoice');
       }
     };
+    el.addEventListener('input', updateRef);
     el.addEventListener('change', updateRef);
     el.addEventListener('blur', updateRef);
   });
@@ -7618,7 +7635,34 @@ function bindFormInputs() {
     });
   };
 
-  bind('f-documentDate', 'documentDate');
+  const dateTxtEl = document.getElementById('f-documentDateText');
+  const datePickerEl = document.getElementById('f-documentDate');
+
+  if (dateTxtEl) {
+    const syncTextDate = (e) => {
+      const parsedIso = parseFormattedDateToIso(e.target.value);
+      doc.documentDate = parsedIso;
+      if (datePickerEl) datePickerEl.value = parsedIso;
+      refreshDynamicParts();
+    };
+    dateTxtEl.addEventListener('input', syncTextDate);
+    dateTxtEl.addEventListener('change', syncTextDate);
+    dateTxtEl.addEventListener('blur', (e) => {
+      const parsedIso = parseFormattedDateToIso(e.target.value);
+      doc.documentDate = parsedIso;
+      e.target.value = fmtDate(parsedIso);
+      if (datePickerEl) datePickerEl.value = parsedIso;
+      refreshDynamicParts();
+    });
+  }
+
+  if (datePickerEl) {
+    datePickerEl.addEventListener('change', e => {
+      doc.documentDate = e.target.value;
+      if (dateTxtEl) dateTxtEl.value = fmtDate(e.target.value);
+      refreshDynamicParts();
+    });
+  }
   bind('f-contentSummary', 'contentSummary');
   bind('f-subject', 'subject');
   bind('f-reason', 'reason');

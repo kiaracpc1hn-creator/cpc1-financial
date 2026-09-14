@@ -66,8 +66,27 @@ function fmtMoney(n, currency = 'VND') {
 
 function fmtDate(d) {
   if (!d) return '';
+  const str = String(d).trim();
+  if (!str) return '';
+
+  const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    const yyyy = isoMatch[1];
+    const mm = isoMatch[2].padStart(2, '0');
+    const dd = isoMatch[3].padStart(2, '0');
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  const vnMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/);
+  if (vnMatch) {
+    const dd = vnMatch[1].padStart(2, '0');
+    const mm = vnMatch[2].padStart(2, '0');
+    const yyyy = vnMatch[3];
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
   const dt = new Date(d);
-  if (isNaN(dt.getTime())) return d;
+  if (isNaN(dt.getTime())) return str;
   const dd = String(dt.getDate()).padStart(2, '0');
   const mm = String(dt.getMonth() + 1).padStart(2, '0');
   const yyyy = dt.getFullYear();
@@ -75,13 +94,13 @@ function fmtDate(d) {
 }
 
 function fmtDateVN(d) {
-  if (!d) return '';
-  const dt = new Date(d);
-  if (isNaN(dt.getTime())) return d;
-  const dd = String(dt.getDate()).padStart(2, '0');
-  const mm = String(dt.getMonth() + 1).padStart(2, '0');
-  const yyyy = dt.getFullYear();
-  return `ngày ${dd} tháng ${mm} năm ${yyyy}`;
+  if (!d) return 'tháng ... năm ...';
+  const formatted = fmtDate(d);
+  const parts = formatted.split('/');
+  if (parts.length === 3) {
+    return `ngày ${parts[0]} tháng ${parts[1]} năm ${parts[2]}`;
+  }
+  return String(d);
 }
 
 // Export to window
