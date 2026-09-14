@@ -500,6 +500,24 @@ function findBestPayeeMatch(rawName) {
 
   return cleaned;
 }
+
+async function autoSyncPayeeToDirectory(payeeName) {
+  if (!payeeName || !payeeName.trim()) return;
+  const name = payeeName.trim();
+  if (!STATE.payees) STATE.payees = [];
+  const exists = STATE.payees.some(p => p.name && p.name.trim().toLowerCase() === name.toLowerCase());
+  if (!exists) {
+    STATE.payees.push({
+      id: uid('p'),
+      name: name,
+      accountNumber: '',
+      bankName: '',
+      isInternal: false
+    });
+    await savePayees();
+  }
+}
+window.autoSyncPayeeToDirectory = autoSyncPayeeToDirectory;
 let _saveInvoicesTimer = null;
 async function saveInvoices(immediate = false) {
   const saveTask = async () => {
@@ -2757,7 +2775,11 @@ async function uploadInvoiceFiles(fileList) {
 
       const rawSeller = extracted.sellerName || '';
       const stdSeller = findBestPayeeMatch(rawSeller);
-      if (stdSeller) autoSyncPayeeToDirectory(stdSeller);
+      try {
+        if (stdSeller && typeof autoSyncPayeeToDirectory === 'function') {
+          autoSyncPayeeToDirectory(stdSeller);
+        }
+      } catch (errSync) {}
 
       const todayStr = new Date().toISOString().split('T')[0];
       const recordDate = extracted.date || todayStr;
@@ -2782,7 +2804,7 @@ async function uploadInvoiceFiles(fileList) {
     } catch (e) {
       console.error(e);
       const detailMsg = e && e.message ? ` (${e.message})` : '';
-      showAlertModal('Lỗi xử lý file', `Không thể lưu file "${file.name}"${detailMsg}.\n\nVui lòng thử mở file -> Bấm Ctrl+P -> Chọn "Lưu dưới dạng PDF" để tải lại.`);
+      showAlertModal('Lỗi xử lý file', `Không thể lưu file "${file.name}"${detailMsg}.`);
     }
   }
 
