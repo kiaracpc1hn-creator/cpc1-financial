@@ -2743,7 +2743,7 @@ function getInvoiceRecordStatus(rec) {
   }
 
   if (matchingDoc.status === 'signed') {
-    return { key: 'submitted', label: 'Đã trình ký', cls: 'b-approved', docId: matchingDoc.id };
+    return { key: 'submitted', label: 'Đã ký', cls: 'b-approved', docId: matchingDoc.id };
   }
   if (matchingDoc.status === 'pending_signature') {
     return { key: 'pending_signature', label: 'Đang trình ký', cls: 'b-pending', docId: matchingDoc.id };
@@ -2971,7 +2971,14 @@ function deleteInvoiceRecord(id) {
   const st = getInvoiceRecordStatus(rec);
   let warningNote = '';
 
-  if (st.key === 'pending_signature' || st.key === 'submitted') {
+  if (st.key === 'submitted') {
+    const dupDoc = STATE.documents.find(d => d.id === st.docId);
+    const docCodeText = dupDoc ? (dupDoc.docNo || dupDoc.formCode) : 'phiếu';
+    showAlertModal('🔒 Hoá đơn đã ký duyệt — Không thể xoá', `Hoá đơn <b>${rec.invoiceNumber || rec.fileName || ''}</b> đang thuộc phiếu <b>${docCodeText}</b> đã được ký duyệt thành công.<br><br>Hệ thống đã tự động khoá không cho phép xoá để bảo vệ tính chính xác của dữ liệu tài chính.`);
+    return;
+  }
+
+  if (st.key === 'pending_signature') {
     const dupDoc = STATE.documents.find(d => d.id === st.docId);
     const docCodeText = dupDoc ? (dupDoc.docNo || dupDoc.formCode) : 'phiếu';
     const statusLabel = dupDoc ? (STATUS_LABEL[dupDoc.status] || dupDoc.status) : st.label;
@@ -4294,7 +4301,11 @@ function renderInvoiceTableHtml(records, selected) {
                 `}
                 <button class="icon-btn" data-viewinvhistory="${r.id}" title="Xem lịch sử chỉnh sửa & thao tác">📜</button>
                 ${st.docId ? `<button class="icon-btn" data-gotodoc="${st.docId}" title="Xem phiếu liên kết">🔗</button>` : ''}
-                <button class="icon-btn icon-btn-danger" data-delinvoice="${r.id}" title="${(st.key === 'pending_signature' || st.key === 'submitted') ? `Hoá đơn thuộc phiếu ${st.label} - Bấm để chuyển vào Thùng rác` : 'Xoá dòng chứng từ này'}">🗑</button>
+                ${st.key === 'submitted' ? `
+                  <button class="icon-btn" style="cursor:not-allowed;color:#64748B;background:#F1F5F9;border:1.5px solid #CBD5E1;font-weight:600;padding:2px 6px;border-radius:6px;font-size:11.5px;" onclick="showAlertModal('🔒 Hoá đơn đã ký duyệt — Không thể xoá', 'Hoá đơn này thuộc phiếu đã được ký duyệt thành công. Hệ thống đã khoá không cho phép xoá để bảo đảm tính chính xác của chứng từ và dữ liệu tài chính!')" title="🔒 Hoá đơn thuộc phiếu đã ký duyệt — Đã khoá không cho phép xoá để tránh sai lệch dữ liệu tài chính">🔒 Khoá xoá</button>
+                ` : `
+                  <button class="icon-btn icon-btn-danger" data-delinvoice="${r.id}" title="${st.key === 'pending_signature' ? `Hoá đơn thuộc phiếu ${st.label} - Bấm để chuyển vào Thùng rác` : 'Xoá dòng chứng từ này'}">🗑</button>
+                `}
               </div>
             </td>
           </tr>`;
