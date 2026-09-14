@@ -200,6 +200,7 @@ async function loadAll() {
     STATE.invoices = r ? JSON.parse(r.value) : [];
     await autoPurgeCorruptedInvoices();
     cleanDuplicateInvoicesInRepo();
+    recoverMissingInvoicesFromDocuments();
   } catch (e) { STATE.invoices = []; }
 
   try {
@@ -1426,11 +1427,13 @@ function cleanDuplicateInvoicesInRepo() {
   if (!STATE.invoices) STATE.invoices = [];
   if (STATE.invoices.length === 0) return;
 
-  const seen = new Set();
+  const seenIds = new Set();
+  const seenAtts = new Set();
   const cleaned = [];
   let patched = false;
 
   for (const r of STATE.invoices) {
+    if (!r) continue;
     if (!r.id) {
       r.id = uid('inv');
       patched = true;
@@ -1449,15 +1452,15 @@ function cleanDuplicateInvoicesInRepo() {
       }
     }
 
-    const sNo = (r.seriesNo || '').trim().toUpperCase();
-    const invNum = (r.invoiceNumber || '').trim();
-    // Unique key: if sNo or invNum exists, deduplicate by series & number. If both empty, use r.id to preserve all rows.
-    const key = (sNo || invNum) ? `${sNo}|${invNum}` : r.id;
-
-    if (seen.has(key)) {
+    if (seenIds.has(r.id)) {
       continue;
     }
-    seen.add(key);
+    if (r.attachmentId && seenAtts.has(r.attachmentId)) {
+      continue;
+    }
+
+    seenIds.add(r.id);
+    if (r.attachmentId) seenAtts.add(r.attachmentId);
     cleaned.push(r);
   }
 
@@ -1465,6 +1468,76 @@ function cleanDuplicateInvoicesInRepo() {
     STATE.invoices = cleaned;
     saveInvoices();
   }
+}
+
+function recoverMissingInvoicesFromDocuments() {
+  if (!STATE.documents || !STATE.invoices) return 0;
+  let recoveredCount = 0;
+
+  for (const doc of STATE.documents) {
+    const items = [...(doc.items || []), ...(doc.spentItems || [])];
+    for (const it of items) {
+      if (!it) continue;
+      const attId = it.attachmentId;
+      const invNoStr = (it.invoiceNo || '').trim();
+
+      if (!attId && !invNoStr) continue;
+
+      // Skip if invoice was explicitly moved to Trash by user
+      const isInTrash = (STATE.trash || []).some(t => 
+        (attId && t.attachmentId && attId === t.attachmentId) ||
+        (t.id && attId && t.id === attId) ||
+        matchInvoiceRecordWithDocItem(t, invNoStr, attId)
+      );
+      if (isInTrash) continue;
+
+      const exists = STATE.invoices.some(r => 
+        (attId && r.attachmentId && attId === r.attachmentId) ||
+        matchInvoiceRecordWithDocItem(r, invNoStr, attId)
+      );
+
+      if (!exists) {
+        let seriesNo = '';
+        let invoiceNumber = invNoStr;
+        if (invNoStr.includes('|')) {
+          const parts = invNoStr.split('|');
+          seriesNo = parts[0].trim();
+          invoiceNumber = parts[1].trim();
+        } else if (invNoStr.includes('/')) {
+          const parts = invNoStr.split('/');
+          seriesNo = parts[0].trim();
+          invoiceNumber = parts[1].trim();
+        }
+
+        const att = (doc.attachments || []).find(a => a.id === attId);
+        const fileName = att ? att.fileName : (invoiceNumber ? `HoaDon_${invoiceNumber}.pdf` : 'hoa-don.pdf');
+
+        const rec = mkInvoiceRecord({
+          id: uid('inv'),
+          date: it.date || doc.documentDate || '',
+          seriesNo: seriesNo,
+          invoiceNumber: invoiceNumber,
+          amount: it.amount || 0,
+          note: it.description || '',
+          invoiceRef: it.invoiceRef || '',
+          attachmentId: attId || null,
+          fileName: fileName,
+          requesterId: doc.requesterId || currentUser().id,
+          requesterName: doc.requesterName || currentUser().name,
+          department: doc.department || currentUser().department,
+          group: doc.group || getDocGroup(doc)
+        });
+
+        STATE.invoices.push(rec);
+        recoveredCount++;
+      }
+    }
+  }
+
+  if (recoveredCount > 0) {
+    saveInvoices(true);
+  }
+  return recoveredCount;
 }
 
 function isSameInvoiceNo(inv1, inv2) {
