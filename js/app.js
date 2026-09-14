@@ -7084,21 +7084,57 @@ function attachInvoiceTableHandlers() {
       const benEl = tr.querySelector('[data-invbeneficiary]');
       if (benEl) {
         const typed = benEl.value.trim();
-        const stdName = findBestPayeeMatch(typed);
-        rec.beneficiaryName = stdName;
-        if (stdName) autoSyncPayeeToDirectory(stdName);
+        rec.beneficiaryName = typed;
+        if (typed) autoSyncPayeeToDirectory(typed);
       }
     }
 
     const currentlyLocked = rec.isLocked !== false;
-    rec.isLocked = !currentlyLocked;
-    await saveInvoices(true);
-    updateInvoiceTableView();
-    if (rec.isLocked) {
+    const isNowLocked = !currentlyLocked;
+    rec.isLocked = isNowLocked;
+
+    // Instant in-place DOM updates for row inputs & textarea
+    if (tr) {
+      tr.querySelectorAll('input, textarea').forEach(input => {
+        if (input.classList.contains('inv-select')) return;
+        if (isNowLocked) {
+          input.setAttribute('readonly', 'true');
+          input.setAttribute('tabindex', '-1');
+          input.setAttribute('title', '🔒 Hoá đơn đang được khoá để tránh chỉnh sửa nhầm. Bấm 🔓 Mở khoá ở cột Thao tác nếu cần chỉnh sửa.');
+          if (input.tagName.toLowerCase() === 'textarea') {
+            input.style.cssText += 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;line-height:1.45;';
+          } else {
+            input.style.cssText += 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:600;';
+          }
+        } else {
+          input.removeAttribute('readonly');
+          input.removeAttribute('tabindex');
+          input.removeAttribute('title');
+          input.style.background = '#FFFFFF';
+          input.style.color = '#0F172A';
+          input.style.border = '1px solid var(--line)';
+          input.style.cursor = 'text';
+          input.style.fontWeight = '700';
+        }
+      });
+    }
+
+    // Toggle button UI instantly (0ms response)
+    if (isNowLocked) {
+      el.className = 'btn btn-outline btn-sm';
+      el.style.cssText = 'padding:2px 7px;font-size:11.5px;color:#0D9488;border-color:#99F6E4;background:#F0FDFA;font-weight:600;';
+      el.title = 'Bấm để mở khoá và cho phép chỉnh sửa dòng hoá đơn này';
+      el.innerHTML = '🔓 Mở khoá';
       showToast(`🔒 Đã lưu & khoá chứng từ ${rec.invoiceNumber ? 'số ' + rec.invoiceNumber : ''}`);
     } else {
+      el.className = 'btn btn-sm';
+      el.style.cssText = 'padding:2px 7px;font-size:11.5px;color:#FFFFFF;background:#059669;border:none;font-weight:700;';
+      el.title = 'Bấm để hoàn tất chỉnh sửa, lưu và khoá hoá đơn này lại';
+      el.innerHTML = '🔒 Lưu & Khoá';
       showToast(`🔓 Đã mở khoá chứng từ ${rec.invoiceNumber ? 'số ' + rec.invoiceNumber : ''} — Anh/chị có thể chỉnh sửa`);
     }
+
+    saveInvoices().catch(err => console.error(err));
   }));
 
   document.querySelectorAll('[data-invdate]').forEach(el => el.addEventListener('change', (e) => {
@@ -7170,22 +7206,14 @@ function attachInvoiceTableHandlers() {
     const updateBen = () => {
       const rec = STATE.invoices.find(r => r.id === el.dataset.invbeneficiary);
       if (rec) {
-        rec.beneficiaryName = el.value.trim();
+        const typed = el.value.trim();
+        rec.beneficiaryName = typed;
+        if (typed) autoSyncPayeeToDirectory(typed);
         saveInvoices().catch(err => console.error(err));
       }
     };
     el.addEventListener('input', updateBen);
-    el.addEventListener('change', () => {
-      const rec = STATE.invoices.find(r => r.id === el.dataset.invbeneficiary);
-      if (rec) {
-        const typed = el.value.trim();
-        const stdName = findBestPayeeMatch(typed);
-        rec.beneficiaryName = stdName;
-        el.value = stdName;
-        if (stdName) autoSyncPayeeToDirectory(stdName);
-        saveInvoices().catch(err => console.error(err));
-      }
-    });
+    el.addEventListener('change', updateBen);
     el.addEventListener('blur', updateBen);
   });
 
