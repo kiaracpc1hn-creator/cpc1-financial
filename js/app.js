@@ -1426,7 +1426,6 @@ function cleanDuplicateInvoicesInRepo() {
     saveInvoices();
   }
 }
-}
 
 function isSameInvoiceNo(inv1, inv2) {
   if (!inv1 || !inv2) return false;
