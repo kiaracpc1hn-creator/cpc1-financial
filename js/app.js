@@ -1319,7 +1319,7 @@ function deleteDoc(id) {
     return;
   }
 
-  showConfirmModal('Chuyển phiếu vào Thùng rác?', `Bạn có chắc chắn muốn xoá phiếu ${doc.docNo || doc.formCode}? Phiếu sẽ được chuyển vào Thùng rác và có thể khôi phục lại bất kỳ lúc nào.`, async () => {
+  showConfirmModal('Chuyển phiếu vào Thùng rác?', `Bạn có chắc chắn muốn xoá phiếu ${doc.docNo || doc.formCode}? Phiếu sẽ được chuyển vào Thùng rác và có thể khôi phục lại bất kỳ lúc nào.`, () => {
     const trashDoc = JSON.parse(JSON.stringify(doc));
     trashDoc.deletedAt = new Date().toISOString();
     trashDoc.deletedBy = currentUser().name;
@@ -1327,13 +1327,16 @@ function deleteDoc(id) {
 
     if (!STATE.trash) STATE.trash = [];
     STATE.trash.unshift(trashDoc);
-    await saveTrash();
 
     STATE.documents = STATE.documents.filter(d => d.id !== id);
-    await saveDocuments();
+
+    // 1. INSTANT UI UPDATE (0ms delay)
     STATE.page = 'list';
     render();
     showToast('✓ Đã chuyển phiếu vào Thùng rác thành công!');
+
+    // 2. BACKGROUND ASYNC SAVING
+    Promise.all([saveTrash(), saveDocuments()]).catch(err => console.error('Error saving deleted document:', err));
   });
 }
 
