@@ -521,15 +521,6 @@ async function autoSyncPayeeToDirectory(payeeName) {
 window.autoSyncPayeeToDirectory = autoSyncPayeeToDirectory;
 let _saveInvoicesTimer = null;
 async function saveInvoices(immediate = false) {
-  try {
-    const docsChanged = typeof syncAllInvoicesToDocuments === 'function' && syncAllInvoicesToDocuments();
-    if (docsChanged) {
-      saveDocuments().catch(e => console.error(e));
-    }
-  } catch (e) {
-    console.error('Error syncing invoices to documents:', e);
-  }
-
   const saveTask = async () => {
     try {
       const str = JSON.stringify(STATE.invoices);
@@ -1400,18 +1391,55 @@ function showDuplicateInvoiceModal(info) {
 }
 
 async function autoPurgeCorruptedInvoices() {
-  return 0;
+  if (!STATE.invoices || STATE.invoices.length === 0) return 0;
+  const initialLen = STATE.invoices.length;
+
+  STATE.invoices = STATE.invoices.filter(inv => {
+    if (!inv) return false;
+    const note = (inv.note || '').toLowerCase();
+    const invNo = (inv.invoiceNumber || '').trim();
+    const sNo = (inv.seriesNo || '').trim();
+    const amountStr = String(inv.amount || inv.totalAmount || '').replace(/\D/g, '');
+    const dStr = (inv.date || inv.uploadedAt || '').trim();
+
+    // 1. Matches exact duplicate bugged rows from 19/08/2026: CPC1HN thanh toán hóa đơn chỉ hộ MTL / MTL (amount 2.842.200 or 7.020.000) with no series/number
+    if (!sNo && !invNo && (amountStr === '2842200' || amountStr === '7020000') && dStr.includes('2026-08-19')) {
+      return false;
+    }
+
+    // 2. Matches exact bugged row from 08/07/2026: Phí xin xác nhận ĐSQ Panama (invoice 0019205, amount 2.392.200)
+    if (!sNo && invNo === '0019205' && amountStr === '2392200' && note.includes('panama')) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const purgedCount = initialLen - STATE.invoices.length;
+  if (purgedCount > 0) {
+    await saveInvoices(true);
+  }
+  return purgedCount;
 }
 
 function cleanDuplicateInvoicesInRepo() {
   if (!STATE.invoices) STATE.invoices = [];
   if (STATE.invoices.length === 0) return;
 
+  const seen = new Set();
+  const cleaned = [];
   let patched = false;
+
   for (const r of STATE.invoices) {
     if (!r.id) {
       r.id = uid('inv');
       patched = true;
+    }
+    if (!r.seriesNo || r.seriesNo.trim() === '') {
+      if (r.invoiceNumber === '1762375' || (r.fileName && /308788310630|BIÊN\s*LAI|CSHT/i.test(r.fileName))) {
+        r.seriesNo = 'VC-24E';
+        patched = true;
+      }
     }
     if (!r.group || r.group === 'Không') {
       const computedGrp = getInvoiceGroup(r);
@@ -1420,9 +1448,21 @@ function cleanDuplicateInvoicesInRepo() {
         patched = true;
       }
     }
+
+    const sNo = (r.seriesNo || '').trim().toUpperCase();
+    const invNum = (r.invoiceNumber || '').trim();
+    // Unique key: if sNo or invNum exists, deduplicate by series & number. If both empty, use r.id to preserve all rows.
+    const key = (sNo || invNum) ? `${sNo}|${invNum}` : r.id;
+
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    cleaned.push(r);
   }
 
-  if (patched) {
+  if (cleaned.length !== STATE.invoices.length || patched) {
+    STATE.invoices = cleaned;
     saveInvoices();
   }
 }
@@ -2694,7 +2734,7 @@ function getInvoiceRecordStatus(rec) {
   }
 
   if (matchingDoc.status === 'signed') {
-    return { key: 'submitted', label: 'Đã ký', cls: 'b-approved', docId: matchingDoc.id };
+    return { key: 'submitted', label: 'Đã trình ký', cls: 'b-approved', docId: matchingDoc.id };
   }
   if (matchingDoc.status === 'pending_signature') {
     return { key: 'pending_signature', label: 'Đang trình ký', cls: 'b-pending', docId: matchingDoc.id };
@@ -2807,11 +2847,6 @@ async function uploadInvoiceFiles(fileList) {
 
   STATE.invoiceUploading = false;
   STATE._invSearch = '';
-  STATE._invMonthFilter = 'all';
-  STATE._invStatusFilter = 'all';
-  STATE._invRequesterFilter = 'all';
-  STATE._invBeneficiaryFilter = 'all';
-  STATE._invGroupFilter = 'all';
   showToast('✓ Đã xử lý xong hoá đơn tải lên (hiển thị ngay ở đầu danh sách)');
   render();
 }
@@ -2865,61 +2900,6 @@ async function removeInvoiceFromDraftVouchers(rec) {
   }
 }
 
-function syncAllInvoicesToDocuments() {
-  if (!STATE.invoices || !STATE.documents) return false;
-  let docsChanged = false;
-
-  const updateItemsForDoc = (doc) => {
-    let modified = false;
-    const allItems = [...(doc.items || []), ...(doc.spentItems || [])];
-    for (const item of allItems) {
-      if (!item) continue;
-      const matchingInv = STATE.invoices.find(r => 
-        (item.attachmentId && r.attachmentId && item.attachmentId === r.attachmentId) ||
-        matchInvoiceRecordWithDocItem(r, item.invoiceNo, item.attachmentId)
-      );
-
-      if (matchingInv) {
-        const newDate = matchingInv.date || item.date || '';
-        const newInvNo = invoiceCombinedNo(matchingInv) || item.invoiceNo || '';
-        const newAmt = (typeof matchingInv.amount === 'number') ? matchingInv.amount : (item.amount || 0);
-        const newRef = matchingInv.invoiceRef || item.invoiceRef || '';
-        const newDesc = formatVoucherItemNote(matchingInv.note, matchingInv.invoiceRef);
-
-        if (
-          item.date !== newDate ||
-          item.invoiceNo !== newInvNo ||
-          item.amount !== newAmt ||
-          item.invoiceRef !== newRef ||
-          (newDesc && item.description !== newDesc) ||
-          (matchingInv.attachmentId && item.attachmentId !== matchingInv.attachmentId)
-        ) {
-          if (newDate) item.date = newDate;
-          if (newInvNo) item.invoiceNo = newInvNo;
-          if (typeof matchingInv.amount === 'number') item.amount = matchingInv.amount;
-          item.invoiceRef = newRef;
-          if (newDesc) item.description = newDesc;
-          if (matchingInv.attachmentId) item.attachmentId = matchingInv.attachmentId;
-          modified = true;
-        }
-      }
-    }
-    return modified;
-  };
-
-  STATE.documents.forEach(doc => {
-    if (updateItemsForDoc(doc)) {
-      docsChanged = true;
-    }
-  });
-
-  if (STATE.draftForm) {
-    updateItemsForDoc(STATE.draftForm);
-  }
-
-  return docsChanged;
-}
-
 function deleteInvoiceRecord(id) {
   const rec = (STATE.invoices || []).find(r => r.id === id);
   if (!rec) return;
@@ -2927,14 +2907,7 @@ function deleteInvoiceRecord(id) {
   const st = getInvoiceRecordStatus(rec);
   let warningNote = '';
 
-  if (st.key === 'submitted') {
-    const dupDoc = STATE.documents.find(d => d.id === st.docId);
-    const docCodeText = dupDoc ? (dupDoc.docNo || dupDoc.formCode) : 'phiếu';
-    showAlertModal('🔒 Hoá đơn đã ký duyệt — Không thể xoá', `Hoá đơn <b>${rec.invoiceNumber || rec.fileName || ''}</b> đang thuộc phiếu <b>${docCodeText}</b> đã được ký duyệt thành công.<br><br>Hệ thống đã tự động khoá không cho phép xoá để bảo vệ tính chính xác của dữ liệu tài chính.`);
-    return;
-  }
-
-  if (st.key === 'pending_signature') {
+  if (st.key === 'pending_signature' || st.key === 'submitted') {
     const dupDoc = STATE.documents.find(d => d.id === st.docId);
     const docCodeText = dupDoc ? (dupDoc.docNo || dupDoc.formCode) : 'phiếu';
     const statusLabel = dupDoc ? (STATUS_LABEL[dupDoc.status] || dupDoc.status) : st.label;
@@ -3297,15 +3270,9 @@ function openManualInvoiceModal(initialData = {}) {
       isManual: true
     });
 
-    STATE._invSearch = '';
-    STATE._invMonthFilter = 'all';
-    STATE._invStatusFilter = 'all';
-    STATE._invRequesterFilter = 'all';
-    STATE._invBeneficiaryFilter = 'all';
-    STATE._invGroupFilter = 'all';
     STATE.invoices.unshift(newRecord);
     await saveInvoices();
-    showToast(`✓ Đã lưu chứng từ "${invoiceNumber}" vào kho (hiển thị ngay ở đầu danh sách)`);
+    showToast(`✓ Đã lưu chứng từ "${invoiceNumber}" vào kho`);
     render();
 
     if (addMore) {
@@ -4263,11 +4230,7 @@ function renderInvoiceTableHtml(records, selected) {
                 `}
                 <button class="icon-btn" data-viewinvhistory="${r.id}" title="Xem lịch sử chỉnh sửa & thao tác">📜</button>
                 ${st.docId ? `<button class="icon-btn" data-gotodoc="${st.docId}" title="Xem phiếu liên kết">🔗</button>` : ''}
-                ${st.key === 'submitted' ? `
-                  <button class="icon-btn" style="cursor:not-allowed;color:#64748B;background:#F1F5F9;border:1px solid #CBD5E1;opacity:0.75;" onclick="showAlertModal('🔒 Hoá đơn đã ký duyệt — Không thể xoá', 'Hoá đơn này thuộc phiếu đã được ký duyệt thành công. Hệ thống đã khoá không cho phép xoá để bảo đảm tính chính xác của chứng từ và dữ liệu tài chính!')" title="🔒 Hoá đơn thuộc phiếu đã ký duyệt — Đã khoá không cho phép xoá để bảo vệ dữ liệu">🔒</button>
-                ` : `
-                  <button class="icon-btn icon-btn-danger" data-delinvoice="${r.id}" title="${st.key === 'pending_signature' ? `Hoá đơn thuộc phiếu ${st.label} - Bấm để chuyển vào Thùng rác` : 'Xoá dòng chứng từ này'}">🗑</button>
-                `}
+                <button class="icon-btn icon-btn-danger" data-delinvoice="${r.id}" title="${(st.key === 'pending_signature' || st.key === 'submitted') ? `Hoá đơn thuộc phiếu ${st.label} - Bấm để chuyển vào Thùng rác` : 'Xoá dòng chứng từ này'}">🗑</button>
               </div>
             </td>
           </tr>`;
@@ -4452,7 +4415,13 @@ function renderForm() {
       return `
       <tr>
         <td style="width:34px;text-align:center;">${i + 1}</td>
-        <td style="width:130px;"><input type="date" data-item="${i}" data-field="date" value="${it.date || ''}" ${lockAttr} style="${lockStyle}" ${lockTitle}></td>
+        <td style="width:145px;">
+          <div style="position:relative;display:flex;align-items:center;">
+            <input type="text" data-item="${i}" data-field="datetext" value="${fmtDate(it.date) || ''}" placeholder="dd/mm/yyyy" ${lockAttr} style="${lockStyle}padding-right:24px;text-align:center;font-weight:600;" ${lockTitle}>
+            <input type="date" data-item="${i}" data-field="date" value="${it.date || ''}" ${lockAttr} style="position:absolute;right:0;top:0;width:26px;height:100%;opacity:0;cursor:pointer;" ${lockTitle}>
+            <span style="position:absolute;right:5px;pointer-events:none;font-size:12px;">📅</span>
+          </div>
+        </td>
         <td style="width:150px;"><input class="${findDuplicateInvoiceUsage(it.invoiceNo, doc.id) ? 'dup-warning' : ''}" data-item="${i}" data-field="invoiceNo" value="${it.invoiceNo || ''}" placeholder="Ký hiệu|Số HĐ" ${lockAttr} style="${isLocked ? 'background:#F0FDFA;color:#0D9488;border:1.5px solid #99F6E4;cursor:not-allowed;font-weight:700;' : ''}" ${lockTitle}></td>
         <td class="col-amount" style="width:140px;"><input type="number" data-item="${i}" data-field="amount" value="${it.amount || ''}" ${lockAttr} style="${isLocked ? 'background:#F8FAFC;color:#0F172A;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:700;' : ''}" ${lockTitle}></td>
         <td><textarea data-item="${i}" data-field="description" rows="2" placeholder="Ghi chú (Nội dung - Invoice: ...)" ${lockAttr} style="width:100%;min-height:42px;padding:6px 8px;font-family:inherit;font-size:13px;resize:vertical;${lockTextareaStyle}" ${lockTitle}>${it.description || ''}</textarea></td>
@@ -4473,7 +4442,13 @@ function renderForm() {
     itemsRows = doc.items.map((it, i) => `
       <tr>
         <td style="width:34px;text-align:center;">${i + 1}</td>
-        <td style="width:170px;"><input data-item="${i}" data-field="date" value="${it.date || ''}" placeholder="VD: 24/07/2026" style="text-align:center;"></td>
+        <td style="width:160px;">
+          <div style="position:relative;display:flex;align-items:center;">
+            <input type="text" data-item="${i}" data-field="datetext" value="${fmtDate(it.date) || ''}" placeholder="dd/mm/yyyy" style="width:100%;padding-right:24px;font-size:12.5px;text-align:center;border:1px solid var(--line);border-radius:6px;font-weight:600;">
+            <input type="date" data-item="${i}" data-field="date" value="${it.date || ''}" style="position:absolute;right:0;top:0;width:26px;height:100%;opacity:0;cursor:pointer;">
+            <span style="position:absolute;right:5px;pointer-events:none;font-size:12px;">📅</span>
+          </div>
+        </td>
         <td><textarea data-item="${i}" data-field="description" rows="2" placeholder="Các loại giấy tờ cần xin xác nhận" style="width:100%;min-height:42px;padding:6px 8px;font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;resize:vertical;line-height:1.4;text-align:center;">${it.description || ''}</textarea></td>
         <td class="col-amount" style="width:140px;"><input type="number" data-item="${i}" data-field="amount" value="${it.amount || ''}" style="text-align:center;"></td>
         <td class="col-del"><button class="del-row" data-delitem="${i}">✕</button></td>
@@ -4528,13 +4503,11 @@ function renderForm() {
             return `
             <tr>
               <td style="text-align:center;">${i + 1}</td>
-              <td style="width:140px;">
-                <div style="position:relative;display:flex;align-items:center;width:100%;">
-                  <input type="text" data-spent="${i}" data-field="dateText" value="${fmtDate(it.date) || ''}" placeholder="dd/mm/yyyy" ${lockAttr} style="width:100%;padding:6px 26px 6px 8px;font-size:12.5px;text-align:center;box-sizing:border-box;${lockStyle}" ${lockTitle}>
-                  ${!isLocked ? `
-                    <button type="button" data-opendatespent="${i}" style="position:absolute;right:4px;background:none;border:none;font-size:14px;cursor:pointer;padding:0;line-height:1;z-index:3;" title="Mở lịch chọn ngày">📅</button>
-                    <input type="date" data-spent="${i}" data-field="date" value="${it.date || ''}" style="position:absolute;top:0;right:0;width:26px;height:100%;opacity:0;z-index:2;cursor:pointer;" title="Mở lịch chọn ngày">
-                  ` : ''}
+              <td style="width:145px;">
+                <div style="position:relative;display:flex;align-items:center;">
+                  <input type="text" data-spent="${i}" data-field="datetext" value="${fmtDate(it.date) || ''}" placeholder="dd/mm/yyyy" ${lockAttr} style="${lockStyle}padding-right:24px;text-align:center;font-weight:600;" ${lockTitle}>
+                  <input type="date" data-spent="${i}" data-field="date" value="${it.date || ''}" ${lockAttr} style="position:absolute;right:0;top:0;width:26px;height:100%;opacity:0;cursor:pointer;" ${lockTitle}>
+                  <span style="position:absolute;right:5px;pointer-events:none;font-size:12px;">📅</span>
                 </div>
               </td>
               <td><input class="${findDuplicateInvoiceUsage(it.invoiceNo, doc.id) ? 'dup-warning' : ''}" data-spent="${i}" data-field="invoiceNo" value="${it.invoiceNo || ''}" placeholder="Số HĐ" ${lockAttr} style="${isLocked ? 'background:#F0FDFA;color:#0D9488;border:1.5px solid #99F6E4;cursor:not-allowed;font-weight:700;' : ''}" ${lockTitle}></td>
@@ -4589,10 +4562,10 @@ function renderForm() {
     <div class="field-row">
       <div class="field">
         <label>Ngày lập phiếu (ngày/tháng/năm)</label>
-        <div style="position:relative;display:flex;align-items:center;width:100%;">
-          <input type="text" id="f-documentDateText" value="${fmtDate(doc.documentDate) || ''}" placeholder="dd/mm/yyyy" style="width:100%;padding:8px 36px 8px 12px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-weight:700;color:#0F172A;box-sizing:border-box;" title="Nhập ngày dạng dd/mm/yyyy hoặc bấm 📅 để chọn từ lịch">
-          <button type="button" id="btn-open-doc-date" style="position:absolute;right:8px;background:none;border:none;font-size:16px;cursor:pointer;padding:2px;line-height:1;z-index:3;" title="Mở lịch chọn ngày">📅</button>
-          <input type="date" id="f-documentDate" value="${doc.documentDate || ''}" style="position:absolute;top:0;right:0;width:36px;height:100%;opacity:0;z-index:2;cursor:pointer;" title="Mở lịch chọn ngày">
+        <div id="f-documentDateWrapper" style="position:relative;display:flex;align-items:center;width:100%;">
+          <input type="text" id="f-documentDateText" value="${fmtDate(doc.documentDate) || ''}" placeholder="dd/mm/yyyy" style="width:100%;padding:8px 32px 8px 12px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-weight:700;color:#0F172A;box-sizing:border-box;" title="Nhập ngày dạng dd/mm/yyyy hoặc chọn từ lịch">
+          <input type="date" id="f-documentDate" value="${doc.documentDate || ''}" style="position:absolute;right:0;top:0;width:36px;height:100%;opacity:0;cursor:pointer;" title="Mở lịch chọn ngày">
+          <span style="position:absolute;right:10px;pointer-events:none;font-size:15px;" title="Mở lịch chọn ngày">📅</span>
         </div>
       </div>
       <div class="field">
@@ -6026,17 +5999,6 @@ function render() {
     app.innerHTML = renderLoginScreen();
     attachLoginScreenHandlers();
     return;
-  }
-
-  try {
-    if (typeof syncAllInvoicesToDocuments === 'function') {
-      const docsChanged = syncAllInvoicesToDocuments();
-      if (docsChanged) {
-        saveDocuments().catch(e => console.error(e));
-      }
-    }
-  } catch (e) {
-    console.error('Error syncing invoices in render:', e);
   }
 
   const scrollY = window.scrollY;
@@ -7781,24 +7743,6 @@ function bindFormInputs() {
   const dateTxtEl = document.getElementById('f-documentDateText');
   const datePickerEl = document.getElementById('f-documentDate');
 
-  const triggerDatePicker = (pickerEl) => {
-    if (!pickerEl) return;
-    if (typeof pickerEl.showPicker === 'function') {
-      try { pickerEl.showPicker(); return; } catch(e) {}
-    }
-    pickerEl.focus();
-    pickerEl.click();
-  };
-
-  const btnOpenDocDate = document.getElementById('btn-open-doc-date');
-  if (btnOpenDocDate) {
-    btnOpenDocDate.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      triggerDatePicker(datePickerEl);
-    });
-  }
-
   if (dateTxtEl) {
     const syncTextDate = (e) => {
       const parsedIso = parseFormattedDateToIso(e.target.value);
@@ -7824,104 +7768,6 @@ function bindFormInputs() {
       refreshDynamicParts();
     });
   }
-
-  // Items table date handlers
-  document.querySelectorAll('[data-opendateitem]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const idx = btn.dataset.opendateitem;
-      const picker = document.querySelector(`input[data-item="${idx}"][data-field="date"]`);
-      triggerDatePicker(picker);
-    });
-  });
-
-  document.querySelectorAll('input[data-item][data-field="date"]').forEach(el => {
-    el.addEventListener('change', e => {
-      const idx = Number(el.dataset.item);
-      if (doc.items && doc.items[idx]) {
-        doc.items[idx].date = e.target.value;
-        const txtInput = document.querySelector(`input[data-item="${idx}"][data-field="dateText"]`);
-        if (txtInput) txtInput.value = fmtDate(e.target.value);
-        refreshDynamicParts();
-      }
-    });
-  });
-
-  document.querySelectorAll('input[data-item][data-field="dateText"]').forEach(el => {
-    const syncItemDateText = (e) => {
-      const idx = Number(el.dataset.item);
-      if (doc.items && doc.items[idx]) {
-        const parsedIso = parseFormattedDateToIso(e.target.value);
-        doc.items[idx].date = parsedIso;
-        const picker = document.querySelector(`input[data-item="${idx}"][data-field="date"]`);
-        if (picker) picker.value = parsedIso;
-        refreshDynamicParts();
-      }
-    };
-    el.addEventListener('input', syncItemDateText);
-    el.addEventListener('change', syncItemDateText);
-    el.addEventListener('blur', e => {
-      const idx = Number(el.dataset.item);
-      if (doc.items && doc.items[idx]) {
-        const parsedIso = parseFormattedDateToIso(e.target.value);
-        doc.items[idx].date = parsedIso;
-        e.target.value = fmtDate(parsedIso);
-        const picker = document.querySelector(`input[data-item="${idx}"][data-field="date"]`);
-        if (picker) picker.value = parsedIso;
-        refreshDynamicParts();
-      }
-    });
-  });
-
-  // SpentItems table date handlers
-  document.querySelectorAll('[data-opendatespent]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const idx = btn.dataset.opendatespent;
-      const picker = document.querySelector(`input[data-spent="${idx}"][data-field="date"]`);
-      triggerDatePicker(picker);
-    });
-  });
-
-  document.querySelectorAll('input[data-spent][data-field="date"]').forEach(el => {
-    el.addEventListener('change', e => {
-      const idx = Number(el.dataset.spent);
-      if (doc.spentItems && doc.spentItems[idx]) {
-        doc.spentItems[idx].date = e.target.value;
-        const txtInput = document.querySelector(`input[data-spent="${idx}"][data-field="dateText"]`);
-        if (txtInput) txtInput.value = fmtDate(e.target.value);
-        refreshDynamicParts();
-      }
-    });
-  });
-
-  document.querySelectorAll('input[data-spent][data-field="dateText"]').forEach(el => {
-    const syncSpentDateText = (e) => {
-      const idx = Number(el.dataset.spent);
-      if (doc.spentItems && doc.spentItems[idx]) {
-        const parsedIso = parseFormattedDateToIso(e.target.value);
-        doc.spentItems[idx].date = parsedIso;
-        const picker = document.querySelector(`input[data-spent="${idx}"][data-field="date"]`);
-        if (picker) picker.value = parsedIso;
-        refreshDynamicParts();
-      }
-    };
-    el.addEventListener('input', syncSpentDateText);
-    el.addEventListener('change', syncSpentDateText);
-    el.addEventListener('blur', e => {
-      const idx = Number(el.dataset.spent);
-      if (doc.spentItems && doc.spentItems[idx]) {
-        const parsedIso = parseFormattedDateToIso(e.target.value);
-        doc.spentItems[idx].date = parsedIso;
-        e.target.value = fmtDate(parsedIso);
-        const picker = document.querySelector(`input[data-spent="${idx}"][data-field="date"]`);
-        if (picker) picker.value = parsedIso;
-        refreshDynamicParts();
-      }
-    });
-  });
   bind('f-contentSummary', 'contentSummary');
   bind('f-subject', 'subject');
   bind('f-reason', 'reason');
@@ -7972,12 +7818,45 @@ function bindFormInputs() {
 
   document.querySelectorAll('[data-item]').forEach(el => el.addEventListener('input', e => {
     const idx = Number(el.dataset.item), field = el.dataset.field;
+    if (field === 'datetext') return;
     doc.items[idx][field] = field === 'amount' ? Number(e.target.value) : e.target.value;
     if (field === 'invoiceNo') {
       renderFormDuplicateBanner(doc);
     }
     refreshDynamicParts();
   }));
+
+  // Table item date sync (items)
+  document.querySelectorAll('[data-item][data-field="datetext"]').forEach(el => {
+    const idx = Number(el.dataset.item);
+    const syncText = (e) => {
+      const parsedIso = parseFormattedDateToIso(e.target.value);
+      if (doc.items && doc.items[idx]) doc.items[idx].date = parsedIso;
+      const datePicker = el.parentElement ? el.parentElement.querySelector('[data-field="date"]') : null;
+      if (datePicker) datePicker.value = parsedIso;
+      refreshDynamicParts();
+    };
+    el.addEventListener('input', syncText);
+    el.addEventListener('change', syncText);
+    el.addEventListener('blur', (e) => {
+      const parsedIso = parseFormattedDateToIso(e.target.value);
+      if (doc.items && doc.items[idx]) doc.items[idx].date = parsedIso;
+      e.target.value = fmtDate(parsedIso);
+      const datePicker = el.parentElement ? el.parentElement.querySelector('[data-field="date"]') : null;
+      if (datePicker) datePicker.value = parsedIso;
+      refreshDynamicParts();
+    });
+  });
+
+  document.querySelectorAll('[data-item][data-field="date"]').forEach(el => {
+    el.addEventListener('change', e => {
+      const idx = Number(el.dataset.item);
+      if (doc.items && doc.items[idx]) doc.items[idx].date = e.target.value;
+      const textInput = el.parentElement ? el.parentElement.querySelector('[data-field="datetext"]') : null;
+      if (textInput) textInput.value = fmtDate(e.target.value);
+      refreshDynamicParts();
+    });
+  });
 
   document.querySelectorAll('[data-item][data-field="invoiceNo"]').forEach(el => el.addEventListener('blur', () => {
     checkDuplicateInvoice(doc, el.value, el);
@@ -8016,9 +7895,42 @@ function bindFormInputs() {
 
   document.querySelectorAll('[data-spent]').forEach(el => el.addEventListener('input', e => {
     const idx = Number(el.dataset.spent), field = el.dataset.field;
+    if (field === 'datetext') return;
     doc.spentItems[idx][field] = field === 'amount' ? Number(e.target.value) : e.target.value;
     refreshDynamicParts();
   }));
+
+  // Table item date sync (spentItems for reimbursement)
+  document.querySelectorAll('[data-spent][data-field="datetext"]').forEach(el => {
+    const idx = Number(el.dataset.spent);
+    const syncText = (e) => {
+      const parsedIso = parseFormattedDateToIso(e.target.value);
+      if (doc.spentItems && doc.spentItems[idx]) doc.spentItems[idx].date = parsedIso;
+      const datePicker = el.parentElement ? el.parentElement.querySelector('[data-field="date"]') : null;
+      if (datePicker) datePicker.value = parsedIso;
+      refreshDynamicParts();
+    };
+    el.addEventListener('input', syncText);
+    el.addEventListener('change', syncText);
+    el.addEventListener('blur', (e) => {
+      const parsedIso = parseFormattedDateToIso(e.target.value);
+      if (doc.spentItems && doc.spentItems[idx]) doc.spentItems[idx].date = parsedIso;
+      e.target.value = fmtDate(parsedIso);
+      const datePicker = el.parentElement ? el.parentElement.querySelector('[data-field="date"]') : null;
+      if (datePicker) datePicker.value = parsedIso;
+      refreshDynamicParts();
+    });
+  });
+
+  document.querySelectorAll('[data-spent][data-field="date"]').forEach(el => {
+    el.addEventListener('change', e => {
+      const idx = Number(el.dataset.spent);
+      if (doc.spentItems && doc.spentItems[idx]) doc.spentItems[idx].date = e.target.value;
+      const textInput = el.parentElement ? el.parentElement.querySelector('[data-field="datetext"]') : null;
+      if (textInput) textInput.value = fmtDate(e.target.value);
+      refreshDynamicParts();
+    });
+  });
 
   document.querySelectorAll('[data-spent][data-field="invoiceNo"]').forEach(el => el.addEventListener('blur', () => {
     checkDuplicateInvoice(doc, el.value, el);
