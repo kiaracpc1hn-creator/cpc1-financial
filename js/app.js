@@ -4149,8 +4149,8 @@ function renderInvoiceTableHtml(records, selected) {
           const st = getInvoiceRecordStatus(r);
           const isLocked = r.isLocked !== false;
           const lockAttr = isLocked ? 'readonly tabindex="-1"' : '';
-          const lockInputStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:600;' : '';
-          const lockTextareaStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;line-height:1.45;' : '';
+          const lockInputStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:400;' : 'background:#FFFFFF;color:#0F172A;border:1.5px solid #0D9488;font-weight:700;box-shadow:0 0 0 2px rgba(13,148,136,0.15);';
+          const lockTextareaStyle = isLocked ? 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;line-height:1.45;font-weight:400;' : 'background:#FFFFFF;color:#0F172A;border:1.5px solid #0D9488;font-weight:700;box-shadow:0 0 0 2px rgba(13,148,136,0.15);line-height:1.45;';
           const lockTitle = isLocked ? 'title="🔒 Hoá đơn đang được khoá để tránh chỉnh sửa nhầm. Bấm 🔓 Mở khoá ở cột Thao tác nếu cần chỉnh sửa."' : '';
 
           return `
@@ -4158,33 +4158,33 @@ function renderInvoiceTableHtml(records, selected) {
             <td><input type="checkbox" class="inv-select" data-invsel="${r.id}" ${selected.includes(r.id) ? 'checked' : ''}></td>
             <td>
               ${isLocked ? `
-                <div style="font-weight:700;font-size:12px;color:#1E293B;padding:5px 4px;background:#F8FAFC;border:1.5px solid #CBD5E1;border-radius:4px;text-align:center;width:105px;box-sizing:border-box;" ${lockTitle}>
+                <div style="font-weight:400;font-size:12px;color:#1E293B;padding:5px 4px;background:#F8FAFC;border:1.5px solid #CBD5E1;border-radius:4px;text-align:center;width:105px;box-sizing:border-box;" ${lockTitle}>
                   ${fmtDate(r.date) || '—'}
                 </div>
               ` : `
                 <div style="position:relative;display:inline-block;width:105px;">
-                  <input type="text" data-invdatetext="${r.id}" value="${fmtDate(r.date) || ''}" placeholder="dd/mm/yyyy" style="width:100%;padding:5px 4px;border:1px solid var(--line);border-radius:4px;font-size:12px;text-align:center;font-weight:700;color:#0F172A;box-sizing:border-box;" title="Nhập ngày dạng dd/mm/yyyy hoặc chọn từ lịch">
+                  <input type="text" data-invdatetext="${r.id}" value="${fmtDate(r.date) || ''}" placeholder="dd/mm/yyyy" style="width:100%;padding:5px 4px;border:1.5px solid #0D9488;border-radius:4px;font-size:12px;text-align:center;font-weight:700;color:#0F172A;box-sizing:border-box;box-shadow:0 0 0 2px rgba(13,148,136,0.15);" title="Nhập ngày dạng dd/mm/yyyy hoặc chọn từ lịch">
                   <input type="date" data-invdate="${r.id}" value="${r.date || ''}" style="position:absolute;top:0;right:0;width:24px;height:100%;opacity:0;cursor:pointer;" title="Mở lịch chọn ngày">
                 </div>
               `}
             </td>
             <td>
-              <input type="text" data-invseries="${r.id}" value="${r.seriesNo || ''}" placeholder="Ký hiệu" ${lockAttr} style="width:85px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;font-weight:700;text-transform:uppercase;${isLocked ? lockInputStyle : ''}" ${lockTitle}>
+              <input type="text" data-invseries="${r.id}" value="${r.seriesNo || ''}" placeholder="Ký hiệu" ${lockAttr} style="width:85px;padding:5px 6px;border-radius:4px;font-size:12px;text-transform:uppercase;${lockInputStyle}" ${lockTitle}>
             </td>
             <td>
-              <input type="text" data-invnum="${r.id}" value="${r.invoiceNumber || ''}" placeholder="Số HĐ" ${lockAttr} style="width:95px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;font-weight:700;${isLocked ? lockInputStyle : ''}" ${lockTitle}>
+              <input type="text" data-invnum="${r.id}" value="${r.invoiceNumber || ''}" placeholder="Số HĐ" ${lockAttr} style="width:95px;padding:5px 6px;border-radius:4px;font-size:12px;${lockInputStyle}" ${lockTitle}>
             </td>
             <td>
-              <input type="text" inputmode="numeric" data-invamount="${r.id}" value="${r.amount ? Number(r.amount).toLocaleString('vi-VN') : ''}" placeholder="Số tiền" ${lockAttr} style="width:105px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;font-family:var(--font-mono);text-align:right;font-weight:600;${isLocked ? lockInputStyle : ''}" ${lockTitle}>
+              <input type="text" inputmode="numeric" data-invamount="${r.id}" value="${r.amount ? Number(r.amount).toLocaleString('vi-VN') : ''}" placeholder="Số tiền" ${lockAttr} style="width:105px;padding:5px 8px;border-radius:4px;font-family:var(--font-mono);text-align:right;${lockInputStyle}" ${lockTitle}>
               <span style="font-size:11px;color:var(--ink-soft);margin-left:2px;">${r.currency === 'USD' ? 'USD' : 'VNĐ'}</span>
             </td>
             <td style="min-width:250px;max-width:380px;">
-              <textarea class="inv-note-area" data-invnote="${r.id}" rows="3" placeholder="Nội dung hàng hoá/dịch vụ" ${lockAttr} style="${isLocked ? lockTextareaStyle : ''}" ${lockTitle}>${r.note || ''}</textarea>
+              <textarea class="inv-note-area" data-invnote="${r.id}" rows="3" placeholder="Nội dung hàng hoá/dịch vụ" ${lockAttr} style="${lockTextareaStyle}" ${lockTitle}>${r.note || ''}</textarea>
             </td>
-            <td><input data-invref="${r.id}" value="${r.invoiceRef || ''}" placeholder="Số Invoice" ${lockAttr} style="width:95px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;font-size:12px;${isLocked ? lockInputStyle : ''}" ${lockTitle}></td>
+            <td><input data-invref="${r.id}" value="${r.invoiceRef || ''}" placeholder="Số Invoice" ${lockAttr} style="width:95px;padding:5px 6px;border-radius:4px;font-size:12px;${lockInputStyle}" ${lockTitle}></td>
             <td>${r.requesterName}</td>
             <td style="min-width:220px;max-width:320px;">
-              <textarea class="inv-beneficiary-area" list="payee-autocomplete-list" data-invbeneficiary="${r.id}" rows="3" placeholder="Người thụ hưởng / Đơn vị bán" ${lockAttr} style="${isLocked ? lockTextareaStyle : ''}" ${lockTitle}>${r.beneficiaryName || ''}</textarea>
+              <textarea class="inv-beneficiary-area" list="payee-autocomplete-list" data-invbeneficiary="${r.id}" rows="3" placeholder="Người thụ hưởng / Đơn vị bán" ${lockAttr} style="${lockTextareaStyle}" ${lockTitle}>${r.beneficiaryName || ''}</textarea>
             </td>
             <td><span class="badge ${st.cls} badge-pill" title="${st.label}">${st.label}</span></td>
             <td style="white-space:nowrap;">
@@ -7091,6 +7091,57 @@ function attachInvoiceTableHandlers() {
 
     const currentlyLocked = rec.isLocked !== false;
     const isNowLocked = !currentlyLocked;
+
+    if (currentlyLocked) {
+      // Transitioning from LOCKED to UNLOCKED: Store snapshot of initial values
+      rec._editSnapshot = {
+        date: rec.date || '',
+        seriesNo: rec.seriesNo || '',
+        invoiceNumber: rec.invoiceNumber || '',
+        amount: rec.amount || 0,
+        note: rec.note || '',
+        invoiceRef: rec.invoiceRef || '',
+        beneficiaryName: rec.beneficiaryName || ''
+      };
+      logHistory(rec, 'Mở khóa chứng từ', 'Mở khóa để cho phép chỉnh sửa thông tin');
+    } else {
+      // Transitioning from UNLOCKED to LOCKED: Compare changes against snapshot and log history
+      const changes = [];
+      if (rec._editSnapshot) {
+        const snap = rec._editSnapshot;
+        if ((rec.date || '') !== snap.date) {
+          changes.push(`Ngày lập: "${fmtDate(snap.date) || '(trống)'}" ➔ "${fmtDate(rec.date) || '(trống)'}"`);
+        }
+        if ((rec.seriesNo || '') !== snap.seriesNo) {
+          changes.push(`Ký hiệu: "${snap.seriesNo || '(trống)'}" ➔ "${rec.seriesNo || '(trống)'}"`);
+        }
+        if ((rec.invoiceNumber || '') !== snap.invoiceNumber) {
+          changes.push(`Số HĐ: "${snap.invoiceNumber || '(trống)'}" ➔ "${rec.invoiceNumber || '(trống)'}"`);
+        }
+        if (Number(rec.amount || 0) !== Number(snap.amount || 0)) {
+          const oldAmtStr = snap.amount ? fmtMoney(snap.amount, rec.currency) : '0';
+          const newAmtStr = rec.amount ? fmtMoney(rec.amount, rec.currency) : '0';
+          changes.push(`Số tiền: "${oldAmtStr}" ➔ "${newAmtStr}"`);
+        }
+        if ((rec.note || '') !== snap.note) {
+          changes.push(`Nội dung: "${snap.note || '(trống)'}" ➔ "${rec.note || '(trống)'}"`);
+        }
+        if ((rec.invoiceRef || '') !== snap.invoiceRef) {
+          changes.push(`Số Invoice: "${snap.invoiceRef || '(trống)'}" ➔ "${rec.invoiceRef || '(trống)'}"`);
+        }
+        if ((rec.beneficiaryName || '') !== snap.beneficiaryName) {
+          changes.push(`Người thụ hưởng: "${snap.beneficiaryName || '(trống)'}" ➔ "${rec.beneficiaryName || '(trống)'}"`);
+        }
+        delete rec._editSnapshot;
+      }
+
+      if (changes.length > 0) {
+        logHistory(rec, 'Chỉnh sửa thông tin hóa đơn', changes.join(' • '));
+      } else {
+        logHistory(rec, 'Khóa chứng từ', 'Đã kiểm tra & khóa chứng từ');
+      }
+    }
+
     rec.isLocked = isNowLocked;
 
     // Instant in-place DOM updates for row inputs & textarea
@@ -7101,20 +7152,22 @@ function attachInvoiceTableHandlers() {
           input.setAttribute('readonly', 'true');
           input.setAttribute('tabindex', '-1');
           input.setAttribute('title', '🔒 Hoá đơn đang được khoá để tránh chỉnh sửa nhầm. Bấm 🔓 Mở khoá ở cột Thao tác nếu cần chỉnh sửa.');
-          if (input.tagName.toLowerCase() === 'textarea') {
-            input.style.cssText += 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;line-height:1.45;';
-          } else {
-            input.style.cssText += 'background:#F8FAFC;color:#334155;border:1.5px solid #CBD5E1;cursor:not-allowed;font-weight:600;';
-          }
+          input.style.background = '#F8FAFC';
+          input.style.color = '#334155';
+          input.style.border = '1.5px solid #CBD5E1';
+          input.style.cursor = 'not-allowed';
+          input.style.fontWeight = '400';
+          input.style.boxShadow = 'none';
         } else {
           input.removeAttribute('readonly');
           input.removeAttribute('tabindex');
           input.removeAttribute('title');
           input.style.background = '#FFFFFF';
           input.style.color = '#0F172A';
-          input.style.border = '1px solid var(--line)';
+          input.style.border = '1.5px solid #0D9488';
           input.style.cursor = 'text';
           input.style.fontWeight = '700';
+          input.style.boxShadow = '0 0 0 2px rgba(13,148,136,0.15)';
         }
       });
     }
