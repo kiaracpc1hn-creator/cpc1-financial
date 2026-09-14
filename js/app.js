@@ -3334,11 +3334,16 @@ function canUserAccessDoc(doc, user = currentUser()) {
   );
   if (isOwnDoc) return true;
 
-  // Thành viên & Trưởng nhóm: Xem toàn bộ phiếu thuộc nhóm của mình (Nhóm EXP / Nhóm Docs / Không)
+  // Nếu là thành viên thường (employee): CHỈ xem được phiếu của chính mình
+  if (user.role === 'employee') {
+    return false;
+  }
+
+  // Nếu là Trưởng nhóm (dept_head): Xem toàn bộ phiếu thuộc nhóm / phòng ban của mình
   const userGroupKey = normalizeGroupKey(getUserGroup(user));
   const docGroupKey = normalizeGroupKey(getDocGroup(doc));
 
-  return userGroupKey === docGroupKey;
+  return userGroupKey !== 'NONE' && userGroupKey === docGroupKey;
 }
 
 function getAccessibleDocuments(user = currentUser()) {
@@ -3422,6 +3427,8 @@ function renderSidebar() {
     </button>
 
     ${(() => {
+      const isPrivilegedTrashUser = ['admin', 'chief_accountant', 'director', 'dept_head'].includes(u ? u.role : '');
+      if (!isPrivilegedTrashUser) return '';
       const accTrash = getAccessibleTrash(u);
       return `
       <button class="nav-item ${STATE.page === 'trash' ? 'active' : ''}" data-nav="trash">
@@ -3799,6 +3806,9 @@ function getItemGroup(item) {
 
 function getAccessibleTrash(user = currentUser()) {
   if (!user) return [];
+  const isPrivilegedTrashUser = ['admin', 'chief_accountant', 'director', 'dept_head'].includes(user.role);
+  if (!isPrivilegedTrashUser) return [];
+
   const allTrash = STATE.trash || [];
   if (['admin', 'chief_accountant', 'director'].includes(user.role)) {
     const groupFilter = STATE._trashGroupFilter || 'all';
@@ -3815,6 +3825,15 @@ function getAccessibleTrash(user = currentUser()) {
 
 function renderTrash() {
   const user = currentUser();
+  const isPrivilegedTrashUser = ['admin', 'chief_accountant', 'director', 'dept_head'].includes(user ? user.role : '');
+  if (!isPrivilegedTrashUser) {
+    return `
+    <div class="empty-state" style="padding:48px 16px;">
+      <div class="big">🔒</div>
+      <h3 style="margin-top:10px;font-size:16px;">Quyền truy cập bị giới hạn</h3>
+      <p style="font-size:13px;color:var(--ink-soft);margin-top:6px;">Tính năng Thùng rác chỉ dành cho Admin và Trưởng nhóm.</p>
+    </div>`;
+  }
   const trashItems = getAccessibleTrash(user);
   const selectedType = STATE._trashTypeFilter || 'all';
 
