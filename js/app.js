@@ -115,17 +115,17 @@ async function loadAll() {
   } catch (e) { STATE.payees = []; }
 
   try {
+    const r = await window.storage.get('trash');
+    STATE.trash = r ? JSON.parse(r.value) : [];
+  } catch (e) { STATE.trash = []; }
+
+  try {
     const r = await window.storage.get('invoices');
     STATE.invoices = r ? JSON.parse(r.value) : [];
     await autoPurgeCorruptedInvoices();
     cleanDuplicateInvoicesInRepo();
     recoverMissingInvoicesFromDocuments();
   } catch (e) { STATE.invoices = []; }
-
-  try {
-    const r = await window.storage.get('trash');
-    STATE.trash = r ? JSON.parse(r.value) : [];
-  } catch (e) { STATE.trash = []; }
 
   try {
     const r = await window.storage.get('users');
@@ -276,7 +276,13 @@ async function loadAll() {
         } else if (key === 'invoices') {
           if (STATE._rawStrInvoices === val) return;
           STATE._rawStrInvoices = val;
-          STATE.invoices = JSON.parse(val) || [];
+          const incoming = JSON.parse(val) || [];
+
+          // Gộp thay vì ghi đè: giữ lại các hoá đơn Local có mà bản Cloud mới về chưa kịp có
+          // (vừa thêm/sửa tại chỗ, chưa kịp round-trip lên Cloud), tránh làm "biến mất" tạm thời trên UI.
+          const incomingIds = new Set(incoming.map(r => r.id));
+          const localOnly = (STATE.invoices || []).filter(r => r.id && !incomingIds.has(r.id));
+          STATE.invoices = [...incoming, ...localOnly];
           changed = true;
         } else if (key === 'payees') {
           if (STATE._rawStrPayees === val) return;
@@ -432,6 +438,34 @@ let _saveInvoicesTimer = null;
 async function saveInvoices(immediate = false) {
   const saveTask = async () => {
     try {
+      // 1. Luôn lấy bản MỚI NHẤT từ Cloud (bỏ qua cache) trước khi ghi,
+      //    để không "đè mất" hoá đơn mà người khác vừa thêm cùng lúc.
+      let cloudInvoices = [];
+      try {
+        const cloudRes = await window.storage.get('invoices', false, true); // ép đọc thẳng từ Cloud
+        if (cloudRes && cloudRes.value) {
+          cloudInvoices = JSON.parse(cloudRes.value) || [];
+        }
+      } catch (e) { /* chưa có dữ liệu trên Cloud, bỏ qua */ }
+
+      const localIds = new Set((STATE.invoices || []).map(r => r.id));
+      const trashIds = new Set((STATE.trash || []).map(t => t.id));
+
+      // 2. Gộp: giữ nguyên toàn bộ dữ liệu Local đang có (đang thao tác),
+      //    đồng thời bổ sung lại các hoá đơn có trên Cloud nhưng KHÔNG có ở Local
+      //    (tức là hoá đơn do người khác vừa thêm/sửa trong lúc mình đang thao tác)
+      //    -> Bỏ qua nếu id đó đang nằm trong Thùng rác (do chính mình vừa xoá).
+      const merged = [...STATE.invoices];
+      cloudInvoices.forEach(cloudRec => {
+        if (!cloudRec || !cloudRec.id) return;
+        if (trashIds.has(cloudRec.id)) return;
+        if (!localIds.has(cloudRec.id)) {
+          merged.push(cloudRec);
+        }
+      });
+
+      STATE.invoices = merged;
+
       const str = JSON.stringify(STATE.invoices);
       STATE._rawStrInvoices = str;
       await window.storage.set('invoices', str);
@@ -729,7 +763,8 @@ function readFileAsDataURL(file) {
 
 function monthKey(dateStr) {
   if (!dateStr) return 'unknown';
-  const d = new Date(dateStr);
+  const isoStr = typeof parseFormattedDateToIso === 'function' ? parseFormattedDateToIso(dateStr) : dateStr;
+  const d = new Date(isoStr);
   if (isNaN(d.getTime())) return 'unknown';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
@@ -2771,13 +2806,13 @@ async function uploadInvoiceFiles(fileList) {
         await window.storage.set('attachment:' + attId, dataUrl, false);
       }
 
-      // Kiểm tra cảnh báo trùng hoá đơn trong Kho
+      // Kiểm tra cảnh báo trùng hoá đơn trong Kho (cảnh báo nhưng vẫn lưu để không mất dữ liệu người dùng)
       const invNum = (extracted.invoiceNumber || '').trim();
       const sNo = (extracted.seriesNo || '').trim().toUpperCase();
       if (invNum) {
         const dupInRepo = STATE.invoices.find(r => {
           const matchNum = r.invoiceNumber && r.invoiceNumber.trim() === invNum;
-          const matchSeries = !sNo || !r.seriesNo || r.seriesNo.trim().toUpperCase() === sNo;
+          const matchSeries = (sNo && r.seriesNo) ? r.seriesNo.trim().toUpperCase() === sNo : (!sNo && !r.seriesNo);
           return matchNum && matchSeries;
         });
         if (dupInRepo) {
@@ -2787,7 +2822,6 @@ async function uploadInvoiceFiles(fileList) {
             amount: extracted.amount || dupInRepo.amount,
             existingUser: dupInRepo.requesterName
           });
-          continue;
         }
       }
 
@@ -2818,7 +2852,7 @@ async function uploadInvoiceFiles(fileList) {
         rawText: extracted.rawText || ''
       });
       STATE.invoices.unshift(record);
-      await saveInvoices();
+      await saveInvoices(true);
     } catch (e) {
       console.error(e);
       const detailMsg = e && e.message ? ` (${e.message})` : '';
@@ -2828,6 +2862,11 @@ async function uploadInvoiceFiles(fileList) {
 
   STATE.invoiceUploading = false;
   STATE._invSearch = '';
+  STATE._invMonthFilter = 'all';
+  STATE._invStatusFilter = 'all';
+  STATE._invRequesterFilter = 'all';
+  STATE._invBeneficiaryFilter = 'all';
+  STATE._invGroupFilter = 'all';
   showToast('✓ Đã xử lý xong hoá đơn tải lên (hiển thị ngay ở đầu danh sách)');
   render();
 }
@@ -3998,6 +4037,9 @@ async function purgeTrashItem(id) {
     }
     STATE.trash = STATE.trash.filter(i => i.id !== id);
     await saveTrash();
+    if (item.itemType === 'invoice') {
+      await saveInvoices(true);
+    }
     render();
     showToast('Đã xoá vĩnh viễn mục khỏi Thùng rác!');
   });
@@ -4108,7 +4150,8 @@ function getFilteredInvoices() {
         if (!isNaN(t)) return t;
       }
       if (r.date) {
-        const t = new Date(r.date).getTime();
+        const isoStr = typeof parseFormattedDateToIso === 'function' ? parseFormattedDateToIso(r.date) : r.date;
+        const t = new Date(isoStr).getTime();
         if (!isNaN(t)) return t;
       }
       return 0;
