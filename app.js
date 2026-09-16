@@ -281,7 +281,7 @@ async function loadAll() {
           // Gộp thay vì ghi đè: giữ lại các hoá đơn Local có mà bản Cloud mới về chưa kịp có
           // (vừa thêm/sửa tại chỗ, chưa kịp round-trip lên Cloud), tránh làm "biến mất" tạm thời trên UI.
           const incomingIds = new Set(incoming.map(r => r.id));
-          const localOnly = (STATE.invoices || []).filter(r => r.id && !incomingIds.has(r.id) && !(r._justAdded));
+          const localOnly = (STATE.invoices || []).filter(r => r.id && !incomingIds.has(r.id));
           STATE.invoices = [...incoming, ...localOnly];
           changed = true;
         } else if (key === 'payees') {
@@ -449,7 +449,11 @@ async function saveInvoices(immediate = false) {
       } catch (e) { /* chưa có dữ liệu trên Cloud, bỏ qua */ }
 
       const localIds = new Set((STATE.invoices || []).map(r => r.id));
-      const trashIds = new Set((STATE.trash || []).map(t => t.id));
+      const trashIds = new Set(
+        (STATE.trash || [])
+          .flatMap(t => [t.id, t.originalId, t.originalInvoiceId])
+          .filter(Boolean)
+      );
 
       // 2. Gộp: giữ nguyên toàn bộ dữ liệu Local đang có (đang thao tác),
       //    đồng thời bổ sung lại các hoá đơn có trên Cloud nhưng KHÔNG có ở Local
@@ -1302,28 +1306,38 @@ function duplicateDoc(doc) {
   render();
 }
 
-/* ===================== DUPLICATE INVOICE CHECK ===================== */
+/* ===================== DUPLICATE INVOICE POPUP MODAL ===================== */
 function showDuplicateInvoiceModal(info) {
   const existing = document.getElementById('dup-inv-alert-modal');
   if (existing) existing.remove();
 
   const overlay = document.createElement('div');
   overlay.id = 'dup-inv-alert-modal';
-  overlay.className = 'modal-overlay';
-  overlay.style.zIndex = '999999';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.68);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);z-index:999999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;animation:fadeInInvDup 0.2s ease-out;';
 
   const amtFormatted = info.amount ? `${Number(info.amount).toLocaleString('vi-VN')}đ` : '';
 
   overlay.innerHTML = `
-    <div class="modal-box" style="max-width:520px;width:90%;padding:32px 36px;border-radius:18px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,0.35);background:#ffffff;">
-      <h3 style="font-size:20px;font-weight:800;color:#0F172A;margin:0 0 16px;display:flex;align-items:center;justify-content:center;gap:8px;">
-        <span>⚠️ ⚠️</span> <span>CẢNH BÁO TRÙNG LẶP HOÁ ĐƠN LÀM ĐNTT</span>
+    <style>
+      @keyframes fadeInInvDup { from { opacity:0; } to { opacity:1; } }
+      @keyframes popInInvDup { from { transform:scale(0.85); opacity:0; } to { transform:scale(1); opacity:1; } }
+      #dup-inv-close-btn:hover { background:#B91C1C !important; transform:translateY(-1px); box-shadow:0 6px 16px rgba(185,28,28,0.4) !important; }
+    </style>
+    <div class="modal-box" style="max-width:500px;width:100%;padding:32px 28px;border-radius:22px;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.4);background:#ffffff;border:2px solid #FCA5A5;position:relative;animation:popInInvDup 0.25s cubic-bezier(0.175,0.885,0.32,1.275);box-sizing:border-box;">
+      <div style="width:64px;height:64px;border-radius:50%;background:#FEF2F2;border:2px solid #FCA5A5;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px;box-shadow:0 4px 12px rgba(220,38,38,0.15);">
+        🚨
+      </div>
+      <h3 style="font-size:19px;font-weight:800;color:#DC2626;margin:0 0 12px;letter-spacing:-0.3px;">
+        CẢNH BÁO TRÙNG LẶP HOÁ ĐƠN
       </h3>
-      <p style="font-size:14.5px;color:#475569;line-height:1.6;margin:0 0 28px;">
-        Hoá đơn số <b>${info.invoiceNumber || 'N/A'}</b> ${info.seriesNo ? `(Ký hiệu: <b>${info.seriesNo}</b>)` : ''} ${amtFormatted ? `- Số tiền <b>${amtFormatted}</b>` : ''} đã tồn tại trong Kho Hoá đơn (Do <b>${info.existingUser || 'Vũ Thị Kim Tuyến'}</b> thêm). Vui lòng kiểm tra lại để tránh tải trùng!
+      <p style="font-size:14px;color:#334155;line-height:1.6;margin:0 0 16px;">
+        Hoá đơn số <b style="color:#0F172A;font-size:15px;">${info.invoiceNumber || 'N/A'}</b> ${info.seriesNo ? `(Ký hiệu: <b>${info.seriesNo}</b>)` : ''} ${amtFormatted ? `- Số tiền <b>${amtFormatted}</b>` : ''} đã có sẵn trong Kho Hoá đơn (Do <b>${info.existingUser || 'người dùng khác'}</b> thêm).
       </p>
-      <button type="button" class="btn" id="dup-inv-close-btn" style="width:100%;background:#C2410C;color:#ffffff;border:none;padding:12px 0;font-size:15px;font-weight:700;border-radius:10px;cursor:pointer;transition:all 0.15s;box-shadow:0 4px 12px rgba(194,65,12,0.3);">
-        Đã hiểu
+      <div style="background:#FEF2F2;border:1.5px solid #FCA5A5;border-radius:12px;padding:12px 14px;font-size:13px;color:#991B1B;font-weight:700;margin-bottom:24px;line-height:1.5;text-align:center;">
+        🛑 <b>Hóa đơn này bị trùng nên KHÔNG được ghi nhận vào Kho để tránh trùng lặp dữ liệu.</b>
+      </div>
+      <button type="button" id="dup-inv-close-btn" style="width:100%;background:#DC2626;color:#ffffff;border:none;padding:13px 0;font-size:15px;font-weight:700;border-radius:12px;cursor:pointer;transition:all 0.15s;box-shadow:0 4px 12px rgba(220,38,38,0.3);">
+        Đã hiểu (Đóng Pop-up)
       </button>
     </div>
   `;
@@ -1396,10 +1410,8 @@ function cleanDuplicateInvoicesInRepo() {
     }
 
     if (seenIds.has(r.id)) {
-      continue;
-    }
-    if (r.attachmentId && seenAtts.has(r.attachmentId)) {
-      continue;
+      r.id = uid('inv');
+      patched = true;
     }
 
     seenIds.add(r.id);
@@ -1426,11 +1438,10 @@ function recoverMissingInvoicesFromDocuments() {
 
       if (!attId && !invNoStr) continue;
 
-      // Skip if invoice was explicitly moved to Trash by user
+      // Skip if invoice was explicitly moved to Trash by user (exact attachment or ID match)
       const isInTrash = (STATE.trash || []).some(t => 
         (attId && t.attachmentId && attId === t.attachmentId) ||
-        (t.id && attId && t.id === attId) ||
-        matchInvoiceRecordWithDocItem(t, invNoStr, attId)
+        (t.id && attId && t.id === attId)
       );
       if (isInTrash) continue;
 
@@ -2806,13 +2817,16 @@ async function uploadInvoiceFiles(fileList) {
         await window.storage.set('attachment:' + attId, dataUrl, false);
       }
 
-      // Kiểm tra cảnh báo trùng hoá đơn trong Kho
+      // Kiểm tra cảnh báo trùng hoá đơn trong Kho (nếu trùng thì ngắt không ghi nhận vào kho)
       const invNum = (extracted.invoiceNumber || '').trim();
       const sNo = (extracted.seriesNo || '').trim().toUpperCase();
       if (invNum) {
         const dupInRepo = STATE.invoices.find(r => {
-          const matchNum = r.invoiceNumber && r.invoiceNumber.trim() === invNum;
-          const matchSeries = !sNo || !r.seriesNo || r.seriesNo.trim().toUpperCase() === sNo;
+          const rNum = (r.invoiceNumber || '').trim();
+          const rSeries = (r.seriesNo || '').trim().toUpperCase();
+          if (!rNum) return false;
+          const matchNum = rNum === invNum;
+          const matchSeries = (sNo && rSeries) ? rSeries === sNo : (!sNo || !rSeries);
           return matchNum && matchSeries;
         });
         if (dupInRepo) {
@@ -2822,7 +2836,7 @@ async function uploadInvoiceFiles(fileList) {
             amount: extracted.amount || dupInRepo.amount,
             existingUser: dupInRepo.requesterName
           });
-          continue;
+          continue; // Bỏ qua không ghi nhận hoá đơn trùng vào kho
         }
       }
 
@@ -2853,7 +2867,7 @@ async function uploadInvoiceFiles(fileList) {
         rawText: extracted.rawText || ''
       });
       STATE.invoices.unshift(record);
-      await saveInvoices();
+      await saveInvoices(true);
     } catch (e) {
       console.error(e);
       const detailMsg = e && e.message ? ` (${e.message})` : '';
@@ -2863,6 +2877,11 @@ async function uploadInvoiceFiles(fileList) {
 
   STATE.invoiceUploading = false;
   STATE._invSearch = '';
+  STATE._invMonthFilter = 'all';
+  STATE._invStatusFilter = 'all';
+  STATE._invRequesterFilter = 'all';
+  STATE._invBeneficiaryFilter = 'all';
+  STATE._invGroupFilter = 'all';
   showToast('✓ Đã xử lý xong hoá đơn tải lên (hiển thị ngay ở đầu danh sách)');
   render();
 }
@@ -2875,7 +2894,10 @@ async function removeInvoiceFromDraftVouchers(rec) {
 
     if (d.items && d.items.length > 0) {
       const origLen = d.items.length;
-      d.items = d.items.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId) && it.attachmentId !== rec.attachmentId);
+      d.items = d.items.filter(it => {
+        if (rec.attachmentId && it.attachmentId) return it.attachmentId !== rec.attachmentId;
+        return true;
+      });
       if (d.items.length !== origLen) {
         modified = true;
         d.items.forEach((it, idx) => { it.stt = idx + 1; });
@@ -2887,7 +2909,10 @@ async function removeInvoiceFromDraftVouchers(rec) {
 
     if (d.spentItems && d.spentItems.length > 0) {
       const origLen = d.spentItems.length;
-      d.spentItems = d.spentItems.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId) && it.attachmentId !== rec.attachmentId);
+      d.spentItems = d.spentItems.filter(it => {
+        if (rec.attachmentId && it.attachmentId) return it.attachmentId !== rec.attachmentId;
+        return true;
+      });
       if (d.spentItems.length !== origLen) modified = true;
     }
 
@@ -2935,10 +2960,13 @@ function deleteInvoiceRecord(id) {
     'Chuyển hoá đơn vào Thùng rác?',
     `Chuyển hoá đơn <b>${rec.invoiceNumber || rec.fileName || 'này'}</b> vào Thùng rác (có thể khôi phục lại trong Thùng rác)?${warningNote}`,
     async () => {
-      // 1. INSTANT UI UPDATE (0ms delay)
-      STATE.invoices = (STATE.invoices || []).filter(r => r.id !== id);
+      // 1. INSTANT UI UPDATE (0ms delay) - Only remove this exact record instance
+      const idx = (STATE.invoices || []).findIndex(r => r === rec || r.id === id);
+      if (idx !== -1) {
+        STATE.invoices.splice(idx, 1);
+      }
       if (STATE.selectedInvoiceIds) {
-        STATE.selectedInvoiceIds = STATE.selectedInvoiceIds.filter(selId => selId !== id);
+        STATE.selectedInvoiceIds = STATE.selectedInvoiceIds.filter(selId => selId !== id && selId !== rec.id);
       }
       updateInvoiceTableView();
       showToast('✓ Đã chuyển hoá đơn vào Thùng rác!');
@@ -2946,6 +2974,7 @@ function deleteInvoiceRecord(id) {
       // 2. BACKGROUND ASYNC SAVING
       try {
         const trashInv = JSON.parse(JSON.stringify(rec));
+        trashInv.id = rec.id; // Keep original invoice ID so saveInvoices filters it out of Cloud sync
         trashInv.deletedAt = new Date().toISOString();
         trashInv.deletedBy = currentUser().name;
         trashInv.itemType = 'invoice';
@@ -3246,18 +3275,23 @@ function openManualInvoiceModal(initialData = {}) {
       return false;
     }
 
-    // Cảnh báo trùng trong Kho Hoá đơn khi nhập tay
+    // Cảnh báo trùng trong Kho Hoá đơn khi nhập tay (ngắt không lưu nếu trùng)
     const dupInRepo = STATE.invoices.find(r => {
-      const matchNum = r.invoiceNumber && r.invoiceNumber.trim() === invoiceNumber;
-      const matchSeries = !seriesNo || !r.seriesNo || r.seriesNo.trim().toUpperCase() === seriesNo;
+      const rNum = (r.invoiceNumber || '').trim();
+      const rSeries = (r.seriesNo || '').trim().toUpperCase();
+      if (!rNum || !invoiceNumber) return false;
+      const matchNum = rNum === invoiceNumber;
+      const matchSeries = (seriesNo && rSeries) ? rSeries === seriesNo : (!seriesNo || !rSeries);
       return matchNum && matchSeries;
     });
     if (dupInRepo) {
-      showToast(`⚠️ Hoá đơn số ${invoiceNumber} đã tồn tại trong Kho Hoá đơn!`);
-      showAlertModal(
-        '⚠️ CẢNH BÁO TRÙNG LẶP HOÁ ĐƠN LÀM ĐNTT',
-        `Hoá đơn số <b>${invoiceNumber}</b> ${seriesNo ? `(Ký hiệu: <b>${seriesNo}</b>)` : ''} - Số tiền <b>${Number(amount).toLocaleString('vi-VN')}đ</b> đã tồn tại trong Kho Hoá đơn (Do <b>${dupInRepo.requesterName}</b> thêm). Vui lòng kiểm tra lại.`
-      );
+      showDuplicateInvoiceModal({
+        invoiceNumber: invoiceNumber,
+        seriesNo: seriesNo,
+        amount: amount || dupInRepo.amount,
+        existingUser: dupInRepo.requesterName
+      });
+      return false; // Bỏ qua không lưu hoá đơn trùng khi nhập tay
     }
 
     let attId = null;
