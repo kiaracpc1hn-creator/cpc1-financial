@@ -1396,10 +1396,8 @@ function cleanDuplicateInvoicesInRepo() {
     }
 
     if (seenIds.has(r.id)) {
-      continue;
-    }
-    if (r.attachmentId && seenAtts.has(r.attachmentId)) {
-      continue;
+      r.id = uid('inv');
+      patched = true;
     }
 
     seenIds.add(r.id);
@@ -1426,11 +1424,10 @@ function recoverMissingInvoicesFromDocuments() {
 
       if (!attId && !invNoStr) continue;
 
-      // Skip if invoice was explicitly moved to Trash by user
+      // Skip if invoice was explicitly moved to Trash by user (exact attachment or ID match)
       const isInTrash = (STATE.trash || []).some(t => 
         (attId && t.attachmentId && attId === t.attachmentId) ||
-        (t.id && attId && t.id === attId) ||
-        matchInvoiceRecordWithDocItem(t, invNoStr, attId)
+        (t.id && attId && t.id === attId)
       );
       if (isInTrash) continue;
 
@@ -2879,7 +2876,10 @@ async function removeInvoiceFromDraftVouchers(rec) {
 
     if (d.items && d.items.length > 0) {
       const origLen = d.items.length;
-      d.items = d.items.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId) && it.attachmentId !== rec.attachmentId);
+      d.items = d.items.filter(it => {
+        if (rec.attachmentId && it.attachmentId) return it.attachmentId !== rec.attachmentId;
+        return true;
+      });
       if (d.items.length !== origLen) {
         modified = true;
         d.items.forEach((it, idx) => { it.stt = idx + 1; });
@@ -2891,7 +2891,10 @@ async function removeInvoiceFromDraftVouchers(rec) {
 
     if (d.spentItems && d.spentItems.length > 0) {
       const origLen = d.spentItems.length;
-      d.spentItems = d.spentItems.filter(it => !matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId) && it.attachmentId !== rec.attachmentId);
+      d.spentItems = d.spentItems.filter(it => {
+        if (rec.attachmentId && it.attachmentId) return it.attachmentId !== rec.attachmentId;
+        return true;
+      });
       if (d.spentItems.length !== origLen) modified = true;
     }
 
@@ -2939,10 +2942,13 @@ function deleteInvoiceRecord(id) {
     'Chuyển hoá đơn vào Thùng rác?',
     `Chuyển hoá đơn <b>${rec.invoiceNumber || rec.fileName || 'này'}</b> vào Thùng rác (có thể khôi phục lại trong Thùng rác)?${warningNote}`,
     async () => {
-      // 1. INSTANT UI UPDATE (0ms delay)
-      STATE.invoices = (STATE.invoices || []).filter(r => r.id !== id);
+      // 1. INSTANT UI UPDATE (0ms delay) - Only remove this exact record instance
+      const idx = (STATE.invoices || []).findIndex(r => r === rec || r.id === id);
+      if (idx !== -1) {
+        STATE.invoices.splice(idx, 1);
+      }
       if (STATE.selectedInvoiceIds) {
-        STATE.selectedInvoiceIds = STATE.selectedInvoiceIds.filter(selId => selId !== id);
+        STATE.selectedInvoiceIds = STATE.selectedInvoiceIds.filter(selId => selId !== id && selId !== rec.id);
       }
       updateInvoiceTableView();
       showToast('✓ Đã chuyển hoá đơn vào Thùng rác!');
@@ -2950,6 +2956,7 @@ function deleteInvoiceRecord(id) {
       // 2. BACKGROUND ASYNC SAVING
       try {
         const trashInv = JSON.parse(JSON.stringify(rec));
+        trashInv.id = uid('inv_trash'); // Unique trash ID so it does not collide with sibling records in repo
         trashInv.deletedAt = new Date().toISOString();
         trashInv.deletedBy = currentUser().name;
         trashInv.itemType = 'invoice';
