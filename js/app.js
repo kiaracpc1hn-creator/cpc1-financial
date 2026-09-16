@@ -449,7 +449,11 @@ async function saveInvoices(immediate = false) {
       } catch (e) { /* chưa có dữ liệu trên Cloud, bỏ qua */ }
 
       const localIds = new Set((STATE.invoices || []).map(r => r.id));
-      const trashIds = new Set((STATE.trash || []).map(t => t.id));
+      const trashIds = new Set(
+        (STATE.trash || [])
+          .flatMap(t => [t.id, t.originalId, t.originalInvoiceId])
+          .filter(Boolean)
+      );
 
       // 2. Gộp: giữ nguyên toàn bộ dữ liệu Local đang có (đang thao tác),
       //    đồng thời bổ sung lại các hoá đơn có trên Cloud nhưng KHÔNG có ở Local
@@ -2956,7 +2960,7 @@ function deleteInvoiceRecord(id) {
       // 2. BACKGROUND ASYNC SAVING
       try {
         const trashInv = JSON.parse(JSON.stringify(rec));
-        trashInv.id = uid('inv_trash'); // Unique trash ID so it does not collide with sibling records in repo
+        trashInv.id = rec.id; // Keep original invoice ID so saveInvoices filters it out of Cloud sync
         trashInv.deletedAt = new Date().toISOString();
         trashInv.deletedBy = currentUser().name;
         trashInv.itemType = 'invoice';
