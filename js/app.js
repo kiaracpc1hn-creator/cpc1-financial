@@ -1306,28 +1306,38 @@ function duplicateDoc(doc) {
   render();
 }
 
-/* ===================== DUPLICATE INVOICE CHECK ===================== */
+/* ===================== DUPLICATE INVOICE POPUP MODAL ===================== */
 function showDuplicateInvoiceModal(info) {
   const existing = document.getElementById('dup-inv-alert-modal');
   if (existing) existing.remove();
 
   const overlay = document.createElement('div');
   overlay.id = 'dup-inv-alert-modal';
-  overlay.className = 'modal-overlay';
-  overlay.style.zIndex = '999999';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.68);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);z-index:999999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;animation:fadeInInvDup 0.2s ease-out;';
 
   const amtFormatted = info.amount ? `${Number(info.amount).toLocaleString('vi-VN')}đ` : '';
 
   overlay.innerHTML = `
-    <div class="modal-box" style="max-width:520px;width:90%;padding:32px 36px;border-radius:18px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,0.35);background:#ffffff;">
-      <h3 style="font-size:20px;font-weight:800;color:#0F172A;margin:0 0 16px;display:flex;align-items:center;justify-content:center;gap:8px;">
-        <span>⚠️ ⚠️</span> <span>CẢNH BÁO TRÙNG LẶP HOÁ ĐƠN LÀM ĐNTT</span>
+    <style>
+      @keyframes fadeInInvDup { from { opacity:0; } to { opacity:1; } }
+      @keyframes popInInvDup { from { transform:scale(0.85); opacity:0; } to { transform:scale(1); opacity:1; } }
+      #dup-inv-close-btn:hover { background:#B91C1C !important; transform:translateY(-1px); box-shadow:0 6px 16px rgba(185,28,28,0.4) !important; }
+    </style>
+    <div class="modal-box" style="max-width:500px;width:100%;padding:32px 28px;border-radius:22px;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.4);background:#ffffff;border:2px solid #FCA5A5;position:relative;animation:popInInvDup 0.25s cubic-bezier(0.175,0.885,0.32,1.275);box-sizing:border-box;">
+      <div style="width:64px;height:64px;border-radius:50%;background:#FEF2F2;border:2px solid #FCA5A5;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px;box-shadow:0 4px 12px rgba(220,38,38,0.15);">
+        🚨
+      </div>
+      <h3 style="font-size:19px;font-weight:800;color:#DC2626;margin:0 0 12px;letter-spacing:-0.3px;">
+        CẢNH BÁO TRÙNG LẶP HOÁ ĐƠN
       </h3>
-      <p style="font-size:14.5px;color:#475569;line-height:1.6;margin:0 0 28px;">
-        Hoá đơn số <b>${info.invoiceNumber || 'N/A'}</b> ${info.seriesNo ? `(Ký hiệu: <b>${info.seriesNo}</b>)` : ''} ${amtFormatted ? `- Số tiền <b>${amtFormatted}</b>` : ''} đã tồn tại trong Kho Hoá đơn (Do <b>${info.existingUser || 'Vũ Thị Kim Tuyến'}</b> thêm). Vui lòng kiểm tra lại để tránh tải trùng!
+      <p style="font-size:14px;color:#334155;line-height:1.6;margin:0 0 16px;">
+        Hoá đơn số <b style="color:#0F172A;font-size:15px;">${info.invoiceNumber || 'N/A'}</b> ${info.seriesNo ? `(Ký hiệu: <b>${info.seriesNo}</b>)` : ''} ${amtFormatted ? `- Số tiền <b>${amtFormatted}</b>` : ''} đã có sẵn trong Kho Hoá đơn (Do <b>${info.existingUser || 'người dùng khác'}</b> thêm).
       </p>
-      <button type="button" class="btn" id="dup-inv-close-btn" style="width:100%;background:#C2410C;color:#ffffff;border:none;padding:12px 0;font-size:15px;font-weight:700;border-radius:10px;cursor:pointer;transition:all 0.15s;box-shadow:0 4px 12px rgba(194,65,12,0.3);">
-        Đã hiểu
+      <div style="background:#FEF2F2;border:1.5px solid #FCA5A5;border-radius:12px;padding:12px 14px;font-size:13px;color:#991B1B;font-weight:700;margin-bottom:24px;line-height:1.5;text-align:center;">
+        🛑 <b>Hóa đơn này bị trùng nên KHÔNG được ghi nhận vào Kho để tránh trùng lặp dữ liệu.</b>
+      </div>
+      <button type="button" id="dup-inv-close-btn" style="width:100%;background:#DC2626;color:#ffffff;border:none;padding:13px 0;font-size:15px;font-weight:700;border-radius:12px;cursor:pointer;transition:all 0.15s;box-shadow:0 4px 12px rgba(220,38,38,0.3);">
+        Đã hiểu (Đóng Pop-up)
       </button>
     </div>
   `;
@@ -1370,12 +1380,35 @@ async function autoPurgeCorruptedInvoices() {
   return purgedCount;
 }
 
+function deduplicateInvoiceRecords(records) {
+  if (!records || records.length === 0) return [];
+  const seenKeys = new Set();
+  const result = [];
+
+  for (const r of records) {
+    if (!r) continue;
+    const invNum = (r.invoiceNumber || '').trim();
+    const sNo = (r.seriesNo || '').trim().toUpperCase();
+
+    if (invNum) {
+      const key = sNo ? `${sNo}|${invNum}` : invNum;
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+    }
+    result.push(r);
+  }
+  return result;
+}
+
 function cleanDuplicateInvoicesInRepo() {
   if (!STATE.invoices) STATE.invoices = [];
   if (STATE.invoices.length === 0) return;
 
   const seenIds = new Set();
   const seenAtts = new Set();
+  const seenKeys = new Set();
   const cleaned = [];
   let patched = false;
 
@@ -1402,6 +1435,17 @@ function cleanDuplicateInvoicesInRepo() {
     if (seenIds.has(r.id)) {
       r.id = uid('inv');
       patched = true;
+    }
+
+    const invNum = (r.invoiceNumber || '').trim();
+    const sNo = (r.seriesNo || '').trim().toUpperCase();
+    if (invNum) {
+      const key = sNo ? `${sNo}|${invNum}` : invNum;
+      if (seenKeys.has(key)) {
+        patched = true;
+        continue;
+      }
+      seenKeys.add(key);
     }
 
     seenIds.add(r.id);
@@ -2807,22 +2851,30 @@ async function uploadInvoiceFiles(fileList) {
         await window.storage.set('attachment:' + attId, dataUrl, false);
       }
 
-      // Kiểm tra cảnh báo trùng hoá đơn trong Kho (cảnh báo nhưng vẫn lưu để không mất dữ liệu người dùng)
+      // Kiểm tra cảnh báo trùng hoá đơn trong Kho (nếu trùng thì hiện Pop-up ngắt KHÔNG GHI NHẬN VÀO KHO)
       const invNum = (extracted.invoiceNumber || '').trim();
       const sNo = (extracted.seriesNo || '').trim().toUpperCase();
       if (invNum) {
-        const dupInRepo = STATE.invoices.find(r => {
-          const matchNum = r.invoiceNumber && r.invoiceNumber.trim() === invNum;
-          const matchSeries = (sNo && r.seriesNo) ? r.seriesNo.trim().toUpperCase() === sNo : (!sNo && !r.seriesNo);
-          return matchNum && matchSeries;
+        const normInvNum = invNum.replace(/^0+/, '');
+        const dupInRepo = (STATE.invoices || []).find(r => {
+          const rNum = (r.invoiceNumber || '').trim().replace(/^0+/, '');
+          if (!rNum || !normInvNum) return false;
+          if (rNum !== normInvNum) return false;
+          const rSeries = (r.seriesNo || '').trim().toUpperCase();
+          if (sNo && rSeries) {
+            return rSeries === sNo;
+          }
+          return true;
         });
+
         if (dupInRepo) {
           showDuplicateInvoiceModal({
             invoiceNumber: invNum,
             seriesNo: sNo,
             amount: extracted.amount || dupInRepo.amount,
-            existingUser: dupInRepo.requesterName
+            existingUser: dupInRepo.requesterName || 'người dùng khác'
           });
+          continue; // CHẶN TRIỆT ĐỂ: Bỏ qua không lưu hoá đơn trùng này vào Kho!
         }
       }
 
@@ -3261,18 +3313,29 @@ function openManualInvoiceModal(initialData = {}) {
       return false;
     }
 
-    // Cảnh báo trùng trong Kho Hoá đơn khi nhập tay
-    const dupInRepo = STATE.invoices.find(r => {
-      const matchNum = r.invoiceNumber && r.invoiceNumber.trim() === invoiceNumber;
-      const matchSeries = !seriesNo || !r.seriesNo || r.seriesNo.trim().toUpperCase() === seriesNo;
-      return matchNum && matchSeries;
-    });
-    if (dupInRepo) {
-      showToast(`⚠️ Hoá đơn số ${invoiceNumber} đã tồn tại trong Kho Hoá đơn!`);
-      showAlertModal(
-        '⚠️ CẢNH BÁO TRÙNG LẶP HOÁ ĐƠN LÀM ĐNTT',
-        `Hoá đơn số <b>${invoiceNumber}</b> ${seriesNo ? `(Ký hiệu: <b>${seriesNo}</b>)` : ''} - Số tiền <b>${Number(amount).toLocaleString('vi-VN')}đ</b> đã tồn tại trong Kho Hoá đơn (Do <b>${dupInRepo.requesterName}</b> thêm). Vui lòng kiểm tra lại.`
-      );
+    // Cảnh báo trùng trong Kho Hoá đơn khi nhập tay (nếu trùng thì hiện Pop-up ngắt KHÔNG GHI NHẬN VÀO KHO)
+    if (invoiceNumber) {
+      const normInvNum = invoiceNumber.replace(/^0+/, '');
+      const dupInRepo = (STATE.invoices || []).find(r => {
+        const rNum = (r.invoiceNumber || '').trim().replace(/^0+/, '');
+        if (!rNum || !normInvNum) return false;
+        if (rNum !== normInvNum) return false;
+        const rSeries = (r.seriesNo || '').trim().toUpperCase();
+        if (seriesNo && rSeries) {
+          return rSeries === seriesNo;
+        }
+        return true;
+      });
+
+      if (dupInRepo) {
+        showDuplicateInvoiceModal({
+          invoiceNumber: invoiceNumber,
+          seriesNo: seriesNo,
+          amount: amount || dupInRepo.amount,
+          existingUser: dupInRepo.requesterName || 'người dùng khác'
+        });
+        return false; // CHẶN TRIỆT ĐỂ: Bỏ qua không lưu hoá đơn trùng này vào Kho!
+      }
     }
 
     let attId = null;
@@ -4128,6 +4191,7 @@ function getFilteredInvoices() {
   const searchQuery = (STATE._invSearch || '').trim().toLowerCase();
 
   let records = getAccessibleInvoices();
+  records = deduplicateInvoiceRecords(records);
   if (monthFilter !== 'all') records = records.filter(r => monthKey(r.date || r.uploadedAt) === monthFilter);
   if (requesterFilter !== 'all') records = records.filter(r => r.requesterName === requesterFilter);
   if (beneficiaryFilter !== 'all') records = records.filter(r => (r.beneficiaryName || '(chưa rõ)') === beneficiaryFilter);
