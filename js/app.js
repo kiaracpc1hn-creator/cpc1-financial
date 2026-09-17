@@ -376,10 +376,15 @@ async function saveDocuments() {
 }
 async function savePayees() {
   try {
-    const str = JSON.stringify(STATE.payees);
+    const str = JSON.stringify(STATE.payees || []);
     STATE._rawStrPayees = str;
+    if (window.storage && window.storage._setLocal) {
+      window.storage._setLocal('payees', str).catch(() => {});
+    }
     await window.storage.set('payees', str);
-  } catch (e) { showToast('Lỗi lưu danh bạ'); }
+  } catch (e) {
+    console.warn('Error saving payees:', e);
+  }
 }
 
 function cleanOcrSpacedText(str) {
@@ -515,16 +520,24 @@ async function saveTrash() {
 }
 async function saveUsers() {
   try {
-    const str = JSON.stringify(STATE.users);
+    const str = JSON.stringify(STATE.users || []);
     STATE._rawStrUsers = str;
+    if (window.storage && window.storage._setLocal) {
+      window.storage._setLocal('users', str).catch(() => {});
+    }
     await window.storage.set('users', str);
 
     if (STATE.deletedUserKeys && STATE.deletedUserKeys.length > 0) {
       const delStr = JSON.stringify(STATE.deletedUserKeys);
       STATE._rawStrDeletedUserKeys = delStr;
+      if (window.storage && window.storage._setLocal) {
+        window.storage._setLocal('deleted-user-keys', delStr).catch(() => {});
+      }
       await window.storage.set('deleted-user-keys', delStr);
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('Error saving users:', e);
+  }
 }
 async function saveCurrentUser() {
   try { await window.storage.set('current-user-id', STATE.currentUserId); }
@@ -6851,28 +6864,48 @@ function attachHandlers() {
   // Payees
   const addPayeeBtn = document.getElementById('add-payee');
   if (addPayeeBtn) addPayeeBtn.addEventListener('click', async () => {
-    const name = document.getElementById('np-name').value.trim();
-    const account = document.getElementById('np-account').value.trim();
-    const bank = document.getElementById('np-bank').value.trim();
+    const name = (document.getElementById('np-name') || {}).value?.trim();
+    const account = (document.getElementById('np-account') || {}).value?.trim();
+    const bank = (document.getElementById('np-bank') || {}).value?.trim();
     if (!name || !account) { showAlertModal('Thiếu thông tin', 'Vui lòng nhập tên và số tài khoản.'); return; }
-    STATE.payees.push({ id: uid('p'), name, accountNumber: account, bankName: bank, isInternal: false });
-    await savePayees();
+    
+    if (!STATE.payees) STATE.payees = [];
+    STATE.payees.unshift({ id: uid('p'), name, accountNumber: account, bankName: bank || '', isInternal: false });
+    STATE._rawStrPayees = JSON.stringify(STATE.payees);
+    showToast('✓ Đã thêm vào danh bạ người nhận!');
     render();
-    showToast('Đã thêm vào danh bạ');
+    savePayees().catch(() => {});
   });
-  document.querySelectorAll('[data-delpayee]').forEach(el => el.addEventListener('click', async () => {
-    STATE.payees = STATE.payees.filter(p => p.id !== el.dataset.delpayee);
-    await savePayees();
-    render();
+
+  document.querySelectorAll('[data-delpayee]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const id = el.dataset.delpayee;
+    const payee = (STATE.payees || []).find(p => p.id === id);
+    const payeeName = payee ? payee.name : 'người nhận này';
+
+    showConfirmModal(
+      'Xoá khỏi danh bạ?',
+      `Bạn có chắc chắn muốn xoá người nhận <b>"${escapeHtml(payeeName)}"</b> khỏi danh bạ người nhận tiền?`,
+      async () => {
+        STATE.payees = (STATE.payees || []).filter(p => p.id !== id);
+        STATE._rawStrPayees = JSON.stringify(STATE.payees);
+        showToast('✓ Đã xoá khỏi danh bạ!');
+        render();
+        savePayees().catch(() => {});
+      }
+    );
   }));
+
   document.querySelectorAll('[data-editpayee]').forEach(el => el.addEventListener('click', () => {
     STATE.editingPayeeId = el.dataset.editpayee;
     render();
   }));
+
   document.querySelectorAll('[data-canceleditpayee]').forEach(el => el.addEventListener('click', () => {
     STATE.editingPayeeId = null;
     render();
   }));
+
   document.querySelectorAll('[data-savepayee]').forEach(el => el.addEventListener('click', async () => {
     const id = el.dataset.savepayee;
     const name = (document.getElementById('ep-name-' + id) || {}).value?.trim();
@@ -6881,10 +6914,11 @@ function attachHandlers() {
     if (!name || !account) { showAlertModal('Thiếu thông tin', 'Vui lòng nhập tên và số tài khoản.'); return; }
     const p = STATE.payees.find(pp => pp.id === id);
     if (p) { p.name = name; p.accountNumber = account; p.bankName = bank || ''; }
-    await savePayees();
+    STATE._rawStrPayees = JSON.stringify(STATE.payees);
     STATE.editingPayeeId = null;
+    showToast('✓ Đã cập nhật thông tin người nhận!');
     render();
-    showToast('Đã cập nhật danh bạ');
+    savePayees().catch(() => {});
   }));
 
   // Attachments in Form
@@ -7064,9 +7098,9 @@ function attachHandlers() {
     const geminiKey = (document.getElementById('cfg-gemini-key') || {}).value?.trim() || '';
     STATE.claudeApiKey = claudeKey;
     STATE.geminiApiKey = geminiKey;
-    await window.storage.set('claude_api_key', claudeKey);
-    await window.storage.set('gemini_api_key', geminiKey);
-    showToast('✓ Đã lưu cấu hình AI Key thành công');
+    showToast('✓ Đã lưu cấu hình AI Key thành công!');
+    window.storage.set('claude_api_key', claudeKey).catch(() => {});
+    window.storage.set('gemini_api_key', geminiKey).catch(() => {});
   });
 
   const exportBtn = document.getElementById('export-backup-btn');
@@ -7202,14 +7236,15 @@ function attachHandlers() {
       };
 
       STATE.users.push(newUser);
-      render();
+      STATE._rawStrUsers = JSON.stringify(STATE.users);
       showToast(`✓ Đã thêm nhân viên ${name} (${code}) thuộc ${group} thành công!`);
+      render();
       saveUsers().catch(err => console.error(err));
     });
   }
 
   document.querySelectorAll('.del-user-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const userId = btn.dataset.deluser;
       const targetUser = STATE.users.find(u => u.id === userId);
@@ -7227,10 +7262,11 @@ function attachHandlers() {
 
         STATE.users = STATE.users.filter(u => u.id !== userId);
         STATE.users = ensureDefaultUsersMerged(STATE.users);
+        STATE._rawStrUsers = JSON.stringify(STATE.users);
 
         // 1. INSTANT UI UPDATE (0ms delay)
-        render();
         showToast(`✓ Đã xoá nhân viên ${targetUser.name}`);
+        render();
 
         // 2. BACKGROUND ASYNC SAVING TO CLOUD
         saveUsers().catch(err => console.error('Error saving users to cloud:', err));
@@ -7256,7 +7292,7 @@ function attachHandlers() {
   });
 
   document.querySelectorAll('.save-user-edit-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const curU = currentUser();
       const uidVal = btn.dataset.saveuser;
@@ -7288,15 +7324,19 @@ function attachHandlers() {
       targetUser.group = group || 'Nhóm EXP';
       targetUser.role = role || 'employee';
 
-      await saveUsers();
+      // 1. INSTANT UI UPDATE (0ms delay)
+      STATE._rawStrUsers = JSON.stringify(STATE.users);
       STATE.editingUserId = null;
       showToast(`✓ Đã cập nhật thông tin nhân viên ${name} thành công!`);
       render();
+
+      // 2. BACKGROUND ASYNC SAVING
+      saveUsers().catch(err => console.error(err));
     });
   });
 
   document.querySelectorAll('.reset-user-pwd-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const uidVal = btn.dataset.resetpwd;
       const targetUser = STATE.users.find(u => u.id === uidVal);
@@ -7304,9 +7344,14 @@ function attachHandlers() {
       showConfirmModal('Reset Mật khẩu & Mã PIN?', `Đặt lại Mật khẩu về 123 và Mã PIN về 1234 cho nhân viên ${targetUser.name} (${targetUser.employeeCode})?`, async () => {
         targetUser.password = '123';
         targetUser.pin = '1234';
-        await saveUsers();
+        STATE._rawStrUsers = JSON.stringify(STATE.users);
+
+        // 1. INSTANT UI UPDATE (0ms delay)
         showToast(`✓ Đã reset MK (123) và PIN (1234) cho nhân viên ${targetUser.name}!`);
         render();
+
+        // 2. BACKGROUND ASYNC SAVING
+        saveUsers().catch(err => console.error(err));
       });
     });
   });
