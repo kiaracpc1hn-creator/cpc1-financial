@@ -2713,7 +2713,7 @@ function getAccessibleInvoices() {
 
   const isGlobalAdmin = ['admin', 'chief_accountant', 'director'].includes(user.role);
   if (isGlobalAdmin) {
-    const groupFilter = STATE._invGroupFilter || 'all';
+    const groupFilter = (STATE.page === 'overview' ? STATE._overviewGroupFilter : STATE._invGroupFilter) || 'all';
     if (groupFilter === 'all') return [...STATE.invoices];
     return STATE.invoices.filter(r => normalizeGroupKey(getInvoiceGroup(r)) === normalizeGroupKey(groupFilter));
   }
@@ -3501,7 +3501,7 @@ function canUserAccessDoc(doc, user = currentUser()) {
 function getAccessibleDocuments(user = currentUser()) {
   if (!user) return [];
   if (['admin', 'chief_accountant', 'director'].includes(user.role)) {
-    const groupFilter = STATE._listGroupFilter || 'all';
+    const groupFilter = (STATE.page === 'overview' ? STATE._overviewGroupFilter : STATE._listGroupFilter) || 'all';
     if (groupFilter === 'all') return [...(STATE.documents || [])];
     return (STATE.documents || []).filter(doc => normalizeGroupKey(getDocGroup(doc)) === normalizeGroupKey(groupFilter));
   }
@@ -3618,7 +3618,15 @@ function renderSidebar() {
 }
 
 function renderOverview() {
-  const allMonths = [...new Set(STATE.invoices.map(r => monthKey(r.date || r.uploadedAt)))].sort((a, b) => a < b ? 1 : -1);
+  const curUser = currentUser();
+  const isGlobalAdmin = ['admin', 'chief_accountant', 'director'].includes(curUser.role);
+  const groupFilter = STATE._overviewGroupFilter || 'all';
+  const userGrp = getUserGroup(curUser);
+
+  const accessibleInvoices = getAccessibleInvoices();
+  const accessibleDocs = getAccessibleDocuments();
+
+  const allMonths = [...new Set(accessibleInvoices.map(r => monthKey(r.date || r.uploadedAt)))].sort((a, b) => a < b ? 1 : -1);
   const currentMonthKey = monthKey(new Date().toISOString());
   const selectedMonth = STATE._overviewMonth || (allMonths.includes(currentMonthKey) ? currentMonthKey : (allMonths[0] || currentMonthKey));
 
@@ -3627,24 +3635,42 @@ function renderOverview() {
   const overdueTotalAmount = overdues.reduce((sum, o) => sum + computeTotal(o.doc), 0);
 
   // 2. Unlinked invoices (Mới nhập)
-  const unlinkedInvoices = STATE.invoices.filter(r => getInvoiceRecordStatus(r).key === 'not_submitted');
+  const unlinkedInvoices = accessibleInvoices.filter(r => getInvoiceRecordStatus(r).key === 'not_submitted');
   const unlinkedTotalAmount = unlinkedInvoices.reduce((sum, r) => sum + (r.amount || 0), 0);
 
   // 3. Pending signature documents
-  const pendingDocs = getAccessibleDocuments().filter(d => d.status === 'pending_signature');
+  const pendingDocs = accessibleDocs.filter(d => d.status === 'pending_signature');
   const pendingTotalAmount = pendingDocs.reduce((sum, d) => sum + computeTotal(d), 0);
 
   // 4. Month invoices summary
-  const monthInvoices = STATE.invoices.filter(r => monthKey(r.date || r.uploadedAt) === selectedMonth);
+  const monthInvoices = accessibleInvoices.filter(r => monthKey(r.date || r.uploadedAt) === selectedMonth);
   const monthTotalAmount = monthInvoices.reduce((sum, r) => sum + (r.amount || 0), 0);
 
   return `
   <div class="page-header">
     <div>
-      <h1>📊 Tổng quan Quản lý Tài chính & Kho Hoá đơn</h1>
-      <p>Theo dõi các khoản tạm ứng quá hạn, phiếu đang chờ ký, danh sách hoá đơn chưa làm ĐNTT và bảng tổng hợp.</p>
+      <h1 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span>📊 Tổng quan Quản lý Tài chính & Kho Hoá đơn</span>
+        ${isGlobalAdmin ? `
+          <span class="badge badge-teal" style="font-size:13px;padding:4px 10px;font-weight:700;">👑 Quản trị hệ thống</span>
+        ` : `
+          <span class="badge badge-teal" style="font-size:13px;padding:4px 10px;font-weight:700;">🔒 Kho nhóm: ${userGrp}</span>
+        `}
+      </h1>
+      <p>Theo dõi các khoản tạm ứng quá hạn, phiếu đang chờ ký, danh sách hoá đơn chưa làm ĐNTT và bảng tổng hợp ${isGlobalAdmin ? 'toàn bộ kho nhóm' : `trực thuộc ${userGrp}`}.</p>
     </div>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      ${isGlobalAdmin ? `
+        <div style="display:flex;gap:6px;align-items:center;">
+          <label style="font-weight:600;font-size:13px;color:var(--ink);">Kho nhóm:</label>
+          <select id="overview-group-select" style="font-weight:700;padding:6px 12px;border-radius:6px;border:1.5px solid var(--teal);color:var(--teal);background:#F0FDFA;cursor:pointer;">
+            <option value="all">Tất cả kho nhóm</option>
+            <option value="Nhóm EXP" ${groupFilter === 'Nhóm EXP' || groupFilter === 'EXP' ? 'selected' : ''}>Nhóm EXP</option>
+            <option value="Nhóm Docs" ${groupFilter === 'Nhóm Docs' || groupFilter === 'DOCS' ? 'selected' : ''}>Nhóm Docs</option>
+            <option value="Không" ${groupFilter === 'Không' || groupFilter === 'NONE' ? 'selected' : ''}>Hóa đơn không phân nhóm</option>
+          </select>
+        </div>
+      ` : ''}
       <div style="display:flex;gap:6px;align-items:center;">
         <label style="font-weight:600;font-size:13px;color:var(--ink);">Tháng:</label>
         <select id="overview-month-select" style="font-weight:700;padding:6px 12px;border-radius:6px;border:1.5px solid var(--teal);color:var(--teal);background:#F0FDFA;cursor:pointer;">
@@ -6547,6 +6573,13 @@ function attachHandlers() {
   const ovm = document.getElementById('overview-month-select');
   if (ovm) ovm.addEventListener('change', e => {
     STATE._overviewMonth = e.target.value;
+    render();
+  });
+
+  // Overview Group Switcher (Admin)
+  const ovg = document.getElementById('overview-group-select');
+  if (ovg) ovg.addEventListener('change', e => {
+    STATE._overviewGroupFilter = e.target.value;
     render();
   });
 
