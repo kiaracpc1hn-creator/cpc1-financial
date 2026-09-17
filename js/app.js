@@ -5870,7 +5870,7 @@ function renderLoginScreen() {
 
   return `
     <div style="position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:999999;background:linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F766E 100%);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;font-family:var(--font-sans);">
-      <div style="background:#FFFFFF;border-radius:20px;box-shadow:0 25px 60px rgba(0,0,0,0.4);max-width:440px;width:100%;padding:36px;border:1px solid #CBD5E1;animation:modalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
+      <div class="login-card-animated" style="background:#FFFFFF;border-radius:20px;box-shadow:0 25px 60px rgba(0,0,0,0.4);max-width:440px;width:100%;padding:36px;border:1px solid #CBD5E1;">
         <div style="text-align:center;margin-bottom:24px;">
           <img src="${LOGO_DATA_URI}" alt="CPC1 Logo" style="height:62px;margin-bottom:10px;object-fit:contain;">
           <h2 style="font-size:20px;font-weight:800;color:#0F172A;margin:0 0 4px;">CPC1 FINANCIAL VOUCHERS</h2>
@@ -6021,6 +6021,7 @@ function attachLoginScreenHandlers() {
       e.preventDefault();
       const userVal = (userInput.value || '').trim().toLowerCase();
       const pwdVal = (pwdInput.value || '').trim();
+      const submitBtn = form.querySelector('button[type="submit"]');
 
       if (!userVal || !pwdVal) {
         if (errBox) {
@@ -6029,6 +6030,12 @@ function attachLoginScreenHandlers() {
         }
         return;
       }
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="btn-spinner"></span> ĐANG XÁC THỰC MẬT KHẨU...';
+      }
+      if (errBox) errBox.style.display = 'none';
 
       // Force refresh user list from Cloud Firestore before credential matching
       try {
@@ -6070,6 +6077,10 @@ function attachLoginScreenHandlers() {
           errBox.textContent = '❌ Mã nhân viên hoặc Mật khẩu không chính xác!';
           errBox.style.display = 'block';
         }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = 'TIẾP TỤC (XÁC THỰC MÃ PIN) ➔';
+        }
         return;
       }
 
@@ -6078,6 +6089,10 @@ function attachLoginScreenHandlers() {
         if (errBox) {
           errBox.textContent = '❌ Mã nhân viên hoặc Mật khẩu không chính xác!';
           errBox.style.display = 'block';
+        }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = 'TIẾP TỤC (XÁC THỰC MÃ PIN) ➔';
         }
         return;
       }
@@ -6092,6 +6107,7 @@ function attachLoginScreenHandlers() {
   if (pinForm) {
     pinForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const pinSubmitBtn = pinForm.querySelector('button[type="submit"]');
       const pinDigits = Array.from(document.querySelectorAll('.pin-digit-input')).map(inp => inp.value.trim()).join('');
       if (pinDigits.length < 4) {
         if (errBox) {
@@ -6100,6 +6116,12 @@ function attachLoginScreenHandlers() {
         }
         return;
       }
+
+      if (pinSubmitBtn) {
+        pinSubmitBtn.disabled = true;
+        pinSubmitBtn.innerHTML = '<span class="btn-spinner"></span> ĐANG ĐĂNG NHẬP...';
+      }
+      if (errBox) errBox.style.display = 'none';
 
       if (STATE.pendingUser) {
         const latestU = STATE.users.find(u => u.id === STATE.pendingUser.id);
@@ -6111,6 +6133,10 @@ function attachLoginScreenHandlers() {
         if (errBox) {
           errBox.textContent = '❌ Mã PIN bảo mật không chính xác! (Mã PIN mặc định: 1234)';
           errBox.style.display = 'block';
+        }
+        if (pinSubmitBtn) {
+          pinSubmitBtn.disabled = false;
+          pinSubmitBtn.innerHTML = '🔑 XÁC NHẬN ĐĂNG NHẬP';
         }
         document.querySelectorAll('.pin-digit-input').forEach(inp => { inp.value = ''; inp.style.borderColor = '#EF4444'; });
         const first = document.querySelectorAll('.pin-digit-input')[0];
@@ -6151,7 +6177,7 @@ function attachLoginScreenHandlers() {
         STATE.page = 'overview';
       }
 
-      showToast(`Xin chào ${loggedUser.name}!`);
+      showToast(`👋 Chào mừng ${loggedUser.name} đăng nhập thành công!`);
       render();
     });
   }
@@ -6554,17 +6580,23 @@ function attachHandlers() {
   const logoutBtn = document.getElementById('logout-btn');
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
-      STATE.isLoggedIn = false;
-      STATE.currentUserId = null;
-      try {
-        sessionStorage.clear();
-        localStorage.removeItem('CPC1_LOGGED_IN');
-        localStorage.removeItem('cpc1_is-logged-in');
-        localStorage.removeItem('cpc1_current-user-id');
-        await window.storage.set('is-logged-in', 'false');
-      } catch (e) {}
-      showToast('Đã đăng xuất tài khoản');
-      render();
+      logoutBtn.style.pointerEvents = 'none';
+      logoutBtn.style.opacity = '0.7';
+      logoutBtn.innerHTML = '<span class="btn-spinner" style="border-top-color:#F87171;width:11px;height:11px;"></span> Đang đăng xuất...';
+
+      setTimeout(async () => {
+        STATE.isLoggedIn = false;
+        STATE.currentUserId = null;
+        try {
+          sessionStorage.clear();
+          localStorage.removeItem('CPC1_LOGGED_IN');
+          localStorage.removeItem('cpc1_is-logged-in');
+          localStorage.removeItem('cpc1_current-user-id');
+          await window.storage.set('is-logged-in', 'false');
+        } catch (e) {}
+        showToast('👋 Đã đăng xuất khỏi tài khoản thành công!');
+        render();
+      }, 200);
     });
   }
   const pickRepoBtn = document.getElementById('pick-invoice-repo-btn');
