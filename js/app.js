@@ -1870,9 +1870,11 @@ function renderFormDuplicateBanner(doc) {
 function getGlobalDuplicateWarnings() {
   const warnings = [];
   const seenMap = {};
+  const trashDocIds = new Set((STATE.trash || []).map(t => t.id));
 
   for (const d of STATE.documents) {
     if (d.status === 'cancelled') continue;
+    if (trashDocIds.has(d.id)) continue;
     const items = [...(d.items || []), ...(d.spentItems || [])];
     for (const it of items) {
       if (!it.invoiceNo || !it.invoiceNo.trim()) continue;
@@ -2985,7 +2987,7 @@ async function removeInvoiceFromDraftVouchers(rec) {
     if (d.items && d.items.length > 0) {
       const origLen = d.items.length;
       d.items = d.items.filter(it => {
-        if (rec.attachmentId && it.attachmentId) return it.attachmentId !== rec.attachmentId;
+        if (matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId)) return false;
         return true;
       });
       if (d.items.length !== origLen) {
@@ -3000,7 +3002,7 @@ async function removeInvoiceFromDraftVouchers(rec) {
     if (d.spentItems && d.spentItems.length > 0) {
       const origLen = d.spentItems.length;
       d.spentItems = d.spentItems.filter(it => {
-        if (rec.attachmentId && it.attachmentId) return it.attachmentId !== rec.attachmentId;
+        if (matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId)) return false;
         return true;
       });
       if (d.spentItems.length !== origLen) modified = true;
@@ -3073,8 +3075,9 @@ function deleteInvoiceRecord(id) {
         STATE.trash.unshift(trashInv);
 
         saveTrash().catch(() => {});
-        removeInvoiceFromDraftVouchers(rec).catch(() => {});
+        await removeInvoiceFromDraftVouchers(rec).catch(() => {});
         saveInvoices(true).catch(() => {});
+        render();
       } catch (err) {
         console.warn('Background delete sync error:', err);
       }
