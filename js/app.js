@@ -7134,9 +7134,9 @@ function attachHandlers() {
       };
 
       STATE.users.push(newUser);
-      await saveUsers();
-      showToast(`✓ Đã thêm nhân viên ${name} (${code}) thuộc ${group} thành công!`);
       render();
+      showToast(`✓ Đã thêm nhân viên ${name} (${code}) thuộc ${group} thành công!`);
+      saveUsers().catch(err => console.error(err));
     });
   }
 
@@ -7159,9 +7159,13 @@ function attachHandlers() {
 
         STATE.users = STATE.users.filter(u => u.id !== userId);
         STATE.users = ensureDefaultUsersMerged(STATE.users);
-        await saveUsers();
-        showToast(`✓ Đã xoá nhân viên ${targetUser.name}`);
+
+        // 1. INSTANT UI UPDATE (0ms delay)
         render();
+        showToast(`✓ Đã xoá nhân viên ${targetUser.name}`);
+
+        // 2. BACKGROUND ASYNC SAVING TO CLOUD
+        saveUsers().catch(err => console.error('Error saving users to cloud:', err));
       });
     });
   });
