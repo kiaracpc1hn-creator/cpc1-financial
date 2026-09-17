@@ -128,6 +128,11 @@ async function loadAll() {
   } catch (e) { STATE.invoices = []; }
 
   try {
+    const r = await window.storage.get('deleted-user-keys');
+    STATE.deletedUserKeys = r ? JSON.parse(r.value) : [];
+  } catch (e) { STATE.deletedUserKeys = []; }
+
+  try {
     const r = await window.storage.get('users');
     STATE.users = r ? JSON.parse(r.value) : [];
   } catch (e) { STATE.users = []; }
@@ -259,15 +264,21 @@ async function loadAll() {
     });
   }
 
-  // Khởi chạy đồng bộ các bảng khác (users, invoices, payees, trash) qua listenRealtime
+  // Khởi chạy đồng bộ các bảng khác (users, deleted-user-keys, invoices, payees, trash) qua listenRealtime
   if (window.storage && window.storage.listenRealtime && !STATE._realtimeBound) {
     STATE._realtimeBound = true;
-    window.storage.listenRealtime(['users', 'invoices', 'payees', 'trash'], (key, val) => {
+    window.storage.listenRealtime(['users', 'deleted-user-keys', 'invoices', 'payees', 'trash'], (key, val) => {
       try {
         if (!val) return;
         let changed = false;
 
-        if (key === 'users') {
+        if (key === 'deleted-user-keys') {
+          if (STATE._rawStrDeletedUserKeys === val) return;
+          STATE._rawStrDeletedUserKeys = val;
+          STATE.deletedUserKeys = JSON.parse(val) || [];
+          STATE.users = ensureDefaultUsersMerged(STATE.users);
+          changed = true;
+        } else if (key === 'users') {
           if (STATE._rawStrUsers === val) return;
           STATE._rawStrUsers = val;
           const parsed = JSON.parse(val) || [];
@@ -503,8 +514,17 @@ async function saveTrash() {
   } catch (e) { showToast('Lỗi lưu thùng rác'); }
 }
 async function saveUsers() {
-  try { await window.storage.set('users', JSON.stringify(STATE.users)); }
-  catch (e) {}
+  try {
+    const str = JSON.stringify(STATE.users);
+    STATE._rawStrUsers = str;
+    await window.storage.set('users', str);
+
+    if (STATE.deletedUserKeys && STATE.deletedUserKeys.length > 0) {
+      const delStr = JSON.stringify(STATE.deletedUserKeys);
+      STATE._rawStrDeletedUserKeys = delStr;
+      await window.storage.set('deleted-user-keys', delStr);
+    }
+  } catch (e) {}
 }
 async function saveCurrentUser() {
   try { await window.storage.set('current-user-id', STATE.currentUserId); }
@@ -530,11 +550,25 @@ function seedUsers() {
 function ensureDefaultUsersMerged(userList) {
   if (!Array.isArray(userList)) userList = [];
   const defaults = seedUsers();
+  const deletedKeys = new Set(STATE.deletedUserKeys || []);
 
   for (const defU of defaults) {
+    const defCodeKey = defU.employeeCode ? String(defU.employeeCode).trim().replace(/^0+/, '') : '';
+    const defUserKey = defU.username ? String(defU.username).trim().toLowerCase() : '';
+    const defEmailKey = defU.email ? String(defU.email).trim().toLowerCase() : '';
+
+    if (
+      deletedKeys.has(defU.id) ||
+      (defCodeKey && deletedKeys.has(defCodeKey)) ||
+      (defUserKey && deletedKeys.has(defUserKey)) ||
+      (defEmailKey && deletedKeys.has(defEmailKey))
+    ) {
+      continue;
+    }
+
     const existing = userList.find(u =>
-      (u.employeeCode && String(u.employeeCode).trim().replace(/^0+/, '') === String(defU.employeeCode).trim().replace(/^0+/, '')) ||
-      (u.username && String(u.username).trim().toLowerCase() === String(defU.username).trim().toLowerCase()) ||
+      (u.employeeCode && String(u.employeeCode).trim().replace(/^0+/, '') === defCodeKey) ||
+      (u.username && String(u.username).trim().toLowerCase() === defUserKey) ||
       (u.id === defU.id)
     );
     if (existing) {
@@ -548,6 +582,24 @@ function ensureDefaultUsersMerged(userList) {
       userList.push(defU);
     }
   }
+
+  if (deletedKeys.size > 0) {
+    userList = userList.filter(u => {
+      const cKey = u.employeeCode ? String(u.employeeCode).trim().replace(/^0+/, '') : '';
+      const uKey = u.username ? String(u.username).trim().toLowerCase() : '';
+      const eKey = u.email ? String(u.email).trim().toLowerCase() : '';
+      if (
+        deletedKeys.has(u.id) ||
+        (cKey && deletedKeys.has(cKey)) ||
+        (uKey && deletedKeys.has(uKey)) ||
+        (eKey && deletedKeys.has(eKey))
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }
+
   return userList;
 }
 
@@ -1380,12 +1432,35 @@ async function autoPurgeCorruptedInvoices() {
   return purgedCount;
 }
 
+function deduplicateInvoiceRecords(records) {
+  if (!records || records.length === 0) return [];
+  const seenKeys = new Set();
+  const result = [];
+
+  for (const r of records) {
+    if (!r) continue;
+    const invNum = (r.invoiceNumber || '').trim();
+    const sNo = (r.seriesNo || '').trim().toUpperCase();
+
+    if (invNum) {
+      const key = sNo ? `${sNo}|${invNum}` : invNum;
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+    }
+    result.push(r);
+  }
+  return result;
+}
+
 function cleanDuplicateInvoicesInRepo() {
   if (!STATE.invoices) STATE.invoices = [];
   if (STATE.invoices.length === 0) return;
 
   const seenIds = new Set();
   const seenAtts = new Set();
+  const seenKeys = new Set();
   const cleaned = [];
   let patched = false;
 
@@ -1412,6 +1487,17 @@ function cleanDuplicateInvoicesInRepo() {
     if (seenIds.has(r.id)) {
       r.id = uid('inv');
       patched = true;
+    }
+
+    const invNum = (r.invoiceNumber || '').trim();
+    const sNo = (r.seriesNo || '').trim().toUpperCase();
+    if (invNum) {
+      const key = sNo ? `${sNo}|${invNum}` : invNum;
+      if (seenKeys.has(key)) {
+        patched = true;
+        continue;
+      }
+      seenKeys.add(key);
     }
 
     seenIds.add(r.id);
@@ -2817,26 +2903,30 @@ async function uploadInvoiceFiles(fileList) {
         await window.storage.set('attachment:' + attId, dataUrl, false);
       }
 
-      // Kiểm tra cảnh báo trùng hoá đơn trong Kho (nếu trùng thì ngắt không ghi nhận vào kho)
+      // Kiểm tra cảnh báo trùng hoá đơn trong Kho (nếu trùng thì hiện Pop-up ngắt KHÔNG GHI NHẬN VÀO KHO)
       const invNum = (extracted.invoiceNumber || '').trim();
       const sNo = (extracted.seriesNo || '').trim().toUpperCase();
       if (invNum) {
-        const dupInRepo = STATE.invoices.find(r => {
-          const rNum = (r.invoiceNumber || '').trim();
+        const normInvNum = invNum.replace(/^0+/, '');
+        const dupInRepo = (STATE.invoices || []).find(r => {
+          const rNum = (r.invoiceNumber || '').trim().replace(/^0+/, '');
+          if (!rNum || !normInvNum) return false;
+          if (rNum !== normInvNum) return false;
           const rSeries = (r.seriesNo || '').trim().toUpperCase();
-          if (!rNum) return false;
-          const matchNum = rNum === invNum;
-          const matchSeries = (sNo && rSeries) ? rSeries === sNo : (!sNo || !rSeries);
-          return matchNum && matchSeries;
+          if (sNo && rSeries) {
+            return rSeries === sNo;
+          }
+          return true;
         });
+
         if (dupInRepo) {
           showDuplicateInvoiceModal({
             invoiceNumber: invNum,
             seriesNo: sNo,
             amount: extracted.amount || dupInRepo.amount,
-            existingUser: dupInRepo.requesterName
+            existingUser: dupInRepo.requesterName || 'người dùng khác'
           });
-          continue; // Bỏ qua không ghi nhận hoá đơn trùng vào kho
+          continue; // CHẶN TRIỆT ĐỂ: Bỏ qua không lưu hoá đơn trùng này vào Kho!
         }
       }
 
@@ -3275,23 +3365,29 @@ function openManualInvoiceModal(initialData = {}) {
       return false;
     }
 
-    // Cảnh báo trùng trong Kho Hoá đơn khi nhập tay (ngắt không lưu nếu trùng)
-    const dupInRepo = STATE.invoices.find(r => {
-      const rNum = (r.invoiceNumber || '').trim();
-      const rSeries = (r.seriesNo || '').trim().toUpperCase();
-      if (!rNum || !invoiceNumber) return false;
-      const matchNum = rNum === invoiceNumber;
-      const matchSeries = (seriesNo && rSeries) ? rSeries === seriesNo : (!seriesNo || !rSeries);
-      return matchNum && matchSeries;
-    });
-    if (dupInRepo) {
-      showDuplicateInvoiceModal({
-        invoiceNumber: invoiceNumber,
-        seriesNo: seriesNo,
-        amount: amount || dupInRepo.amount,
-        existingUser: dupInRepo.requesterName
+    // Cảnh báo trùng trong Kho Hoá đơn khi nhập tay (nếu trùng thì hiện Pop-up ngắt KHÔNG GHI NHẬN VÀO KHO)
+    if (invoiceNumber) {
+      const normInvNum = invoiceNumber.replace(/^0+/, '');
+      const dupInRepo = (STATE.invoices || []).find(r => {
+        const rNum = (r.invoiceNumber || '').trim().replace(/^0+/, '');
+        if (!rNum || !normInvNum) return false;
+        if (rNum !== normInvNum) return false;
+        const rSeries = (r.seriesNo || '').trim().toUpperCase();
+        if (seriesNo && rSeries) {
+          return rSeries === seriesNo;
+        }
+        return true;
       });
-      return false; // Bỏ qua không lưu hoá đơn trùng khi nhập tay
+
+      if (dupInRepo) {
+        showDuplicateInvoiceModal({
+          invoiceNumber: invoiceNumber,
+          seriesNo: seriesNo,
+          amount: amount || dupInRepo.amount,
+          existingUser: dupInRepo.requesterName || 'người dùng khác'
+        });
+        return false; // CHẶN TRIỆT ĐỂ: Bỏ qua không lưu hoá đơn trùng này vào Kho!
+      }
     }
 
     let attId = null;
@@ -4147,6 +4243,7 @@ function getFilteredInvoices() {
   const searchQuery = (STATE._invSearch || '').trim().toLowerCase();
 
   let records = getAccessibleInvoices();
+  records = deduplicateInvoiceRecords(records);
   if (monthFilter !== 'all') records = records.filter(r => monthKey(r.date || r.uploadedAt) === monthFilter);
   if (requesterFilter !== 'all') records = records.filter(r => r.requesterName === requesterFilter);
   if (beneficiaryFilter !== 'all') records = records.filter(r => (r.beneficiaryName || '(chưa rõ)') === beneficiaryFilter);
@@ -7053,8 +7150,15 @@ function attachHandlers() {
         showToast('Không thể xoá tài khoản chính bạn đang đăng nhập');
         return;
       }
-      showConfirmModal('Xoá nhân viên?', `Bạn có chắc muốn xoá tài khoản nhân viên ${targetUser.name} (${targetUser.employeeCode})?`, async () => {
+      showConfirmModal('Xoá nhân viên?', `Bạn có chắc muốn xoá tài khoản nhân viên ${targetUser.name} (${targetUser.employeeCode || targetUser.username})?`, async () => {
+        if (!STATE.deletedUserKeys) STATE.deletedUserKeys = [];
+        if (targetUser.id) STATE.deletedUserKeys.push(targetUser.id);
+        if (targetUser.employeeCode) STATE.deletedUserKeys.push(String(targetUser.employeeCode).trim().replace(/^0+/, ''));
+        if (targetUser.username) STATE.deletedUserKeys.push(String(targetUser.username).trim().toLowerCase());
+        if (targetUser.email) STATE.deletedUserKeys.push(String(targetUser.email).trim().toLowerCase());
+
         STATE.users = STATE.users.filter(u => u.id !== userId);
+        STATE.users = ensureDefaultUsersMerged(STATE.users);
         await saveUsers();
         showToast(`✓ Đã xoá nhân viên ${targetUser.name}`);
         render();
