@@ -1672,3 +1672,68 @@ table {
 #pdf-modal-container::-webkit-scrollbar-thumb:hover {
   background: #94A3B8;
 }
+
+/* Smooth App-wide Animations & Interaction Micro-effects */
+button, .btn, .icon-btn, input[type="submit"] {
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  user-select: none;
+}
+
+button:active:not(:disabled), .btn:active:not(:disabled), .icon-btn:active:not(:disabled) {
+  transform: scale(0.97) translateY(1px) !important;
+  opacity: 0.92;
+}
+
+button:disabled, .btn:disabled {
+  opacity: 0.65 !important;
+  cursor: not-allowed !important;
+}
+
+@keyframes fadeInPage {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.main-content {
+  animation: fadeInPage 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes loginCardIn {
+  0% { opacity: 0; transform: scale(0.94) translateY(12px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.login-card-animated {
+  animation: loginCardIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #ffffff;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Smooth Focus Glow */
+input:focus, select:focus, textarea:focus {
+  border-color: #0D9488 !important;
+  box-shadow: 0 0 0 3.5px rgba(13, 148, 136, 0.2) !important;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* Sidebar nav item hover effect */
+.nav-item {
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.nav-item:hover {
+  transform: translateX(3px);
+}
