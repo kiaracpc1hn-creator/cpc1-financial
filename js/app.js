@@ -128,6 +128,11 @@ async function loadAll() {
   } catch (e) { STATE.invoices = []; }
 
   try {
+    const r = await window.storage.get('deleted-user-keys');
+    STATE.deletedUserKeys = r ? JSON.parse(r.value) : [];
+  } catch (e) { STATE.deletedUserKeys = []; }
+
+  try {
     const r = await window.storage.get('users');
     STATE.users = r ? JSON.parse(r.value) : [];
   } catch (e) { STATE.users = []; }
@@ -259,15 +264,21 @@ async function loadAll() {
     });
   }
 
-  // Khởi chạy đồng bộ các bảng khác (users, invoices, payees, trash) qua listenRealtime
+  // Khởi chạy đồng bộ các bảng khác (users, deleted-user-keys, invoices, payees, trash) qua listenRealtime
   if (window.storage && window.storage.listenRealtime && !STATE._realtimeBound) {
     STATE._realtimeBound = true;
-    window.storage.listenRealtime(['users', 'invoices', 'payees', 'trash'], (key, val) => {
+    window.storage.listenRealtime(['users', 'deleted-user-keys', 'invoices', 'payees', 'trash'], (key, val) => {
       try {
         if (!val) return;
         let changed = false;
 
-        if (key === 'users') {
+        if (key === 'deleted-user-keys') {
+          if (STATE._rawStrDeletedUserKeys === val) return;
+          STATE._rawStrDeletedUserKeys = val;
+          STATE.deletedUserKeys = JSON.parse(val) || [];
+          STATE.users = ensureDefaultUsersMerged(STATE.users);
+          changed = true;
+        } else if (key === 'users') {
           if (STATE._rawStrUsers === val) return;
           STATE._rawStrUsers = val;
           const parsed = JSON.parse(val) || [];
@@ -503,8 +514,17 @@ async function saveTrash() {
   } catch (e) { showToast('Lỗi lưu thùng rác'); }
 }
 async function saveUsers() {
-  try { await window.storage.set('users', JSON.stringify(STATE.users)); }
-  catch (e) {}
+  try {
+    const str = JSON.stringify(STATE.users);
+    STATE._rawStrUsers = str;
+    await window.storage.set('users', str);
+
+    if (STATE.deletedUserKeys && STATE.deletedUserKeys.length > 0) {
+      const delStr = JSON.stringify(STATE.deletedUserKeys);
+      STATE._rawStrDeletedUserKeys = delStr;
+      await window.storage.set('deleted-user-keys', delStr);
+    }
+  } catch (e) {}
 }
 async function saveCurrentUser() {
   try { await window.storage.set('current-user-id', STATE.currentUserId); }
@@ -530,11 +550,25 @@ function seedUsers() {
 function ensureDefaultUsersMerged(userList) {
   if (!Array.isArray(userList)) userList = [];
   const defaults = seedUsers();
+  const deletedKeys = new Set(STATE.deletedUserKeys || []);
 
   for (const defU of defaults) {
+    const defCodeKey = defU.employeeCode ? String(defU.employeeCode).trim().replace(/^0+/, '') : '';
+    const defUserKey = defU.username ? String(defU.username).trim().toLowerCase() : '';
+    const defEmailKey = defU.email ? String(defU.email).trim().toLowerCase() : '';
+
+    if (
+      deletedKeys.has(defU.id) ||
+      (defCodeKey && deletedKeys.has(defCodeKey)) ||
+      (defUserKey && deletedKeys.has(defUserKey)) ||
+      (defEmailKey && deletedKeys.has(defEmailKey))
+    ) {
+      continue;
+    }
+
     const existing = userList.find(u =>
-      (u.employeeCode && String(u.employeeCode).trim().replace(/^0+/, '') === String(defU.employeeCode).trim().replace(/^0+/, '')) ||
-      (u.username && String(u.username).trim().toLowerCase() === String(defU.username).trim().toLowerCase()) ||
+      (u.employeeCode && String(u.employeeCode).trim().replace(/^0+/, '') === defCodeKey) ||
+      (u.username && String(u.username).trim().toLowerCase() === defUserKey) ||
       (u.id === defU.id)
     );
     if (existing) {
@@ -548,6 +582,24 @@ function ensureDefaultUsersMerged(userList) {
       userList.push(defU);
     }
   }
+
+  if (deletedKeys.size > 0) {
+    userList = userList.filter(u => {
+      const cKey = u.employeeCode ? String(u.employeeCode).trim().replace(/^0+/, '') : '';
+      const uKey = u.username ? String(u.username).trim().toLowerCase() : '';
+      const eKey = u.email ? String(u.email).trim().toLowerCase() : '';
+      if (
+        deletedKeys.has(u.id) ||
+        (cKey && deletedKeys.has(cKey)) ||
+        (uKey && deletedKeys.has(uKey)) ||
+        (eKey && deletedKeys.has(eKey))
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }
+
   return userList;
 }
 
@@ -7098,8 +7150,15 @@ function attachHandlers() {
         showToast('Không thể xoá tài khoản chính bạn đang đăng nhập');
         return;
       }
-      showConfirmModal('Xoá nhân viên?', `Bạn có chắc muốn xoá tài khoản nhân viên ${targetUser.name} (${targetUser.employeeCode})?`, async () => {
+      showConfirmModal('Xoá nhân viên?', `Bạn có chắc muốn xoá tài khoản nhân viên ${targetUser.name} (${targetUser.employeeCode || targetUser.username})?`, async () => {
+        if (!STATE.deletedUserKeys) STATE.deletedUserKeys = [];
+        if (targetUser.id) STATE.deletedUserKeys.push(targetUser.id);
+        if (targetUser.employeeCode) STATE.deletedUserKeys.push(String(targetUser.employeeCode).trim().replace(/^0+/, ''));
+        if (targetUser.username) STATE.deletedUserKeys.push(String(targetUser.username).trim().toLowerCase());
+        if (targetUser.email) STATE.deletedUserKeys.push(String(targetUser.email).trim().toLowerCase());
+
         STATE.users = STATE.users.filter(u => u.id !== userId);
+        STATE.users = ensureDefaultUsersMerged(STATE.users);
         await saveUsers();
         showToast(`✓ Đã xoá nhân viên ${targetUser.name}`);
         render();
