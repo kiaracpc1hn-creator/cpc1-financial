@@ -207,8 +207,9 @@ async function loadAll() {
           // Danh sách ID phiếu đã nằm trong Thùng rác
           const trashIds = new Set((STATE.trash || []).map(t => t.id));
 
-          // 1. Duyệt phiếu từ Cloud & Bảo vệ trạng thái đã ký
+          // 1. Duyệt phiếu từ Cloud & Bảo vệ trạng thái (Chờ ký, Đã ký, Hoàn tất) & Lịch sử thao tác
           const localMap = new Map((STATE.documents || []).map(d => [d.id, d]));
+          const STATUS_RANK = { draft: 1, pending_signature: 2, submitted: 2, signed: 3, completed: 3, cancelled: 4 };
 
           cloudVouchers.forEach(incDoc => {
             // Nếu phiếu nằm trong thùng rác -> Bỏ qua không đưa vào danh sách phiếu active và xóa sạch trên Cloud
@@ -219,10 +220,48 @@ async function loadAll() {
 
             const localDoc = localMap.get(incDoc.id);
             if (localDoc) {
-              if (localDoc.status === 'signed' && incDoc.status !== 'signed' && localDoc.signedAttachmentId) {
-                incDoc.status = 'signed';
-                incDoc.signedAttachmentId = localDoc.signedAttachmentId;
-                window.storage.saveVoucherCloud(incDoc); // Tự động chữa lành Cloud
+              const localRank = STATUS_RANK[localDoc.status] || 1;
+              const cloudRank = STATUS_RANK[incDoc.status] || 1;
+
+              // Kiểm tra xem localDoc có vừa thực hiện hành động "Huỷ trình ký, quay về nháp" hay không
+              const hasCancelAction = Array.isArray(localDoc.history) && localDoc.history.some(h => h.action && h.action.includes('Huỷ trình ký'));
+
+              if (localRank > cloudRank && !hasCancelAction) {
+                // Giữ lại trạng thái tiến trình cao hơn từ Local (VD: Local đã 'pending_signature' hoặc 'signed' nhưng Snapshot Cloud còn chậm ở 'draft')
+                incDoc.status = localDoc.status;
+                if (localDoc.signedAttachmentId) incDoc.signedAttachmentId = localDoc.signedAttachmentId;
+                if (localDoc.signedAttachmentIds && localDoc.signedAttachmentIds.length > 0) {
+                  incDoc.signedAttachmentIds = localDoc.signedAttachmentIds;
+                }
+
+                // Gộp nhật ký lịch sử
+                if (Array.isArray(localDoc.history)) {
+                  const cloudHistKeys = new Set((incDoc.history || []).map(h => `${h.action}_${h.at}`));
+                  localDoc.history.forEach(h => {
+                    if (!cloudHistKeys.has(`${h.action}_${h.at}`)) {
+                      if (!incDoc.history) incDoc.history = [];
+                      incDoc.history.push(h);
+                    }
+                  });
+                  incDoc.history.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+                }
+
+                // Tự động chữa lành dữ liệu trên Cloud Firestore
+                window.storage.saveVoucherCloud(incDoc);
+              } else if (Array.isArray(localDoc.history) && Array.isArray(incDoc.history)) {
+                // Gộp lịch sử nếu Cloud chưa có một số sự kiện từ Local
+                const cloudHistKeys = new Set(incDoc.history.map(h => `${h.action}_${h.at}`));
+                let merged = false;
+                localDoc.history.forEach(h => {
+                  if (!cloudHistKeys.has(`${h.action}_${h.at}`)) {
+                    incDoc.history.push(h);
+                    merged = true;
+                  }
+                });
+                if (merged) {
+                  incDoc.history.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+                  window.storage.saveVoucherCloud(incDoc);
+                }
               }
             }
             newDocList.push(incDoc);
