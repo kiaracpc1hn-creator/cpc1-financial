@@ -3046,6 +3046,127 @@ async function removeInvoiceFromDraftVouchers(rec) {
   }
 }
 
+async function syncInvoiceRecordToDraftVouchers(rec, oldInvoiceNo = null) {
+  if (!rec) return;
+
+  const formattedInvoiceNo = rec.seriesNo ? `${rec.seriesNo}|${rec.invoiceNumber || ''}` : (rec.invoiceNumber || '');
+
+  const updateDoc = (d) => {
+    let modified = false;
+
+    const updateItemFromRec = (it) => {
+      let itemChanged = false;
+
+      // 1. Update invoice number
+      if (formattedInvoiceNo && it.invoiceNo !== formattedInvoiceNo) {
+        it.invoiceNo = formattedInvoiceNo;
+        itemChanged = true;
+      }
+
+      // 2. Update date
+      if (rec.date && it.date !== rec.date) {
+        it.date = rec.date;
+        itemChanged = true;
+      }
+
+      // 3. Update amount
+      if (typeof rec.amount === 'number' && it.amount !== rec.amount) {
+        it.amount = rec.amount;
+        itemChanged = true;
+      }
+
+      // 4. Update invoiceRef
+      if (rec.invoiceRef !== undefined && it.invoiceRef !== rec.invoiceRef) {
+        it.invoiceRef = rec.invoiceRef || '';
+        itemChanged = true;
+      }
+
+      // 5. Update description / note
+      if (rec.note) {
+        const formattedDesc = formatVoucherItemNote(rec.note, rec.invoiceRef);
+        if (formattedDesc && it.description !== formattedDesc) {
+          it.description = formattedDesc;
+          itemChanged = true;
+        }
+      }
+
+      // 6. Update attachmentId
+      if (rec.attachmentId && it.attachmentId !== rec.attachmentId) {
+        it.attachmentId = rec.attachmentId;
+        itemChanged = true;
+      }
+
+      return itemChanged;
+    };
+
+    const isMatch = (it) => {
+      if (rec.attachmentId && it.attachmentId && rec.attachmentId === it.attachmentId) return true;
+      if (matchInvoiceRecordWithDocItem(rec, it.invoiceNo, it.attachmentId)) return true;
+      if (oldInvoiceNo && it.invoiceNo && (it.invoiceNo.trim().toLowerCase() === oldInvoiceNo.trim().toLowerCase())) return true;
+      return false;
+    };
+
+    if (d.items && d.items.length > 0) {
+      d.items.forEach(it => {
+        if (isMatch(it)) {
+          if (updateItemFromRec(it)) modified = true;
+        }
+      });
+    }
+
+    if (d.spentItems && d.spentItems.length > 0) {
+      d.spentItems.forEach(it => {
+        if (isMatch(it)) {
+          if (updateItemFromRec(it)) modified = true;
+        }
+      });
+    }
+
+    // Ensure attachments array in doc contains the updated attachment file
+    if (rec.attachmentId) {
+      if (!d.attachments) d.attachments = [];
+      const attObj = (STATE.attachments || []).find(a => a.id === rec.attachmentId) || {
+        id: rec.attachmentId,
+        fileName: rec.fileName || (rec.invoiceNumber ? `HĐ_${rec.invoiceNumber}.pdf` : 'HoaDon.pdf'),
+        uploadedAt: rec.uploadedAt || new Date().toISOString()
+      };
+      const existingIdx = d.attachments.findIndex(a => a.id === attObj.id);
+      if (existingIdx === -1) {
+        d.attachments.push(attObj);
+        modified = true;
+      } else {
+        if (rec.fileName && d.attachments[existingIdx].fileName !== rec.fileName) {
+          d.attachments[existingIdx].fileName = rec.fileName;
+          modified = true;
+        }
+      }
+    }
+
+    // Sync beneficiaryName to document level if missing or updated
+    if (rec.beneficiaryName && (!d.beneficiaryName || d.beneficiaryName === '—')) {
+      d.beneficiaryName = rec.beneficiaryName;
+      modified = true;
+    }
+
+    return modified;
+  };
+
+  let docsChanged = false;
+  (STATE.documents || []).forEach(d => {
+    if (d.status === 'draft') {
+      if (updateDoc(d)) docsChanged = true;
+    }
+  });
+
+  if (STATE.draftForm) {
+    if (updateDoc(STATE.draftForm)) docsChanged = true;
+  }
+
+  if (docsChanged) {
+    await saveDocuments();
+  }
+}
+
 function deleteInvoiceRecord(id) {
   const rec = (STATE.invoices || []).find(r => r.id === id);
   if (!rec) return;
@@ -7504,6 +7625,7 @@ function attachInvoiceTableHandlers() {
     }
 
     saveInvoices().catch(err => console.error(err));
+    syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
   }));
 
   document.querySelectorAll('[data-invdate]').forEach(el => el.addEventListener('change', (e) => {
@@ -7512,6 +7634,7 @@ function attachInvoiceTableHandlers() {
       rec.date = e.target.value;
       const txtInput = document.querySelector(`[data-invdatetext="${rec.id}"]`);
       if (txtInput) txtInput.value = fmtDate(rec.date);
+      syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
       saveInvoices().catch(err => console.error(err));
       showToast('Đã lưu ngày lập');
     }
@@ -7525,6 +7648,7 @@ function attachInvoiceTableHandlers() {
       e.target.value = fmtDate(parsedIso);
       const datePicker = document.querySelector(`[data-invdate="${rec.id}"]`);
       if (datePicker) datePicker.value = parsedIso;
+      syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
       saveInvoices().catch(err => console.error(err));
       showToast('Đã lưu ngày lập');
     }
@@ -7533,6 +7657,7 @@ function attachInvoiceTableHandlers() {
   document.querySelectorAll('[data-invseries]').forEach(el => el.addEventListener('change', () => {
     const rec = STATE.invoices.find(r => r.id === el.dataset.invseries);
     if (rec) {
+      const oldNo = rec.seriesNo ? `${rec.seriesNo}|${rec.invoiceNumber || ''}` : (rec.invoiceNumber || '');
       rec.seriesNo = el.value.trim().toUpperCase();
       el.value = rec.seriesNo;
       const s = rec.seriesNo;
@@ -7553,6 +7678,7 @@ function attachInvoiceTableHandlers() {
         const noteArea = document.querySelector(`[data-invnote="${rec.id}"]`);
         if (noteArea) noteArea.value = autoNote;
       }
+      syncInvoiceRecordToDraftVouchers(rec, oldNo).catch(() => {});
       saveInvoices().catch(err => console.error(err));
       showToast('Đã lưu ký hiệu');
     }
@@ -7562,7 +7688,9 @@ function attachInvoiceTableHandlers() {
     const updateNum = () => {
       const rec = STATE.invoices.find(r => r.id === el.dataset.invnum);
       if (rec) {
+        const oldNo = rec.seriesNo ? `${rec.seriesNo}|${rec.invoiceNumber || ''}` : (rec.invoiceNumber || '');
         rec.invoiceNumber = el.value.trim();
+        syncInvoiceRecordToDraftVouchers(rec, oldNo).catch(() => {});
         saveInvoices().catch(err => console.error(err));
       }
     };
@@ -7577,6 +7705,7 @@ function attachInvoiceTableHandlers() {
       if (rec) {
         const typed = el.value.trim();
         rec.beneficiaryName = typed;
+        syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
         if (typed) autoSyncPayeeToDirectory(typed);
         saveInvoices().catch(err => console.error(err));
       }
@@ -7591,6 +7720,7 @@ function attachInvoiceTableHandlers() {
       const rec = STATE.invoices.find(r => r.id === el.dataset.invnote);
       if (rec) {
         rec.note = el.value.trim();
+        syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
         saveInvoices().catch(err => console.error(err));
       }
     };
@@ -7604,6 +7734,7 @@ function attachInvoiceTableHandlers() {
       const rec = STATE.invoices.find(r => r.id === el.dataset.invref);
       if (rec) {
         rec.invoiceRef = el.value.trim();
+        syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
         saveInvoices().catch(err => console.error(err));
       }
     };
@@ -7623,6 +7754,7 @@ function attachInvoiceTableHandlers() {
       if (rec) {
         rec.amount = digits ? Number(digits) : 0;
         el.value = rec.amount ? Number(rec.amount).toLocaleString('vi-VN') : '';
+        syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
         saveInvoices().catch(err => console.error(err));
         showToast('Đã lưu số tiền');
       }
@@ -7645,6 +7777,7 @@ function attachInvoiceTableHandlers() {
       await window.storage.set('attachment:' + attId, dataUrl, true);
       rec.attachmentId = attId;
       rec.fileName = file.name;
+      syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
       await saveInvoices();
       showToast('✓ Đã đính kèm file scan thành công');
       render();
