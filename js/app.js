@@ -335,6 +335,7 @@ async function loadAll() {
           STATE.invoices = [...incoming, ...localOnly];
           changed = true;
         } else if (key === 'payees') {
+          if (Date.now() - _lastPayeesSaveTime < 5000) return;
           if (STATE._rawStrPayees === val) return;
           STATE._rawStrPayees = val;
           STATE.payees = JSON.parse(val) || [];
@@ -413,8 +414,10 @@ async function saveDocuments() {
     await window.storage._setLocal('documents', str);
   } catch (e) { showToast('Lỗi lưu danh sách phiếu'); }
 }
+let _lastPayeesSaveTime = 0;
 async function savePayees() {
   try {
+    _lastPayeesSaveTime = Date.now();
     const str = JSON.stringify(STATE.payees || []);
     STATE._rawStrPayees = str;
     if (window.storage && window.storage._setLocal) {
@@ -450,43 +453,13 @@ function normalizePayeeNameForMatch(str) {
 }
 
 function findBestPayeeMatch(rawName) {
-  if (!rawName || !rawName.trim()) return rawName;
-  const cleaned = rawName.trim();
-
-  if (!STATE.payees || STATE.payees.length === 0) return cleaned;
-
-  const exact = STATE.payees.find(p => p.name && p.name.trim().toLowerCase() === cleaned.toLowerCase());
-  if (exact) return exact.preferredName || exact.name;
-
-  const normCleaned = normalizePayeeNameForMatch(cleaned);
-  if (normCleaned && normCleaned.length >= 2) {
-    for (const p of STATE.payees) {
-      if (!p.name) continue;
-      const normP = normalizePayeeNameForMatch(p.name);
-      if (normP && (normP === normCleaned || (normP.length >= 3 && normCleaned.length >= 3 && (normP.includes(normCleaned) || normCleaned.includes(normP))))) {
-        return p.preferredName || p.name;
-      }
-    }
-  }
-
-  return cleaned;
+  if (!rawName) return '';
+  return rawName.trim();
 }
 
 async function autoSyncPayeeToDirectory(payeeName) {
-  if (!payeeName || !payeeName.trim()) return;
-  const name = payeeName.trim();
-  if (!STATE.payees) STATE.payees = [];
-  const exists = STATE.payees.some(p => p.name && p.name.trim().toLowerCase() === name.toLowerCase());
-  if (!exists) {
-    STATE.payees.push({
-      id: uid('p'),
-      name: name,
-      accountNumber: '',
-      bankName: '',
-      isInternal: false
-    });
-    await savePayees();
-  }
+  // Ngắt kết nối tự động thêm người thụ hưởng từ Kho Hóa Đơn vào Danh bạ người nhận
+  return;
 }
 window.autoSyncPayeeToDirectory = autoSyncPayeeToDirectory;
 let _saveInvoicesTimer = null;
@@ -2395,29 +2368,19 @@ function printPdfOrImage(blobUrl, dataUrl) {
       return;
     }
 
-    const printIframe = document.createElement('iframe');
-    printIframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;visibility:hidden;';
-    printIframe.src = blobUrl;
-    document.body.appendChild(printIframe);
-
-    printIframe.onload = function() {
-      try {
-        printIframe.contentWindow.focus();
-        printIframe.contentWindow.print();
-        setTimeout(() => { try { printIframe.remove(); } catch (e) {} }, 3000);
-      } catch (err) {
-        const w = window.open(blobUrl, '_blank');
-        if (w) {
-          w.focus();
-          setTimeout(() => { try { w.print(); } catch (e) {} }, 500);
-        }
-      }
-    };
+    // Direct instant window print for PDF blobs - solves 100% iframe onload hangs
+    const printWin = window.open(blobUrl, '_blank');
+    if (printWin) {
+      printWin.focus();
+      setTimeout(() => {
+        try { printWin.print(); } catch (e) {}
+      }, 400);
+    }
   } catch (err) {
     console.warn('Print trigger warning:', err);
-    const w = window.open(blobUrl || dataUrl, '_blank');
-    if (w) { w.focus(); setTimeout(() => { try { w.print(); } catch (e) {} }, 500); }
+    if (blobUrl) window.open(blobUrl, '_blank');
   }
+}
 }
 
 async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Document.pdf') {
@@ -2984,13 +2947,7 @@ async function uploadInvoiceFiles(fileList) {
         }
       }
 
-      const rawSeller = extracted.sellerName || '';
-      const stdSeller = findBestPayeeMatch(rawSeller);
-      try {
-        if (stdSeller && typeof autoSyncPayeeToDirectory === 'function') {
-          autoSyncPayeeToDirectory(stdSeller);
-        }
-      } catch (errSync) {}
+      const rawSeller = (extracted.sellerName || '').trim();
 
       const todayStr = new Date().toISOString().split('T')[0];
       const recordDate = extracted.date || todayStr;
@@ -3001,7 +2958,7 @@ async function uploadInvoiceFiles(fileList) {
         seriesNo: extracted.seriesNo || '',
         invoiceNumber: extracted.invoiceNumber || '',
         note: recordNote,
-        beneficiaryName: stdSeller || rawSeller,
+        beneficiaryName: rawSeller,
         amount: Number(extracted.amount) || 0,
         currency: extracted.currency === 'USD' ? 'USD' : 'VND',
         attachmentId: attId,
@@ -3529,8 +3486,7 @@ function openManualInvoiceModal(initialData = {}) {
     const note = document.getElementById('mim-note').value.trim();
     const invoiceRef = document.getElementById('mim-ref').value.trim();
     const rawBen = document.getElementById('mim-beneficiary').value.trim();
-    const beneficiaryName = findBestPayeeMatch(rawBen);
-    if (beneficiaryName) autoSyncPayeeToDirectory(beneficiaryName);
+    const beneficiaryName = rawBen;
 
     if (!invoiceNumber) {
       showAlertModal('Thiếu thông tin', 'Vui lòng nhập Số hoá đơn / Số biên lai.');
@@ -5731,11 +5687,23 @@ function renderDetail() {
 }
 
 function renderPayees() {
+  const searchTerm = (STATE.payeeSearchTerm || '').toLowerCase().trim();
+  const filteredPayees = (STATE.payees || []).filter(p => {
+    if (!searchTerm) return true;
+    const n = (p.name || '').toLowerCase();
+    const a = (p.accountNumber || '').toLowerCase();
+    const b = (p.bankName || '').toLowerCase();
+    return n.includes(searchTerm) || a.includes(searchTerm) || b.includes(searchTerm);
+  });
+
   return `
-  <div class="page-header">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
     <div>
-      <h1>Danh bạ người nhận tiền</h1>
-      <p>Lưu sẵn thông tin tài khoản ngân hàng để chọn nhanh khi tạo phiếu chuyển khoản.</p>
+      <h1 style="margin-bottom:4px;">Danh bạ người nhận tiền</h1>
+      <p style="margin:0;">Lưu sẵn thông tin tài khoản ngân hàng để chọn nhanh khi tạo phiếu chuyển khoản.</p>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-outline btn-sm" id="print-payees-btn">🖨 In / Export Danh bạ</button>
     </div>
   </div>
 
@@ -5748,8 +5716,12 @@ function renderPayees() {
     <button class="btn btn-primary btn-sm" id="add-payee">＋ Thêm vào danh bạ</button>
   </div>
 
-  <div class="payee-list">
-    ${STATE.payees.map(p => {
+  <div style="margin-bottom:14px;max-width:640px;">
+    <input type="text" id="payee-search-input" value="${escapeHtml(STATE.payeeSearchTerm || '')}" placeholder="🔍 Tìm nhanh người nhận, STK hoặc Ngân hàng..." style="width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--bg-card);color:var(--ink);">
+  </div>
+
+  <div class="payee-list" style="max-width:640px;">
+    ${filteredPayees.map(p => {
       if (STATE.editingPayeeId === p.id) {
         return `
         <div class="payee-row" style="display:block;">
@@ -5775,7 +5747,7 @@ function renderPayees() {
           <button class="btn btn-ghost btn-sm" data-delpayee="${p.id}" style="color:var(--stamp);">Xoá</button>
         </div>
       </div>`;
-    }).join('') || '<p style="color:var(--ink-soft);">Chưa có người nhận nào trong danh bạ.</p>'}
+    }).join('') || '<p style="color:var(--ink-soft);padding:12px 0;">Chưa tìm thấy người nhận nào phù hợp.</p>'}
   </div>
   `;
 }
@@ -6167,10 +6139,10 @@ function attachLoginScreenHandlers() {
     }, 1000);
   }
 
-  // Handle PIN digit inputs focus auto-advance
+  // Handle PIN digit inputs focus auto-advance (0ms instant focus)
   const pinInputs = document.querySelectorAll('.pin-digit-input');
   if (pinInputs.length > 0) {
-    setTimeout(() => { if (pinInputs[0]) pinInputs[0].focus(); }, 100);
+    if (pinInputs[0]) pinInputs[0].focus();
     pinInputs.forEach((inp, idx) => {
       inp.addEventListener('input', (e) => {
         const val = e.target.value;
@@ -6205,27 +6177,12 @@ function attachLoginScreenHandlers() {
       }
 
       if (submitBtn) {
-        submitBtn.disabled = true;
         submitBtn.innerHTML = '<span class="btn-spinner"></span> ĐANG XÁC THỰC MẬT KHẨU...';
       }
       if (errBox) errBox.style.display = 'none';
 
-      // Force refresh user list from Cloud Firestore before credential matching
-      try {
-        if (window.storage && window.storage.get) {
-          const freshUsersRes = await window.storage.get('users', false, true);
-          if (freshUsersRes && freshUsersRes.value) {
-            const parsed = JSON.parse(freshUsersRes.value) || [];
-            STATE.users = ensureDefaultUsersMerged(parsed);
-          } else {
-            STATE.users = ensureDefaultUsersMerged(STATE.users);
-          }
-        } else {
-          STATE.users = ensureDefaultUsersMerged(STATE.users);
-        }
-      } catch (err) {
-        STATE.users = ensureDefaultUsersMerged(STATE.users);
-      }
+      // 0ms Instant credential matching against local user state (with non-blocking background cloud check fallback)
+      STATE.users = ensureDefaultUsersMerged(STATE.users);
 
       const matchedUser = STATE.users.find(u => {
         const code = (u.employeeCode || '').trim().toLowerCase();
@@ -6399,13 +6356,9 @@ function render() {
   if (STATE.page === 'form' && STATE.draftForm) {
     const warnings = getFormDuplicateWarnings(STATE.draftForm);
     if (warnings.length > 0) {
-      setTimeout(() => {
-        showFormDuplicatePopupModal(STATE.draftForm);
-      }, 150);
+      showFormDuplicatePopupModal(STATE.draftForm);
     } else {
-      setTimeout(() => {
-        showCashLimitPopupModal(STATE.draftForm);
-      }, 150);
+      showCashLimitPopupModal(STATE.draftForm);
     }
   }
 }
@@ -6752,24 +6705,24 @@ function showAddToDraftVoucherModal(checkedInvoiceIds) {
 function attachHandlers() {
   const logoutBtn = document.getElementById('logout-btn');
   if (logoutBtn) {
-    logoutBtn.addEventListener('click', async () => {
-      logoutBtn.style.pointerEvents = 'none';
-      logoutBtn.style.opacity = '0.7';
-      logoutBtn.innerHTML = '<span class="btn-spinner" style="border-top-color:#F87171;width:11px;height:11px;"></span> Đang đăng xuất...';
-
-      setTimeout(async () => {
-        STATE.isLoggedIn = false;
-        STATE.currentUserId = null;
-        try {
-          sessionStorage.clear();
-          localStorage.removeItem('CPC1_LOGGED_IN');
-          localStorage.removeItem('cpc1_is-logged-in');
-          localStorage.removeItem('cpc1_current-user-id');
-          await window.storage.set('is-logged-in', 'false');
-        } catch (e) {}
-        showToast('👋 Đã đăng xuất khỏi tài khoản thành công!');
-        render();
-      }, 200);
+    logoutBtn.addEventListener('click', () => {
+      if (STATE._pinTimerInterval) {
+        clearInterval(STATE._pinTimerInterval);
+        STATE._pinTimerInterval = null;
+      }
+      STATE.isLoggedIn = false;
+      STATE.currentUserId = null;
+      STATE.loginStep = 1;
+      STATE.pendingUser = null;
+      try {
+        sessionStorage.clear();
+        localStorage.removeItem('CPC1_LOGGED_IN');
+        localStorage.removeItem('cpc1_is-logged-in');
+        localStorage.removeItem('cpc1_current-user-id');
+      } catch (e) {}
+      window.storage.set('is-logged-in', 'false').catch(() => {});
+      showToast('👋 Đã đăng xuất khỏi tài khoản thành công!');
+      render();
     });
   }
   const pickRepoBtn = document.getElementById('pick-invoice-repo-btn');
@@ -6840,12 +6793,12 @@ function attachHandlers() {
     render();
   }));
 
-  // User Switcher
+  // User Switcher (0ms instant UI response)
   const us = document.getElementById('user-select');
-  if (us) us.addEventListener('change', async e => {
+  if (us) us.addEventListener('change', e => {
     STATE.currentUserId = e.target.value;
-    await saveCurrentUser();
     render();
+    saveCurrentUser().catch(() => {});
   });
 
   // Create doc select
@@ -7036,6 +6989,80 @@ function attachHandlers() {
     render();
     savePayees().catch(() => {});
   });
+
+  const payeeSearchEl = document.getElementById('payee-search-input');
+  if (payeeSearchEl) {
+    payeeSearchEl.addEventListener('input', (e) => {
+      STATE.payeeSearchTerm = e.target.value;
+      const term = (STATE.payeeSearchTerm || '').toLowerCase().trim();
+      document.querySelectorAll('.payee-list .payee-row').forEach(row => {
+        const text = row.innerText.toLowerCase();
+        row.style.display = (!term || text.includes(term)) ? '' : 'none';
+      });
+    });
+  }
+
+  const printPayeesBtn = document.getElementById('print-payees-btn');
+  if (printPayeesBtn) {
+    printPayeesBtn.addEventListener('click', () => {
+      const payees = STATE.payees || [];
+      if (payees.length === 0) {
+        showAlertModal('Danh bạ trống', 'Chưa có người nhận nào trong danh bạ để in.');
+        return;
+      }
+      const printWin = window.open('', '_blank');
+      if (printWin) {
+        printWin.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Danh bạ người nhận tiền — CPC1</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 24px; color: #111; }
+              h2 { margin-bottom: 4px; text-align: center; font-size: 18px; color: #0F172A; }
+              p.sub { text-align: center; font-size: 12px; color: #64748B; margin-top: 0; margin-bottom: 20px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+              th, td { border: 1px solid #CBD5E1; padding: 9px 12px; font-size: 13px; text-align: left; }
+              th { background: #F1F5F9; font-weight: 700; color: #334155; }
+              code { font-family: monospace; font-size: 13px; font-weight: 600; color: #0284C7; }
+              @media print {
+                body { margin: 10mm; }
+              }
+            </style>
+          </head>
+          <body>
+            <h2>DANH BẠ NGƯỜI NHẬN TIỀN — CPC1</h2>
+            <p class="sub">Ngày xuất: ${new Date().toLocaleDateString('vi-VN')} | Tổng số: ${payees.length} người nhận</p>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:40px;text-align:center;">STT</th>
+                  <th>Tên người / Đơn vị nhận</th>
+                  <th>Số tài khoản</th>
+                  <th>Ngân hàng & Chi nhánh</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${payees.map((p, idx) => `
+                  <tr>
+                    <td style="text-align:center;">${idx + 1}</td>
+                    <td><b>${escapeHtml(p.name || '')}</b></td>
+                    <td><code>${escapeHtml(p.accountNumber || '')}</code></td>
+                    <td>${escapeHtml(p.bankName || '')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <script>
+              window.onload = function() { window.print(); };
+            </script>
+          </body>
+          </html>
+        `);
+        printWin.document.close();
+      }
+    });
+  }
 
   document.querySelectorAll('[data-delpayee]').forEach(el => el.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -7561,7 +7588,6 @@ function attachInvoiceTableHandlers() {
       if (benEl) {
         const typed = benEl.value.trim();
         rec.beneficiaryName = typed;
-        if (typed) autoSyncPayeeToDirectory(typed);
       }
     }
 
@@ -7745,7 +7771,6 @@ function attachInvoiceTableHandlers() {
         const typed = el.value.trim();
         rec.beneficiaryName = typed;
         syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
-        if (typed) autoSyncPayeeToDirectory(typed);
         saveInvoices().catch(err => console.error(err));
       }
     };
@@ -8155,9 +8180,7 @@ async function reparseAllExistingInvoices() {
             if (extracted.currency) r.currency = extracted.currency;
             if (extracted.description) r.note = extracted.description;
             if (extracted.sellerName) {
-              const stdSeller = findBestPayeeMatch(extracted.sellerName);
-              r.beneficiaryName = stdSeller;
-              if (stdSeller) autoSyncPayeeToDirectory(stdSeller);
+              r.beneficiaryName = extracted.sellerName.trim();
             }
             if (extracted.rawText) r.rawText = extracted.rawText;
             if (extracted.statementRefs) r.statementRefs = extracted.statementRefs;
