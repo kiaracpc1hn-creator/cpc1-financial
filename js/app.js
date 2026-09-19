@@ -189,6 +189,16 @@ async function loadAll() {
   // Khởi chạy đồng bộ thời gian thực đa người dùng qua Firebase Firestore Collection (100% Dứt điểm)
   if (window.storage && window.storage.listenVouchersRealtime && !STATE._vouchersRealtimeBound) {
     STATE._vouchersRealtimeBound = true;
+    // Lớp bảo vệ thứ 2 chống vòng lặp ghi: không ghi lại CÙNG 1 phiếu lên Cloud quá 1 lần / 5 giây,
+    // dù logic "tự chữa lành" bên dưới có tính toán ra kết quả gì đi nữa.
+    if (!STATE._lastVoucherCloudWriteAt) STATE._lastVoucherCloudWriteAt = new Map();
+    const guardedSaveVoucherCloud = (docObj) => {
+      if (!docObj || !docObj.id) return;
+      const last = STATE._lastVoucherCloudWriteAt.get(docObj.id) || 0;
+      if (Date.now() - last < 5000) return;
+      STATE._lastVoucherCloudWriteAt.set(docObj.id, Date.now());
+      window.storage.saveVoucherCloud(docObj);
+    };
     window.storage.listenVouchersRealtime((cloudVouchers) => {
       try {
         if (!cloudVouchers) return;
@@ -196,7 +206,7 @@ async function loadAll() {
 
         if (cloudVouchers.length === 0 && STATE.documents && STATE.documents.length > 0) {
           // Tự động Migrate toàn bộ phiếu từ local lên Firestore collection doc-by-doc khi khởi chạy lần đầu
-          STATE.documents.forEach(d => window.storage.saveVoucherCloud(d));
+          STATE.documents.forEach(d => guardedSaveVoucherCloud(d));
           return;
         }
 
@@ -247,7 +257,7 @@ async function loadAll() {
                 }
 
                 // Tự động chữa lành dữ liệu trên Cloud Firestore
-                window.storage.saveVoucherCloud(incDoc);
+                guardedSaveVoucherCloud(incDoc);
               } else if (Array.isArray(localDoc.history) && Array.isArray(incDoc.history)) {
                 // Gộp lịch sử nếu Cloud chưa có một số sự kiện từ Local
                 const cloudHistKeys = new Set(incDoc.history.map(h => `${h.action}_${h.at}`));
@@ -260,7 +270,7 @@ async function loadAll() {
                 });
                 if (merged) {
                   incDoc.history.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
-                  window.storage.saveVoucherCloud(incDoc);
+                  guardedSaveVoucherCloud(incDoc);
                 }
               }
             }
@@ -273,7 +283,7 @@ async function loadAll() {
               const ageMs = Date.now() - new Date(localDoc.createdAt).getTime();
               if (ageMs < 120000) {
                 newDocList.unshift(localDoc);
-                window.storage.saveVoucherCloud(localDoc);
+                guardedSaveVoucherCloud(localDoc);
               }
             }
           });

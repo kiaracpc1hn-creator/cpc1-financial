@@ -341,7 +341,12 @@
     listenVouchersRealtime(callback) {
       if (!this.isFirebaseConnected()) return () => {};
       try {
-        const unsub = firestoreDb.collection('cpc1_vouchers_list').onSnapshot(snapshot => {
+        const unsub = firestoreDb.collection('cpc1_vouchers_list').onSnapshot({ includeMetadataChanges: true }, snapshot => {
+          // QUAN TRỌNG: bỏ qua snapshot phát sinh từ chính write đang chờ xác nhận (pending) của TRÌNH DUYỆT NÀY.
+          // Nếu không có dòng này, mỗi lần app tự ghi lên Firestore sẽ tự kích hoạt lại listener này,
+          // và nếu logic xử lý bên dưới lại ghi tiếp -> tạo vòng lặp ghi vô hạn (resource-exhausted).
+          if (snapshot.metadata.hasPendingWrites) return;
+
           const vouchers = [];
           const changes = [];
           snapshot.docChanges().forEach(change => {
