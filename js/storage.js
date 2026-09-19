@@ -33,6 +33,22 @@
         firestoreDb = firebase.firestore();
         isFirebaseReady = true;
       }
+
+      // Đăng nhập ẩn danh (Anonymous Auth): không hiện màn hình đăng nhập, người dùng
+      // không thấy gì khác, nhưng bắt buộc phải có 1 phiên xác thực hợp lệ trước khi
+      // Firestore Rules cho phép đọc/ghi. Điều này chặn được việc gọi thẳng API Firestore
+      // từ bên ngoài web (bot, script dò quét) mà không cần xây hệ thống đăng nhập thật.
+      if (window.firebase && firebase.auth) {
+        firebase.auth().onAuthStateChanged(user => {
+          if (!user) {
+            firebase.auth().signInAnonymously().catch(err => {
+              console.warn("[CPC1] Đăng nhập ẩn danh thất bại:", err.message);
+            });
+          } else {
+            console.log("✓ [CPC1] Đã xác thực ẩn danh, uid:", user.uid);
+          }
+        });
+      }
     } catch (e) {
       console.warn("[CPC1] Firebase initialization warning:", e);
     }
