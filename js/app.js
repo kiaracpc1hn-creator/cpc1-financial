@@ -2261,7 +2261,8 @@ async function uploadAttachments(doc, fileList) {
         uploadedAt: new Date().toISOString(),
         uploadedBy: currentUser().name,
         rawText: extracted.rawText || '',
-        statementRefs: extracted.statementRefs || ''
+        statementRefs: extracted.statementRefs || '',
+        isManualDirectUpload: true
       });
     } catch (e) {
       showAlertModal('Lỗi tải file', `Lỗi khi tải file "${file.name}".`);
@@ -2286,12 +2287,21 @@ async function removeAttachmentSilent(doc, attId) {
   if (STATE.previewAttachmentId === attId) STATE.previewAttachmentId = null;
 }
 
+function pruneUnlinkedInvoiceAttachments(doc) {
+  if (!doc || !Array.isArray(doc.attachments) || doc.attachments.length === 0) return;
+  const linkedAttIds = new Set([
+    ...((doc.items || []).map(i => i.attachmentId).filter(Boolean)),
+    ...((doc.spentItems || []).map(i => i.attachmentId).filter(Boolean))
+  ]);
+  doc.attachments = doc.attachments.filter(a => linkedAttIds.has(a.id) || a.isManualDirectUpload);
+}
+
 function getOrphanedAttachments(doc) {
   const linkedIds = new Set([
     ...((doc.items || []).map(i => i.attachmentId).filter(Boolean)),
     ...((doc.spentItems || []).map(i => i.attachmentId).filter(Boolean))
   ]);
-  return (doc.attachments || []).filter(a => !linkedIds.has(a.id));
+  return (doc.attachments || []).filter(a => !linkedIds.has(a.id) && !a.isManualDirectUpload);
 }
 
 function isAttachmentLinked(doc, attId) {
@@ -5514,6 +5524,9 @@ function renderDetail() {
   const t = DOC_TYPES[doc.type];
   const isOwner = doc.requesterId === currentUser().id;
 
+  // Tự động dọn dẹp các file đính kèm thừa của hoá đơn đã gỡ khỏi bảng
+  pruneUnlinkedInvoiceAttachments(doc);
+
   const items = doc.items || doc.spentItems || [];
   const sortedList = items.map((it, idx) => {
     const att = (doc.attachments || []).find(a => a.id === it.attachmentId);
@@ -6450,6 +6463,8 @@ function showPickInvoiceRepoModal() {
         }
       });
 
+      pruneUnlinkedInvoiceAttachments(currentDoc);
+
       if (activeOverlay) activeOverlay.remove();
       render();
       showToast(`✓ Đã bổ sung ${selectedRecs.length} hoá đơn mới & file đính kèm vào phiếu!`);
@@ -6692,6 +6707,8 @@ function showAddToDraftVoucherModal(checkedInvoiceIds) {
         }
       }
     });
+
+    pruneUnlinkedInvoiceAttachments(STATE.draftForm);
 
     STATE.selectedInvoiceIds = [];
     STATE.page = 'form';
@@ -8336,6 +8353,7 @@ function bindFormInputs() {
     const row = doc.items[idx];
     if (row && row.attachmentId) { await removeAttachmentSilent(doc, row.attachmentId); }
     doc.items.splice(idx, 1);
+    pruneUnlinkedInvoiceAttachments(doc);
     render();
   }));
 
