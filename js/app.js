@@ -2381,7 +2381,6 @@ function printPdfOrImage(blobUrl, dataUrl) {
     if (blobUrl) window.open(blobUrl, '_blank');
   }
 }
-}
 
 async function renderPdfOrImageIntoContainer(container, dataUrl, fileName = 'Document.pdf') {
   if (!container || !dataUrl) return;
