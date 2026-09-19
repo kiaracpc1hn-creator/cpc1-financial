@@ -103,8 +103,93 @@ function fmtDateVN(d) {
   return String(d);
 }
 
+function vietnameseWordsToNumber(str) {
+  if (!str) return 0;
+  let text = String(str).toLowerCase();
+
+  // Clean noise phrases & currency markers
+  text = text.replace(/(?:tổng\s*số\s*tiền\s*)?(?:bằng\s*chữ|viết\s*bằng\s*chữ|amount\s*in\s*words)[\:\s]*/gi, '');
+  text = text.replace(/\b(?:đồng|dong|vnd|vnđ|dô\s*la\s*mỹ|usd|chẵn|chan|tròn|tron)\b/gi, '');
+  text = text.replace(/[\.,\(\)\-\:\;\!\?\/\\]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) return 0;
+
+  function removeVnAccents(s) {
+    return s.normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D');
+  }
+
+  const plainText = removeVnAccents(text);
+  const tokens = plainText.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return 0;
+
+  const DIGIT_MAP = {
+    'khong': 0, 'zero': 0, '0': 0,
+    'mot': 1, 'mots': 1, 'mot1': 1, '1': 1,
+    'hai': 2, '2': 2,
+    'ba': 3, '3': 3,
+    'bon': 4, 'tu': 4, '4': 4,
+    'nam': 5, 'lam': 5, '5': 5,
+    'sau': 6, '6': 6,
+    'bay': 7, 'bey': 7, '7': 7,
+    'tam': 8, '8': 8,
+    'chin': 9, '9': 9
+  };
+
+  let total = 0;
+  let groupVal = 0;
+  let currentNum = 0;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+
+    if (/^\d+$/.test(tok)) {
+      currentNum += parseInt(tok, 10);
+      continue;
+    }
+
+    if (tok === 'ty') {
+      groupVal += currentNum;
+      if (groupVal === 0) groupVal = 1;
+      total += groupVal * 1000000000;
+      groupVal = 0;
+      currentNum = 0;
+    } else if (tok === 'trieu') {
+      groupVal += currentNum;
+      if (groupVal === 0) groupVal = 1;
+      total += groupVal * 1000000;
+      groupVal = 0;
+      currentNum = 0;
+    } else if (tok === 'nghin' || tok === 'ngan') {
+      groupVal += currentNum;
+      if (groupVal === 0) groupVal = 1;
+      total += groupVal * 1000;
+      groupVal = 0;
+      currentNum = 0;
+    } else if (tok === 'tram') {
+      if (currentNum === 0) currentNum = 1;
+      groupVal += currentNum * 100;
+      currentNum = 0;
+    } else if (tok === 'muoi') {
+      if (currentNum === 0) currentNum = 1;
+      groupVal += currentNum * 10;
+      currentNum = 0;
+    } else if (tok === 'linh' || tok === 'le') {
+      // separator, reset currentNum if any
+    } else if (DIGIT_MAP[tok] !== undefined) {
+      currentNum += DIGIT_MAP[tok];
+    }
+  }
+
+  total += groupVal + currentNum;
+  return total;
+}
+
 // Export to window
 window.numberToWords = numberToWords;
+window.vietnameseWordsToNumber = vietnameseWordsToNumber;
+window.wordsToNumber = vietnameseWordsToNumber;
 window.fmtMoney = fmtMoney;
 window.fmtDate = fmtDate;
 window.fmtDateVN = fmtDateVN;

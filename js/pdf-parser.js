@@ -220,10 +220,14 @@ function parseInvoiceText(fullText, lines, filename) {
   }
 
   // -------------------------------------------------------------
-  // 3. Currency Check (Loại tiền tệ)
+  // 3. Currency Check & Amount in Words Extraction
   // -------------------------------------------------------------
-  const wordsMatch = fullText.match(/(?:Số\s*tiền\s*viết\s*bằng\s*chữ|Amount\s*in\s*words|Bằng\s*chữ)\s*[:\s]*([^\n\r]+)/i);
-  const wordsText = wordsMatch ? wordsMatch[1] : fullText;
+  const wordsMatch = fullText.match(/(?:Số\s*tiền\s*viết\s*bằng\s*chữ|Tổng\s*số\s*tiền\s*bằng\s*chữ|Amount\s*in\s*words|Bằng\s*chữ)\s*[:\s]*([^\n\r]+)/i);
+  const wordsText = wordsMatch ? wordsMatch[1].trim() : fullText;
+  let wordsAmount = 0;
+  if (wordsMatch && wordsMatch[1] && typeof vietnameseWordsToNumber === 'function') {
+    wordsAmount = vietnameseWordsToNumber(wordsMatch[1]);
+  }
 
   if (/đồng\s*chẵn|đồng\b|\/đồng|\bVNĐ\b|\bVND\b/i.test(wordsText)) {
     currency = "VND";
@@ -444,12 +448,24 @@ function parseInvoiceText(fullText, lines, filename) {
     }
   }
 
+  // TỰ ĐỘNG CHUYỂN ĐỔI SỐ TIỀN BẰNG CHỮ SANG SỐ BẰNG SỐ NẾU BẰNG SỐ BỊ THIẾU HOẶC ĐỌC SAI
+  if (wordsAmount > 0) {
+    if (amount === 0 || amount < 1000) {
+      amount = wordsAmount;
+    } else if (Math.abs(amount - wordsAmount) > 1000 && wordsAmount > amount) {
+      // Trường hợp OCR đọc thiếu các chữ số (VD 45.000 thay vì 45.000.000)
+      amount = wordsAmount;
+    }
+  }
+
   return {
     seriesNo,
     invoiceNumber,
     invoiceNo,
     date: dateStr,
     amount,
+    amountInWords: wordsMatch ? wordsMatch[1].trim() : '',
+    wordsAmount,
     currency,
     description,
     sellerName: cleanSellerName(sellerName)
@@ -552,6 +568,12 @@ async function extractInvoiceDataFromPdfFile(file, dataUrl = null) {
         else if (aiResult.invoiceNumber) parsed.invoiceNo = aiResult.invoiceNumber;
         if (aiResult.date) parsed.date = aiResult.date;
         if (aiResult.amount) parsed.amount = Number(aiResult.amount) || parsed.amount;
+        if (aiResult.amountInWords && typeof vietnameseWordsToNumber === 'function') {
+          const aiWordsAmt = vietnameseWordsToNumber(aiResult.amountInWords);
+          if (aiWordsAmt > 0 && (!parsed.amount || parsed.amount < aiWordsAmt)) {
+            parsed.amount = aiWordsAmt;
+          }
+        }
         if (aiResult.sellerName) parsed.sellerName = cleanSellerName(aiResult.sellerName);
         if (aiResult.note) parsed.description = aiResult.note;
         if (aiResult.currency) parsed.currency = aiResult.currency;
