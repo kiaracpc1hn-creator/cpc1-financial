@@ -405,6 +405,11 @@ async function saveDocuments() {
     }
     STATE._previousDocIds = currentDocIds;
 
+    // Chỉ ghi lên Cloud Firestore những phiếu THẬT SỰ thay đổi so với lần ghi gần nhất,
+    // thay vì ghi lại toàn bộ danh sách mỗi lần gọi hàm này (16 nơi trong code gọi saveDocuments()
+    // cho dù chỉ 1 phiếu đổi) -> đây là nguồn gây quá tải write-queue của Firestore.
+    if (!STATE._lastVoucherWrittenHash) STATE._lastVoucherWrittenHash = new Map();
+
     const sanitizedDocs = (STATE.documents || []).map(d => {
       const copy = Object.assign({}, d);
       if (Array.isArray(copy.attachments)) {
@@ -414,8 +419,13 @@ async function saveDocuments() {
           return rest;
         });
       }
-      // Lưu từng phiếu đơn lẻ lên Cloud Firestore collection để đảm bảo tuyệt đối không bị ghi đè chéo giữa các tài khoản
-      window.storage.saveVoucherCloud(copy);
+
+      const hash = JSON.stringify(copy);
+      if (STATE._lastVoucherWrittenHash.get(copy.id) !== hash) {
+        STATE._lastVoucherWrittenHash.set(copy.id, hash);
+        // Lưu từng phiếu đơn lẻ lên Cloud Firestore collection để đảm bảo tuyệt đối không bị ghi đè chéo giữa các tài khoản
+        window.storage.saveVoucherCloud(copy);
+      }
       return copy;
     });
 
