@@ -3757,7 +3757,7 @@ function renderSidebar() {
     <div class="sidebar-footer">
       <div style="padding:8px 12px;margin-bottom:10px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;font-size:11px;color:#166534;display:flex;align-items:center;gap:6px;">
         <span style="font-size:8px;">🟢</span>
-        <span style="font-weight:600;">Firebase Cloud Realtime</span>
+        <span style="font-weight:600;">Supabase Cloud Realtime</span>
       </div>
       <div class="user-box" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px 10px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
@@ -6884,6 +6884,7 @@ function attachHandlers() {
     submitDoc(doc);
   }));
   document.querySelectorAll('[data-cancelsign]').forEach(el => el.addEventListener('click', () => {
+    const doc = STATE.documents.find(d => d.id === el.dataset.cancelsign);
     cancelSignature(doc);
   }));
   document.querySelectorAll('[data-mkreimb]').forEach(el => el.addEventListener('click', () => {

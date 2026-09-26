@@ -1,63 +1,68 @@
 /**
- * CPC1 Financial Vouchers - Storage Engine (IndexedDB + Firebase Cloud Sync)
- * Supports real-time multi-user cloud synchronization with offline-first IndexedDB resilience.
+ * CPC1 Financial Vouchers - Storage Engine (IndexedDB + Supabase Cloud Sync)
+ * Đã chuyển từ Firebase Firestore sang Supabase (Postgres). Giữ nguyên toàn bộ
+ * API công khai (window.storage.get/set/delete/listenRealtime/saveVoucherCloud/
+ * deleteVoucherCloud/listenVouchersRealtime/exportAll/importAll/isFirebaseConnected)
+ * để app.js KHÔNG cần sửa gì thêm.
  */
 (function () {
   const DB_NAME = 'CPC1_Financial_DB';
   const DB_VERSION = 1;
   const STORE_NAME = 'cpc1_store';
-  const FIREBASE_COLLECTION = 'cpc1_store';
+  const TABLE_STORE = 'cpc1_store';
+  const TABLE_VOUCHERS = 'cpc1_vouchers_list';
 
-  const DEFAULT_FIREBASE_CONFIG = {
-    apiKey: "AIzaSyCAlizFiXYOQ5AfyI0aitbiIoXdlh9bFtE",
-    authDomain: "cpc1-vouchers.firebaseapp.com",
-    projectId: "cpc1-vouchers",
-    storageBucket: "cpc1-vouchers.firebasestorage.app",
-    messagingSenderId: "774346596332",
-    appId: "1:774346596332:web:448bbca398f890872d6ac9",
-    measurementId: "G-C81HKBM8QJ"
-  };
+  // ---- Thông tin dự án Supabase của bạn ----
+  const SUPABASE_URL = 'https://cpc1-financial.sb.qlcvdtp.io.vn';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzkwMTUzODY2LCJleHAiOjE5NDc4MzM4NjZ9.-ZGamSZUY_UOPSElNzWN57cqIqlhglVJQmZzp0QAkp8';
 
   let dbPromise = null;
-  let firestoreDb = null;
-  let isFirebaseReady = false;
+  let supabaseClient = null;
+  let isSupabaseReady = false;
+  let anonSignInAttempted = false;
 
-  function initFirebase() {
-    try {
-      if (window.firebase && !firebase.apps.length) {
-        firebase.initializeApp(DEFAULT_FIREBASE_CONFIG);
-        firestoreDb = firebase.firestore();
-        isFirebaseReady = true;
-        console.log("✓ [CPC1] Firebase Cloud Firestore initialized successfully!");
-      } else if (window.firebase && firebase.apps.length) {
-        firestoreDb = firebase.firestore();
-        isFirebaseReady = true;
+  function ensureAnonSession() {
+    if (!supabaseClient || anonSignInAttempted) return;
+    anonSignInAttempted = true;
+    supabaseClient.auth.getSession().then(({ data }) => {
+      if (data && data.session) {
+        console.log('✓ [CPC1] Đã có phiên đăng nhập, user id:', data.session.user.id);
+        return;
       }
+      supabaseClient.auth.signInAnonymously().then(({ data, error }) => {
+        if (error) {
+          console.warn('[CPC1] Đăng nhập ẩn danh thất bại (kiểm tra Anonymous Sign-Ins đã bật trong Supabase Auth chưa):', error.message);
+        } else {
+          console.log('✓ [CPC1] Đã xác thực ẩn danh, user id:', data.user && data.user.id);
+        }
+      });
+    });
+  }
 
-      // Đăng nhập ẩn danh (Anonymous Auth): không hiện màn hình đăng nhập, người dùng
-      // không thấy gì khác, nhưng bắt buộc phải có 1 phiên xác thực hợp lệ trước khi
-      // Firestore Rules cho phép đọc/ghi. Điều này chặn được việc gọi thẳng API Firestore
-      // từ bên ngoài web (bot, script dò quét) mà không cần xây hệ thống đăng nhập thật.
-      if (window.firebase && firebase.auth) {
-        firebase.auth().onAuthStateChanged(user => {
-          if (!user) {
-            firebase.auth().signInAnonymously().catch(err => {
-              console.warn("[CPC1] Đăng nhập ẩn danh thất bại:", err.message);
-            });
-          } else {
-            console.log("✓ [CPC1] Đã xác thực ẩn danh, uid:", user.uid);
+  function initSupabase() {
+    try {
+      if (window.supabase && window.supabase.createClient && !supabaseClient) {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: { persistSession: true, autoRefreshToken: true }
+        });
+        isSupabaseReady = true;
+        console.log('✓ [CPC1] Supabase initialized successfully!');
+        ensureAnonSession();
+        supabaseClient.auth.onAuthStateChange((event) => {
+          if (event === 'SIGNED_OUT') {
+            anonSignInAttempted = false;
+            ensureAnonSession();
           }
         });
       }
     } catch (e) {
-      console.warn("[CPC1] Firebase initialization warning:", e);
+      console.warn('[CPC1] Supabase initialization warning:', e);
     }
   }
 
-  // Initialize Firebase when script runs or window loads
   if (typeof window !== 'undefined') {
-    initFirebase();
-    window.addEventListener('load', initFirebase);
+    initSupabase();
+    window.addEventListener('load', initSupabase);
   }
 
   function openDB() {
@@ -75,9 +80,7 @@
           db.createObjectStore(STORE_NAME, { keyPath: 'key' });
         }
       };
-      request.onsuccess = (e) => {
-        resolve(e.target.result);
-      };
+      request.onsuccess = (e) => resolve(e.target.result);
       request.onerror = (e) => {
         console.warn('Failed to open IndexedDB, falling back to localStorage:', e);
         resolve(null);
@@ -87,50 +90,39 @@
   }
 
   const StorageEngine = {
+    // Giữ nguyên tên hàm "isFirebaseConnected" để tương thích ngược với app.js,
+    // dù thực chất giờ đang kiểm tra kết nối Supabase.
     isFirebaseConnected() {
-      return isFirebaseReady && !!firestoreDb;
+      return isSupabaseReady && !!supabaseClient;
     },
 
     async _getCloud(key) {
       if (!this.isFirebaseConnected()) return null;
       try {
-        const docSnap = await firestoreDb.collection(FIREBASE_COLLECTION).doc(key).get();
-        if (docSnap.exists) {
-          const data = docSnap.data();
-          if (data) {
-            let val = data.value;
-            if (data.isChunked && data.totalChunks > 0) {
-              const chunkFetchers = [];
-              for (let i = 0; i < data.totalChunks; i++) {
-                chunkFetchers.push(firestoreDb.collection(FIREBASE_COLLECTION).doc(`${key}_chunk_${i}`).get());
-              }
-              const chunkSnaps = await Promise.all(chunkFetchers);
-              const parts = chunkSnaps.map((snap, i) => {
-                if (snap.exists && snap.data() && snap.data().value) return snap.data().value;
-                return data['chunk_' + i] || '';
-              });
-              val = parts.join('');
-            }
-            if (val !== undefined && val !== null && val !== '') {
-              this._setLocal(key, val).catch(() => {});
-              return { key, value: val };
-            }
-          }
+        const { data, error } = await supabaseClient
+          .from(TABLE_STORE)
+          .select('value')
+          .eq('key', key)
+          .maybeSingle();
+        if (error) throw error;
+        if (data && data.value !== undefined && data.value !== null && data.value !== '') {
+          this._setLocal(key, data.value).catch(() => {});
+          return { key, value: data.value };
         }
       } catch (err) {
-        console.warn(`[CPC1 Cloud] Get "${key}" cloud error:`, err.message);
+        console.warn(`[CPC1 Cloud] Get "${key}" cloud error:`, err.message || err);
       }
       return null;
     },
 
     async get(key, isBinary = false, forceCloud = false) {
-      // 0. Metadata or forceCloud directly from Firestore
+      // 0. Metadata hoặc forceCloud: đọc thẳng từ Supabase
       if ((key === 'users' || forceCloud) && this.isFirebaseConnected()) {
         const cloudRes = await this._getCloud(key);
         if (cloudRes) return cloudRes;
       }
 
-      // 1. Try local IndexedDB first for instant UI response
+      // 1. Ưu tiên đọc IndexedDB tại chỗ để phản hồi UI tức thì
       const db = await openDB();
       let localResult = null;
       if (db) {
@@ -161,12 +153,11 @@
         localResult = val !== null ? { key, value: val } : null;
       }
 
-      // If local cache hit, return immediately
       if (localResult && localResult.value !== undefined && localResult.value !== null) {
         return localResult;
       }
 
-      // 2. Local cache miss: ALWAYS fetch fresh data (including attachments) from Firebase Cloud Firestore if connected!
+      // 2. Cache local không có: luôn thử lấy từ Supabase nếu đã kết nối
       if (this.isFirebaseConnected()) {
         const cloudRes = await this._getCloud(key);
         if (cloudRes) return cloudRes;
@@ -184,7 +175,7 @@
             const store = tx.objectStore(STORE_NAME);
             const req = store.put({ key, value });
             req.onsuccess = () => resolve(true);
-            req.onerror = (err) => {
+            req.onerror = () => {
               try { localStorage.setItem('cpc1_' + key, value); resolve(true); } catch (e) {
                 console.warn(`[CPC1 Storage] Could not save "${key}" to local cache:`, e);
                 resolve(false);
@@ -208,47 +199,19 @@
     },
 
     async set(key, value, isBinary = false) {
-      // 1. Save locally to IndexedDB immediately (instant UX)
+      // 1. Lưu local ngay lập tức (UX tức thì)
       await this._setLocal(key, value);
 
-      // 2. Sync to Firebase Cloud Firestore if connected
+      // 2. Đồng bộ lên Supabase nếu đã kết nối. Postgres/text không có giới hạn
+      //    1MB/tài liệu như Firestore nên KHÔNG cần chia nhỏ (chunk) như trước.
       if (this.isFirebaseConnected()) {
         try {
-          if (typeof value === 'string' && value.length > 550000) {
-            // Split into dedicated ~550KB chunk documents (each well below 1MB limit)
-            const chunkSize = 550000;
-            const totalChunks = Math.ceil(value.length / chunkSize);
-
-            // Save main document header
-            await firestoreDb.collection(FIREBASE_COLLECTION).doc(key).set({
-              key: key,
-              isChunked: true,
-              totalChunks: totalChunks,
-              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-
-            // Save chunk sub-documents in parallel
-            const chunkPromises = [];
-            for (let i = 0; i < totalChunks; i++) {
-              const chunkData = value.slice(i * chunkSize, (i + 1) * chunkSize);
-              chunkPromises.push(
-                firestoreDb.collection(FIREBASE_COLLECTION).doc(`${key}_chunk_${i}`).set({
-                  value: chunkData,
-                  updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                })
-              );
-            }
-            await Promise.all(chunkPromises);
-          } else {
-            await firestoreDb.collection(FIREBASE_COLLECTION).doc(key).set({
-              key: key,
-              isChunked: false,
-              value: value,
-              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-          }
+          const { error } = await supabaseClient
+            .from(TABLE_STORE)
+            .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+          if (error) throw error;
         } catch (cloudErr) {
-          console.warn(`[CPC1 Cloud] Could not push "${key}" to Firestore:`, cloudErr);
+          console.warn(`[CPC1 Cloud] Could not push "${key}" to Supabase:`, cloudErr.message || cloudErr);
         }
       }
 
@@ -274,57 +237,42 @@
         localStorage.removeItem('cpc1_' + key);
       }
 
-      // Sync deletion to Firebase
       if (this.isFirebaseConnected()) {
         try {
-          firestoreDb.collection(FIREBASE_COLLECTION).doc(key).delete().catch(() => {});
+          await supabaseClient.from(TABLE_STORE).delete().eq('key', key);
         } catch (e) {}
       }
 
       return true;
     },
 
+    // Lắng nghe thay đổi thời gian thực cho các key đơn lẻ (users, invoices, payees, trash...)
     listenRealtime(keys, callback) {
       if (!this.isFirebaseConnected()) return () => {};
-      const unsubscribers = [];
+      const channels = [];
       keys.forEach(k => {
         try {
-          const unsub = firestoreDb.collection(FIREBASE_COLLECTION).doc(k).onSnapshot(async docSnap => {
-            if (docSnap.exists) {
-              const data = docSnap.data();
-              if (data) {
-                let val = data.value;
-                if (data.isChunked && data.totalChunks > 0) {
-                  const chunkFetchers = [];
-                  for (let i = 0; i < data.totalChunks; i++) {
-                    chunkFetchers.push(firestoreDb.collection(FIREBASE_COLLECTION).doc(`${k}_chunk_${i}`).get());
-                  }
-                  const chunkSnaps = await Promise.all(chunkFetchers);
-                  const parts = chunkSnaps.map((snap, i) => {
-                    if (snap.exists && snap.data() && snap.data().value) return snap.data().value;
-                    return data['chunk_' + i] || '';
-                  });
-                  val = parts.join('');
+          const channel = supabaseClient
+            .channel('cpc1_store_' + k)
+            .on('postgres_changes',
+              { event: '*', schema: 'public', table: TABLE_STORE, filter: `key=eq.${k}` },
+              (payload) => {
+                const row = payload.new;
+                if (row && row.value !== undefined && row.value !== null && row.value !== '') {
+                  this._setLocal(k, row.value).catch(() => {});
+                  callback(k, row.value);
                 }
-                if (val !== undefined && val !== null && val !== '') {
-                  this._setLocal(k, val).catch(() => {});
-                  callback(k, val);
-                }
-              }
-            }
-          }, err => {
-            console.warn(`[CPC1 Cloud] Realtime sync paused for "${k}":`, err.message);
-          });
-          unsubscribers.push(unsub);
+              })
+            .subscribe();
+          channels.push(channel);
         } catch (e) {
           console.warn(`[CPC1 Cloud] Listener attach failed for "${k}":`, e);
         }
       });
-
-      return () => unsubscribers.forEach(u => typeof u === 'function' && u());
+      return () => channels.forEach(ch => { try { supabaseClient.removeChannel(ch); } catch (e) {} });
     },
 
-    // Granular Per-Voucher Collection Cloud Operations for 100% Data Persistence
+    // Lưu 1 phiếu tài chính đơn lẻ lên bảng cpc1_vouchers_list
     async saveVoucherCloud(docObj) {
       if (!this.isFirebaseConnected() || !docObj || !docObj.id) return;
       try {
@@ -336,54 +284,60 @@
             return rest;
           });
         }
-        await firestoreDb.collection('cpc1_vouchers_list').doc(docObj.id).set({
-          ...copy,
-          updatedAtCloud: firebase.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        const { error } = await supabaseClient
+          .from(TABLE_VOUCHERS)
+          .upsert({ id: docObj.id, data: copy, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+        if (error) throw error;
       } catch (err) {
-        console.warn(`[CPC1 Cloud] Error saving voucher ${docObj.id}:`, err.message);
+        console.warn(`[CPC1 Cloud] Error saving voucher ${docObj.id}:`, err.message || err);
       }
     },
 
     async deleteVoucherCloud(docId) {
       if (!this.isFirebaseConnected() || !docId) return;
       try {
-        await firestoreDb.collection('cpc1_vouchers_list').doc(docId).delete();
+        await supabaseClient.from(TABLE_VOUCHERS).delete().eq('id', docId);
       } catch (err) {
-        console.warn(`[CPC1 Cloud] Error deleting voucher ${docId}:`, err.message);
+        console.warn(`[CPC1 Cloud] Error deleting voucher ${docId}:`, err.message || err);
       }
     },
 
+    // Lắng nghe thời gian thực TOÀN BỘ danh sách phiếu — tương đương onSnapshot(collection) bên Firestore
     listenVouchersRealtime(callback) {
       if (!this.isFirebaseConnected()) return () => {};
+      const currentVouchers = new Map();
       try {
-        const unsub = firestoreDb.collection('cpc1_vouchers_list').onSnapshot({ includeMetadataChanges: true }, snapshot => {
-          // QUAN TRỌNG: bỏ qua snapshot phát sinh từ chính write đang chờ xác nhận (pending) của TRÌNH DUYỆT NÀY.
-          // Nếu không có dòng này, mỗi lần app tự ghi lên Firestore sẽ tự kích hoạt lại listener này,
-          // và nếu logic xử lý bên dưới lại ghi tiếp -> tạo vòng lặp ghi vô hạn (resource-exhausted).
-          if (snapshot.metadata.hasPendingWrites) return;
-
-          const vouchers = [];
-          const changes = [];
-          snapshot.docChanges().forEach(change => {
-            const data = change.doc.data();
-            if (data && data.id) {
-              changes.push({ type: change.type, doc: data, id: change.doc.id });
-            }
-          });
-          snapshot.forEach(docSnap => {
-            const data = docSnap.data();
-            if (data && data.id) {
-              vouchers.push(data);
-            }
-          });
-          callback(vouchers, changes);
-        }, err => {
-          console.warn(`[CPC1 Cloud] Realtime vouchers sync error:`, err.message);
+        // Tải toàn bộ 1 lần đầu tiên
+        supabaseClient.from(TABLE_VOUCHERS).select('id, data').then(({ data, error }) => {
+          if (error) { console.warn('[CPC1 Cloud] Initial vouchers load error:', error.message); return; }
+          (data || []).forEach(row => currentVouchers.set(row.id, row.data));
+          callback(Array.from(currentVouchers.values()), []);
         });
-        return unsub;
+
+        const channel = supabaseClient
+          .channel('cpc1_vouchers_realtime')
+          .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_VOUCHERS }, (payload) => {
+            // Supabase Realtime chỉ bắn sự kiện khi Postgres THẬT SỰ ghi xong (không có khái niệm
+            // "pending write" như Firestore) nên bản thân cơ chế này không tự lặp lại vô hạn.
+            if (payload.eventType === 'DELETE') {
+              const oldId = payload.old && payload.old.id;
+              const oldData = (payload.old && payload.old.data) || null;
+              currentVouchers.delete(oldId);
+              callback(Array.from(currentVouchers.values()), [{ type: 'removed', doc: oldData, id: oldId }]);
+            } else {
+              currentVouchers.set(payload.new.id, payload.new.data);
+              callback(Array.from(currentVouchers.values()), [{
+                type: payload.eventType === 'INSERT' ? 'added' : 'modified',
+                doc: payload.new.data,
+                id: payload.new.id
+              }]);
+            }
+          })
+          .subscribe();
+
+        return () => { try { supabaseClient.removeChannel(channel); } catch (e) {} };
       } catch (e) {
-        console.warn(`[CPC1 Cloud] Vouchers listener attach failed:`, e);
+        console.warn('[CPC1 Cloud] Vouchers listener attach failed:', e);
         return () => {};
       }
     },
@@ -397,9 +351,7 @@
           const req = store.getAll();
           req.onsuccess = () => {
             const result = {};
-            (req.result || []).forEach(item => {
-              result[item.key] = item.value;
-            });
+            (req.result || []).forEach(item => { result[item.key] = item.value; });
             resolve(JSON.stringify(result, null, 2));
           };
           req.onerror = (e) => reject(e);
@@ -436,15 +388,15 @@
           }
         }
 
-        // Also push to Firestore if connected
         if (this.isFirebaseConnected()) {
-          for (const key of Object.keys(data)) {
-            if (data[key] && data[key].length < 950000) {
-              firestoreDb.collection(FIREBASE_COLLECTION).doc(key).set({
-                key: key,
-                value: data[key],
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-              }, { merge: true }).catch(() => {});
+          const rows = Object.keys(data).map(key => ({
+            key, value: data[key], updated_at: new Date().toISOString()
+          }));
+          if (rows.length) {
+            try {
+              await supabaseClient.from(TABLE_STORE).upsert(rows, { onConflict: 'key' });
+            } catch (e) {
+              console.warn('[CPC1 Cloud] Import push to Supabase warning:', e.message || e);
             }
           }
         }
@@ -457,7 +409,6 @@
     }
   };
 
-  // Mount to window.storage
   window.storage = StorageEngine;
   window.CPC1Storage = StorageEngine;
 })();
