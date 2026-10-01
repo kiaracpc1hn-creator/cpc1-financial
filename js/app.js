@@ -5598,7 +5598,8 @@ function renderPaperPreview(doc) {
   };
 
   const codeText = doc.type === 'advance' ? 'BM 03/KT –CPC1HN' : doc.formCode;
-  const versionDateText = doc.type === 'advance' ? '18/05/2023' : (doc.formVersionDate || '18/09/2020');
+  const versionDateText = doc.type === 'advance' ? '10/10/2023' : (doc.formVersionDate || '18/09/2020');
+  const centerBody = doc.type === 'advance';
 
   return `
   <div class="doc-preview">
@@ -5610,6 +5611,8 @@ function renderPaperPreview(doc) {
     </div>
     <div class="doc-title-red">${titleMap[doc.type].toUpperCase()}</div>
     ${doc.subject ? `<div class="doc-subject">V/v ${doc.subject}</div>` : ''}
+
+    ${centerBody ? '<div style="text-align:center;">' : ''}
 
     ${doc.type === 'payment' ? `
       <div class="doc-meta-line"><b>KÍNH GỬI:</b></div>
@@ -5635,6 +5638,8 @@ function renderPaperPreview(doc) {
         <div class="doc-meta-indent">- Tại ngân hàng: <b>${p.bankName || ''}</b></div>`;
       })() : ''}
     ` : ''}
+
+    ${centerBody ? '</div>' : ''}
 
     <div class="doc-date-line">Hà Nội, ${fmtDateVN(doc.documentDate)}</div>
 
