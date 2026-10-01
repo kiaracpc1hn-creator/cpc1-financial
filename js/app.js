@@ -2203,6 +2203,161 @@ function checkAndDispatchWeeklyOverdueAdvanceEmails() {
   } catch (e) {}
 }
 
+function getInvoiceOverdueDays(rec, thresholdDays = 15) {
+  if (!rec) return 0;
+  if (getInvoiceRecordStatus(rec).key !== 'not_submitted') return 0;
+  const recDate = new Date(rec.date || rec.uploadedAt);
+  if (isNaN(recDate.getTime())) return 0;
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - recDate.getTime()) / (1000 * 3600 * 24));
+  return diffDays > thresholdDays ? diffDays : 0;
+}
+
+function getOverdueInvoices(userOnly = false, thresholdDays = 15) {
+  const u = currentUser();
+  const now = new Date();
+  return getAccessibleInvoices().filter(r => {
+    if (getInvoiceRecordStatus(r).key !== 'not_submitted') return false;
+    if (userOnly && r.requesterId !== u.id && r.requesterName !== u.name) return false;
+    const recDate = new Date(r.date || r.uploadedAt);
+    if (isNaN(recDate.getTime())) return false;
+    const diffDays = Math.floor((now.getTime() - recDate.getTime()) / (1000 * 3600 * 24));
+    return diffDays > thresholdDays;
+  }).map(r => {
+    const recDate = new Date(r.date || r.uploadedAt);
+    const diffDays = Math.floor((now.getTime() - recDate.getTime()) / (1000 * 3600 * 24));
+    return { rec: r, daysOverdue: diffDays };
+  });
+}
+
+function sendOverdueInvoiceEmailNotification(isAutomated = false) {
+  const overdues = getOverdueInvoices(false);
+  if (overdues.length === 0) {
+    if (!isAutomated) {
+      showAlertModal('Thông báo', 'Hiện tại không có hoá đơn nào quá hạn 15 ngày chưa lập Đề nghị thanh toán.');
+    }
+    return;
+  }
+
+  const toEmailsSet = new Set();
+  const ccEmailsSet = new Set();
+
+  STATE.users.forEach(u => {
+    if ((u.role === 'admin' || u.role === 'dept_head') && u.email) {
+      ccEmailsSet.add(u.email.trim());
+    }
+  });
+
+  overdues.forEach(o => {
+    const userRec = STATE.users.find(u => u.id === o.rec.requesterId || u.name === o.rec.requesterName);
+    if (userRec && userRec.email) {
+      toEmailsSet.add(userRec.email.trim());
+    }
+  });
+
+  const toStr = Array.from(toEmailsSet).join(', ') || 'Chưa cập nhật email cá nhân';
+  const ccStr = Array.from(ccEmailsSet).join(', ') || 'Chưa có email Trưởng nhóm / Admin';
+  const totalAmount = overdues.reduce((acc, o) => acc + (o.rec.amount || 0), 0);
+
+  const mailSubject = `[CPC1HN] Cảnh báo hoá đơn quá hạn > 15 ngày chưa lập ĐNTT (${overdues.length} hoá đơn)`;
+  const mailTo = Array.from(toEmailsSet).join(',');
+  const mailCc = Array.from(ccEmailsSet).join(',');
+
+  let mailBodyText = `Kính gửi các Bộ phận & Nhân viên,\n\nPhòng TCKT Công ty Cổ phần Dược phẩm CPC1 Hà Nội trân trọng thông báo danh sách hoá đơn đã quá 15 ngày chưa được lập Đề nghị thanh toán (ĐNTT):\n\n`;
+  overdues.forEach((o, i) => {
+    const code = o.rec.seriesNo ? `${o.rec.seriesNo}|${o.rec.invoiceNumber}` : (o.rec.invoiceNumber || '(chưa có số)');
+    mailBodyText += `${i + 1}. Số hoá đơn: ${code} | Người phụ trách: ${o.rec.requesterName} | Ngày hoá đơn: ${fmtDate(o.rec.date)} | Số tiền: ${fmtMoney(o.rec.amount || 0, o.rec.currency)} | Quá hạn: ${o.daysOverdue} ngày\n`;
+  });
+  mailBodyText += `\nVui lòng khẩn trương lập Giấy đề nghị thanh toán cho các hoá đơn trên.\n\nTrân trọng,\nPhòng TCKT - CPC1 Hà Nội`;
+
+  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(mailTo)}&cc=${encodeURIComponent(mailCc)}&su=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBodyText)}`;
+  const mailtoUrl = `mailto:${encodeURIComponent(mailTo)}?cc=${encodeURIComponent(mailCc)}&subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBodyText)}`;
+
+  const tableRowsHtml = overdues.map((o, idx) => {
+    const code = o.rec.seriesNo ? `${o.rec.seriesNo}|${o.rec.invoiceNumber}` : (o.rec.invoiceNumber || '(chưa có số)');
+    const amountText = fmtMoney(o.rec.amount || 0, o.rec.currency);
+    const userRec = STATE.users.find(u => u.id === o.rec.requesterId || u.name === o.rec.requesterName);
+    const userEmailStr = userRec && userRec.email ? `<br><span style="font-size:11px;color:#0D9488;">📧 ${userRec.email}</span>` : '';
+    return `
+      <tr>
+        <td style="border:1px solid #CBD5E1;padding:8px;text-align:center;">${idx + 1}</td>
+        <td style="border:1px solid #CBD5E1;padding:8px;font-weight:bold;">${code}</td>
+        <td style="border:1px solid #CBD5E1;padding:8px;">${o.rec.requesterName}${userEmailStr}</td>
+        <td style="border:1px solid #CBD5E1;padding:8px;text-align:center;">${fmtDate(o.rec.date)}</td>
+        <td style="border:1px solid #CBD5E1;padding:8px;text-align:right;font-weight:bold;color:#E11D48;">${amountText}</td>
+        <td style="border:1px solid #CBD5E1;padding:8px;text-align:center;font-weight:bold;color:#9F1239;">${o.daysOverdue} ngày</td>
+      </tr>`;
+  }).join('');
+
+  const modeBadgeText = isAutomated ? '🔄 LỊCH GỬI TỰ ĐỘNG THỨ 2 ĐẦU TUẦN (AUTO-MONDAY)' : '✉️ THÔNG BÁO PHÁT SÓNG EMAIL NHẮC HOÁ ĐƠN QUÁ HẠN';
+
+  const emailModalHtml = `
+    <div style="text-align:left;font-size:13.5px;color:#0F172A;line-height:1.6;">
+      <div style="background:#FFF7ED;border:1.5px solid #FB923C;border-radius:10px;padding:14px 16px;margin-bottom:14px;">
+        <b style="color:#9A3412;font-size:14px;">${modeBadgeText}</b><br>
+        • 📩 <b>Gửi trực tiếp (To)</b>: <b style="color:#0F172A;">${toStr}</b><br>
+        • 📋 <b>Đồng kính gửi (CC)</b>: <b style="color:#0D9488;">${ccStr}</b><br>
+        • ⏰ <b>Tần suất phát sóng</b>: <b>Cảnh báo Lần 1 (khi quá 15 ngày) ➔ Các lần tiếp theo gửi tự động vào Thứ 2 đầu tuần</b><br>
+        • 📌 <b>Chủ đề Email</b>: <b>[CPC1HN] Cảnh báo hoá đơn quá hạn > 15 ngày chưa lập ĐNTT (${overdues.length} hoá đơn - Tổng ${fmtMoney(totalAmount, 'VND')})</b>
+      </div>
+
+      <p style="margin-bottom:10px;">
+        Kính gửi các Bộ phận & Nhân viên,<br>
+        Phòng TCKT Công ty Cổ phần Dược phẩm CPC1 Hà Nội trân trọng thông báo danh sách hoá đơn <b>đã quá 15 ngày</b> chưa lập Đề nghị thanh toán:
+      </p>
+
+      <table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px;">
+        <thead>
+          <tr style="background:#F1F5F9;">
+            <th style="border:1px solid #CBD5E1;padding:8px;">STT</th>
+            <th style="border:1px solid #CBD5E1;padding:8px;">Số hoá đơn</th>
+            <th style="border:1px solid #CBD5E1;padding:8px;">Người phụ trách</th>
+            <th style="border:1px solid #CBD5E1;padding:8px;">Ngày hoá đơn</th>
+            <th style="border:1px solid #CBD5E1;padding:8px;">Số tiền</th>
+            <th style="border:1px solid #CBD5E1;padding:8px;">Quá hạn</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRowsHtml}
+        </tbody>
+      </table>
+
+      <div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:12.5px;color:#166534;">
+        🟢 <b>Cơ chế TỰ ĐỘNG DỪNG GỬI MAIL</b>: Khi hoá đơn được đưa vào 1 Đề nghị thanh toán và trình ký, hệ thống sẽ <b>TỰ ĐỘNG DỪNG GỬI MAIL NHẮC</b> đối với hoá đơn đó!
+      </div>
+
+      <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
+        <a href="${gmailUrl}" target="_blank" class="btn btn-teal" style="padding:10px 18px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:6px;border-radius:8px;background:#EA4335;color:#FFF;border:none;">
+          🔴 Mở trực tiếp Gmail Web (Nhanh nhất) ↗
+        </a>
+        <a href="${mailtoUrl}" target="_blank" class="btn btn-outline" style="padding:10px 18px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:6px;border-radius:8px;">
+          💻 Mở bằng Outlook / App Mail trên máy ↗
+        </a>
+      </div>
+    </div>`;
+
+  playWarningChime();
+  showAlertModal(isAutomated ? '🔄 ĐÃ PHÁT SÓNG EMAIL NHẮC HOÁ ĐƠN QUÁ HẠN' : '📧 ĐÃ TẠO EMAIL NHẮC HOÁ ĐƠN QUÁ HẠN', emailModalHtml);
+  showToast(`✓ Đã tạo email nhắc cho ${overdues.length} hoá đơn quá hạn!`);
+}
+
+function checkAndDispatchWeeklyOverdueInvoiceEmails() {
+  try {
+    const now = new Date();
+    const isMonday = now.getDay() === 1;
+    const todayStr = now.toISOString().slice(0, 10);
+    const lastSentDay = localStorage.getItem('CPC1_LAST_OVERDUE_INVOICE_EMAIL_DATE');
+
+    if ((isMonday || !lastSentDay) && lastSentDay !== todayStr) {
+      const overdues = getOverdueInvoices(false);
+      if (overdues.length > 0) {
+        sendOverdueInvoiceEmailNotification(true);
+        localStorage.setItem('CPC1_LAST_OVERDUE_INVOICE_EMAIL_DATE', todayStr);
+      }
+    }
+  } catch (e) {}
+}
+
 function showCashLimitPopupModal(doc) {
   if (!doc) return false;
   const total = computeTotal(doc);
@@ -3795,6 +3950,7 @@ function renderOverview() {
   // 2. Unlinked invoices (Mới nhập)
   const unlinkedInvoices = accessibleInvoices.filter(r => getInvoiceRecordStatus(r).key === 'not_submitted');
   const unlinkedTotalAmount = unlinkedInvoices.reduce((sum, r) => sum + (r.amount || 0), 0);
+  const overdueInvoices = getOverdueInvoices(false);
 
   // 3. Pending signature documents
   const pendingDocs = accessibleDocs.filter(d => d.status === 'pending_signature');
@@ -3848,6 +4004,7 @@ function renderOverview() {
       </div>
       <div style="font-size:22px;font-weight:800;color:#E11D48;">${overdues.length} khoản</div>
       <div style="font-size:12.5px;color:#BE123C;margin-top:4px;">Tổng nợ: <b>${fmtMoney(overdueTotalAmount, 'VND')}</b></div>
+      ${overdues.length > 0 ? `<button type="button" class="btn btn-outline btn-sm send-advance-overdue-email-btn" style="margin-top:8px;font-size:11px;padding:4px 10px;color:#E11D48;border-color:#E11D48;" title="Gửi email nhắc nợ tạm ứng quá hạn">📧 Nhắc nợ tạm ứng</button>` : ''}
     </div>
 
     <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(217,119,6,0.06);">
@@ -3866,6 +4023,7 @@ function renderOverview() {
       </div>
       <div style="font-size:22px;font-weight:800;color:#0284C7;">${unlinkedInvoices.length} hoá đơn</div>
       <div style="font-size:12.5px;color:#0369A1;margin-top:4px;">Tổng tiền: <b>${fmtMoney(unlinkedTotalAmount, 'VND')}</b></div>
+      ${overdueInvoices.length > 0 ? `<button type="button" class="btn btn-outline btn-sm send-invoice-overdue-email-btn" style="margin-top:8px;font-size:11px;padding:4px 10px;color:#0284C7;border-color:#0284C7;" title="Gửi email nhắc hoá đơn quá hạn > 15 ngày chưa lập ĐNTT">📧 Nhắc hoá đơn quá hạn (${overdueInvoices.length})</button>` : ''}
     </div>
 
     <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(22,101,52,0.06);">
@@ -4775,22 +4933,6 @@ function renderForm() {
         <td class="col-amount" style="width:140px;"><input type="number" data-item="${i}" data-field="amount" value="${it.amount || ''}"></td>
         <td class="col-del"><button class="del-row" data-delitem="${i}">✕</button></td>
       </tr>`).join('');
-  } else if (type === 'advance') {
-    itemsCols = ['STT', 'Thời gian nộp hồ sơ trực tiếp', 'Các loại giấy tờ cần xin xác nhận', 'Chi phí', ''];
-    itemsRows = doc.items.map((it, i) => `
-      <tr>
-        <td style="width:34px;text-align:center;">${i + 1}</td>
-        <td style="width:160px;">
-          <div style="position:relative;display:flex;align-items:center;">
-            <input type="text" data-item="${i}" data-field="datetext" value="${fmtDate(it.date) || ''}" placeholder="dd/mm/yyyy" style="width:100%;padding-right:24px;font-size:12.5px;text-align:center;border:1px solid var(--line);border-radius:6px;font-weight:600;">
-            <input type="date" data-item="${i}" data-field="date" value="${it.date || ''}" style="position:absolute;right:0;top:0;width:26px;height:100%;opacity:0;cursor:pointer;">
-            <span style="position:absolute;right:5px;pointer-events:none;font-size:12px;">📅</span>
-          </div>
-        </td>
-        <td><textarea data-item="${i}" data-field="description" rows="2" placeholder="Các loại giấy tờ cần xin xác nhận" style="width:100%;min-height:42px;padding:6px 8px;font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;resize:vertical;line-height:1.4;text-align:center;">${it.description || ''}</textarea></td>
-        <td class="col-amount" style="width:140px;"><input type="number" data-item="${i}" data-field="amount" value="${it.amount || ''}" style="text-align:center;"></td>
-        <td class="col-del"><button class="del-row" data-delitem="${i}">✕</button></td>
-      </tr>`).join('');
   }
 
   const payeeOptions = STATE.payees.map(p => `<option value="${p.id}" ${doc.payeeId === p.id ? 'selected' : ''}>${p.name}</option>`).join('');
@@ -4801,7 +4943,12 @@ function renderForm() {
   } else if (type === 'submission') {
     typeSpecificTop = `<div class="field"><label>V/v (chủ đề trình)</label><input id="f-subject" value="${doc.subject || ''}" placeholder="VD: thanh toán chi phí vận chuyển hồ sơ"></div>`;
   } else if (type === 'advance') {
+    const advAmount = (doc.items && doc.items[0] && doc.items[0].amount) || '';
     typeSpecificTop = `
+      <div class="field">
+        <label>Đề nghị tạm ứng số tiền</label>
+        <input type="number" id="f-advance-amount" data-item="0" data-field="amount" value="${advAmount}" placeholder="VD: 75000000">
+      </div>
       <div class="field"><label>Lý do tạm ứng</label><textarea id="f-reason" placeholder="Lý do đề nghị tạm ứng">${doc.reason || ''}</textarea></div>
       <div class="field"><label>Thời hạn thanh toán</label><input id="f-paymentDeadline" value="${doc.paymentDeadline || ''}" placeholder="VD: Trước ngày đi nộp hồ sơ"></div>`;
   }
@@ -4917,7 +5064,10 @@ function renderForm() {
 
     ${typeSpecificTop}
 
-    ${type !== 'reimbursement' ? `
+    ${type === 'advance' ? `
+      <div class="amount-words" id="form-total-words">Bằng chữ: ${numberToWords(total, doc.currency)}</div>
+      <span id="form-total-amt" style="display:none;">${fmtMoney(total, doc.currency)}</span>
+    ` : type !== 'reimbursement' ? `
       <div id="form-dup-warning-container">
         ${renderFormDuplicateBannerHtml(doc)}
         ${renderDifferentBeneficiariesBannerHtml(doc)}
@@ -5268,33 +5418,10 @@ function computeBodyBlock(doc) {
       <p style="font-style:italic;font-size:11.5px;color:#475569;margin:4px 0 10px;">(Bằng chữ: ${numberToWords(total, doc.currency)})</p>`;
   } else if (doc.type === 'advance') {
     return `
-      <div class="doc-meta-line"><b>Lý do tạm ứng:</b> ${doc.reason || ''}</div>
-      <div class="doc-meta-line" style="margin-top:4px;margin-bottom:6px;">Nội dung giấy tờ cần xin xác nhận như sau:</div>
-      <table class="items-table">
-        <thead>
-          <tr>
-            <th style="text-align:center;width:45px;">STT</th>
-            <th style="text-align:center;width:170px;">Thời gian nộp hồ sơ trực tiếp</th>
-            <th style="text-align:center;">Các loại giấy tờ cần xin xác nhận</th>
-            <th style="text-align:center;width:120px;">Chi phí</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${(doc.items || []).map((it, i) => `
-            <tr>
-              <td style="text-align:center;">${i + 1}</td>
-              <td style="text-align:center;">${fmtDate(it.date)}</td>
-              <td style="text-align:center;">${it.description || ''}</td>
-              <td class="amount-cell" style="text-align:center;">${fmtMoney(it.amount, doc.currency)}</td>
-            </tr>`).join('')}
-          <tr>
-            <td colspan="3" style="text-align:center;font-weight:700;">Tổng cộng</td>
-            <td class="amount-cell" style="text-align:center;font-weight:700;">${fmtMoney(total, doc.currency)}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="doc-meta-line"><b>Đề nghị tạm ứng số tiền:</b> ${fmtMoney(total, doc.currency)}</div>
       <p style="font-style:italic;font-size:11.5px;color:#475569;margin:4px 0 10px;">(Bằng chữ: ${numberToWords(total, doc.currency)})</p>
-      <div class="doc-meta-line" style="margin-top:10px;"><b>Thời hạn thanh toán:</b> ${doc.paymentDeadline || ''}</div>`;
+      <div class="doc-meta-line"><b>Lý do tạm ứng:</b> ${doc.reason || ''}</div>
+      <div class="doc-meta-line" style="margin-top:4px;"><b>Thời hạn thanh toán:</b> ${doc.paymentDeadline || ''}</div>`;
   } else if (doc.type === 'reimbursement') {
     const advancedTotal = computeAdvancedTotal(doc);
     const spentTotal = total;
@@ -6805,6 +6932,13 @@ function attachHandlers() {
     const inp = document.getElementById('cfg-accounting-email');
     if (inp) STATE.accountingEmail = inp.value;
     sendOverdueAdvanceEmailNotification();
+  });
+
+  document.querySelectorAll('.send-advance-overdue-email-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); sendOverdueAdvanceEmailNotification(false); });
+  });
+  document.querySelectorAll('.send-invoice-overdue-email-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); sendOverdueInvoiceEmailNotification(false); });
   });
 
   // Navigation
@@ -8603,6 +8737,7 @@ async function initApp() {
   await autoPurgeExpiredTrash();
   autoIndexUnscannedInvoices();
   checkAndDispatchWeeklyOverdueAdvanceEmails();
+  checkAndDispatchWeeklyOverdueInvoiceEmails();
   render();
 }
 
