@@ -1027,6 +1027,22 @@ function cancelSignature(doc) {
   });
 }
 
+function finalizeSignedDoc(doc) {
+  if (!doc) return;
+  const signedCount = (doc.signedAttachmentIds && doc.signedAttachmentIds.length) || (doc.signedAttachmentId ? 1 : 0);
+  if (signedCount === 0) {
+    showAlertModal('Chưa có bản đã ký', 'Vui lòng đính kèm ít nhất 1 bản scan/ảnh đã ký trước khi bấm Hoàn tất.');
+    return;
+  }
+  showConfirmModal('Hoàn tất phiếu?', `Phiếu đã có ${signedCount} bản ký đính kèm. Xác nhận chuyển phiếu sang trạng thái "Đã ký"?`, async () => {
+    doc.status = 'signed';
+    doc.history.push({ at: new Date().toISOString(), action: 'Hoàn tất (Đã ký)', by: currentUser().name });
+    await saveDocuments();
+    showToast('✓ Phiếu đã hoàn tất — Đã ký');
+    render();
+  });
+}
+
 function bulkRevertPendingToDraft() {
   const docs = getAccessibleDocuments().filter(d => d.status === 'pending_signature');
   if (docs.length === 0) return;
@@ -1187,7 +1203,7 @@ async function autoSyncLocalAttachmentsToCloud() {
   }
 }
 
-function openSignedUploadModal(doc) {
+function openSignedUploadModal(doc, finalize = true) {
   if (!doc) return;
   const existing = document.getElementById('signed-upload-modal-overlay');
   if (existing) existing.remove();
@@ -1209,13 +1225,13 @@ function openSignedUploadModal(doc) {
       <div class="modal-card" style="background:#FFFFFF !important;border-radius:18px;padding:24px 28px;max-width:580px;width:92%;box-shadow:0 25px 60px rgba(15,23,42,0.4);border:1px solid #CBD5E1;color:#0F172A;animation:modalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid #E2E8F0;padding-bottom:12px;">
           <h3 style="margin:0;font-size:17px;font-weight:700;color:#0F172A;display:flex;align-items:center;gap:8px;">
-            <span>📤 Tải lên bản đã ký (PDF / Ảnh)</span>
+            <span>📤 ${finalize ? 'Tải lên bản đã ký (PDF / Ảnh)' : 'Đính kèm bản đã ký (PDF / Ảnh)'}</span>
           </h3>
           <button type="button" class="btn-signed-modal-close" style="background:none;border:none;font-size:20px;color:#64748B;cursor:pointer;line-height:1;">✕</button>
         </div>
 
         <p style="font-size:13px;color:#475569;margin:0 0 14px;line-height:1.5;">
-          Bạn có thể chọn <b>nhiều file cùng một lúc</b> (VD: scan từng trang ảnh hoặc nhiều file PDF bản ký). Kiểm tra danh sách bên dưới rồi ấn <b>Hoàn tất & Gửi tất cả</b>.
+          Bạn có thể chọn <b>nhiều file cùng một lúc</b> (VD: scan từng trang ảnh hoặc nhiều file PDF bản ký). ${finalize ? 'Kiểm tra danh sách bên dưới rồi ấn <b>Hoàn tất & Gửi tất cả</b>.' : 'File sẽ được đính kèm vào phiếu — phiếu vẫn ở trạng thái Nháp, bạn bấm "Hoàn tất (Đã ký)" riêng sau khi kiểm tra lại.'}
         </p>
 
         <!-- Drop area / Pick file -->
@@ -1259,7 +1275,7 @@ function openSignedUploadModal(doc) {
           <div style="display:flex;gap:10px;">
             <button type="button" class="btn btn-ghost btn-signed-modal-close" style="padding:8px 16px;">Huỷ</button>
             <button type="button" class="btn btn-stamp" id="btn-signed-modal-submit" ${selectedFiles.length === 0 ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>
-              ✓ Hoàn tất & Gửi tất cả ${selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}
+              ${finalize ? '✓ Hoàn tất & Gửi tất cả' : '📎 Đính kèm'} ${selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}
             </button>
           </div>
         </div>
@@ -1302,7 +1318,7 @@ function openSignedUploadModal(doc) {
         if (selectedFiles.length === 0) return;
         submitBtn.disabled = true;
         submitBtn.innerHTML = '⏳ Đang tải lên...';
-        await uploadMultipleSignedCopies(doc, selectedFiles);
+        await uploadMultipleSignedCopies(doc, selectedFiles, finalize);
         overlay.remove();
       });
     }
@@ -1330,7 +1346,7 @@ function openSignedUploadModal(doc) {
   renderModalInner();
 }
 
-async function uploadMultipleSignedCopies(doc, files) {
+async function uploadMultipleSignedCopies(doc, files, finalize = true) {
   if (!files || files.length === 0) return;
   try {
     doc.signedAttachmentIds = doc.signedAttachmentIds || [];
@@ -1367,15 +1383,23 @@ async function uploadMultipleSignedCopies(doc, files) {
       doc.signedAttachmentId = doc.signedAttachmentIds[0];
     }
 
-    doc.status = 'signed';
-    doc.history.push({
-      at: new Date().toISOString(),
-      action: `Tải lên ${files.length} bản đã ký — Hoàn tất`,
-      by: currentUser().name
-    });
+    if (finalize) {
+      doc.status = 'signed';
+      doc.history.push({
+        at: new Date().toISOString(),
+        action: `Tải lên ${files.length} bản đã ký — Hoàn tất`,
+        by: currentUser().name
+      });
+    } else {
+      doc.history.push({
+        at: new Date().toISOString(),
+        action: `Đính kèm ${files.length} bản đã ký (chưa hoàn tất)`,
+        by: currentUser().name
+      });
+    }
 
     await saveDocuments();
-    showToast(`✓ Đã cập nhật ${files.length} bản ký — Phiếu hoàn tất`);
+    showToast(finalize ? `✓ Đã cập nhật ${files.length} bản ký — Phiếu hoàn tất` : `✓ Đã đính kèm ${files.length} bản ký — bấm "Hoàn tất (Đã ký)" khi sẵn sàng`);
     if (newSignedIds.length > 0) {
       STATE.previewAttachmentId = newSignedIds[0];
     }
@@ -5726,6 +5750,8 @@ function renderDetail() {
   }
   const t = DOC_TYPES[doc.type];
   const isOwner = doc.requesterId === currentUser().id;
+  const isAuthorizedAdmin = ['admin', 'dept_head', 'chief_accountant', 'director'].includes(currentUser().role);
+  const canManageDraft = isOwner || isAuthorizedAdmin;
 
   // Tự động dọn dẹp các file đính kèm thừa của hoá đơn đã gỡ khỏi bảng
   pruneUnlinkedInvoiceAttachments(doc);
@@ -5765,12 +5791,12 @@ function renderDetail() {
       <p>${t.formCode} · Lập ngày ${fmtDate(doc.documentDate)} · <span class="badge ${STATUS_BADGE[doc.status]}">${STATUS_LABEL[doc.status]}</span> · <span class="badge" style="background:#F0FDFA;color:#0D9488;border:1px solid #99F6E4;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11.5px;" title="Hệ thống tự động chọn khổ A5 khi phiếu có 1-3 hóa đơn, và tự động chọn khổ A4 khi phiếu có từ 4 hóa đơn trở lên">📄 Khổ in tự động: ${((doc.items || doc.spentItems || []).length > 3) ? 'A4 (Phiếu > 3 HĐ)' : 'A5 (Phiếu ≤ 3 HĐ)'}</span></p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      ${doc.status === 'draft' && isOwner ? `<button class="btn btn-outline btn-sm" data-editdoc="${doc.id}">✏ Sửa</button>` : ''}
+      ${doc.status === 'draft' && canManageDraft ? `<button class="btn btn-outline btn-sm" data-editdoc="${doc.id}">✏ Sửa</button>` : ''}
       <button class="btn btn-outline btn-sm" data-dup="${doc.id}">⧉ Tạo bản sao</button>
       <button class="btn btn-teal btn-sm" data-printtab="${doc.id}" title="Mở tab mới và in trực tiếp, không cần tải file">🖨 In phiếu</button>
       <button class="btn btn-outline btn-sm" data-print="${doc.id}" title="Tải file PDF về máy">⬇ Tải PDF</button>
       ${doc.type === 'advance' && doc.status === 'signed' ? `<button class="btn btn-primary btn-sm" data-mkreimb="${doc.id}">→ Lập hoàn ứng</button>` : ''}
-      ${doc.status === 'draft' && isOwner ? `<button class="btn btn-ghost btn-sm" data-deldoc="${doc.id}" style="color:var(--stamp);">Xoá</button>` : ''}
+      ${doc.status === 'draft' && canManageDraft ? `<button class="btn btn-ghost btn-sm" data-deldoc="${doc.id}" style="color:var(--stamp);">Xoá</button>` : ''}
       <button class="btn btn-ghost btn-sm" data-nav="list">← Danh sách</button>
     </div>
   </div>
@@ -5780,11 +5806,17 @@ function renderDetail() {
   <div class="detail-container">
     ${renderPaperPreview(doc)}
 
-    ${doc.status === 'draft' && isOwner ? `
+    ${doc.status === 'draft' && canManageDraft ? (() => {
+      const signedCount = (doc.signedAttachmentIds && doc.signedAttachmentIds.length) || (doc.signedAttachmentId ? 1 : 0);
+      return `
     <div class="action-bar">
-      <p style="margin:0 0 10px;color:var(--ink-soft);font-weight:600;">Phiếu đang ở trạng thái Nháp. In phiếu ra, xin đầy đủ chữ ký trên bản giấy, sau đó đính kèm bản scan/ảnh đã ký để hoàn tất — phiếu sẽ chuyển thẳng sang "Đã ký".</p>
-      <button class="btn btn-stamp" data-submitdoc="${doc.id}">📤 Đính kèm bản đã ký & Hoàn tất</button>
-    </div>` : ''}
+      <p style="margin:0 0 10px;color:var(--ink-soft);font-weight:600;">Phiếu đang ở trạng thái Nháp. In phiếu ra, xin đầy đủ chữ ký trên bản giấy, rồi làm 2 bước dưới đây để hoàn tất.</p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" data-attachsign="${doc.id}">📎 Bước 1: Đính kèm bản đã ký${signedCount > 0 ? ` (${signedCount})` : ''}</button>
+        <button class="btn btn-stamp" data-finalizesign="${doc.id}" ${signedCount === 0 ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''} title="${signedCount === 0 ? 'Cần đính kèm ít nhất 1 bản đã ký trước' : ''}">✅ Bước 2: Hoàn tất (Đã ký)</button>
+      </div>
+    </div>`;
+    })() : ''}
 
     ${doc.status === 'pending_signature' ? `
     <div class="action-bar">
@@ -7075,9 +7107,13 @@ function attachHandlers() {
   }));
 
   document.querySelectorAll('[data-deldoc]').forEach(el => el.addEventListener('click', () => deleteDoc(el.dataset.deldoc)));
-  document.querySelectorAll('[data-submitdoc]').forEach(el => el.addEventListener('click', () => {
-    const doc = STATE.documents.find(d => d.id === el.dataset.submitdoc);
-    if (doc) openSignedUploadModal(doc);
+  document.querySelectorAll('[data-attachsign]').forEach(el => el.addEventListener('click', () => {
+    const doc = STATE.documents.find(d => d.id === el.dataset.attachsign);
+    if (doc) openSignedUploadModal(doc, false);
+  }));
+  document.querySelectorAll('[data-finalizesign]').forEach(el => el.addEventListener('click', () => {
+    const doc = STATE.documents.find(d => d.id === el.dataset.finalizesign);
+    if (doc) finalizeSignedDoc(doc);
   }));
   document.querySelectorAll('[data-cancelsign]').forEach(el => el.addEventListener('click', () => {
     const doc = STATE.documents.find(d => d.id === el.dataset.cancelsign);
