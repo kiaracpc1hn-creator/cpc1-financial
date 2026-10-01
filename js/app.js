@@ -965,6 +965,49 @@ async function printDoc(doc) {
   }
 }
 
+/* In trực tiếp qua tab mới (dùng hộp thoại in sẵn có của Chrome), không cần tải file về máy */
+function printDocInNewTab(doc) {
+  const itemCount = (doc.items || doc.spentItems || []).length;
+  const pageFormat = itemCount > 3 ? 'a4' : 'a5';
+  const pageSizeCss = pageFormat === 'a4' ? 'A4' : 'A5';
+  const baseHref = window.location.origin + window.location.pathname.replace(/[^/]*$/, '');
+
+  const html = `<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>${DOC_TYPES[doc.type].short} - ${(doc.requesterName || '').replace(/</g, '')}</title>
+<base href="${baseHref}">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  @page { size: ${pageSizeCss}; margin: 10mm; }
+  html, body { background:#fff; margin:0; padding:0; }
+  .doc-preview { border:none; box-shadow:none; max-width:100%; margin:0 auto; }
+  @media print {
+    html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+${renderPaperPreview(doc)}
+<script>
+  window.onload = function () {
+    setTimeout(function () { window.print(); }, 250);
+  };
+<\/script>
+</body>
+</html>`;
+
+  const printWin = window.open('', '_blank');
+  if (!printWin) {
+    showAlertModal('Trình duyệt đã chặn cửa sổ', 'Vui lòng cho phép popup/tab mới cho trang này (biểu tượng chặn popup trên thanh địa chỉ) rồi bấm In lại.');
+    return;
+  }
+  printWin.document.open();
+  printWin.document.write(html);
+  printWin.document.close();
+}
+
 /* ===================== ACTIONS ===================== */
 async function submitDoc(doc) {
   doc.status = 'pending_signature';
@@ -5716,7 +5759,8 @@ function renderDetail() {
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       ${doc.status === 'draft' && isOwner ? `<button class="btn btn-outline btn-sm" data-editdoc="${doc.id}">✏ Sửa</button>` : ''}
       <button class="btn btn-outline btn-sm" data-dup="${doc.id}">⧉ Tạo bản sao</button>
-      <button class="btn btn-teal btn-sm" data-print="${doc.id}">🖨 In / Tải PDF</button>
+      <button class="btn btn-teal btn-sm" data-printtab="${doc.id}" title="Mở tab mới và in trực tiếp, không cần tải file">🖨 In phiếu</button>
+      <button class="btn btn-outline btn-sm" data-print="${doc.id}" title="Tải file PDF về máy">⬇ Tải PDF</button>
       ${doc.type === 'advance' && doc.status === 'signed' ? `<button class="btn btn-primary btn-sm" data-mkreimb="${doc.id}">→ Lập hoàn ứng</button>` : ''}
       ${doc.status === 'draft' && isOwner ? `<button class="btn btn-ghost btn-sm" data-deldoc="${doc.id}" style="color:var(--stamp);">Xoá</button>` : ''}
       <button class="btn btn-ghost btn-sm" data-nav="list">← Danh sách</button>
@@ -7015,6 +7059,11 @@ function attachHandlers() {
   document.querySelectorAll('[data-print]').forEach(el => el.addEventListener('click', () => {
     const doc = STATE.documents.find(d => d.id === el.dataset.print);
     printDoc(doc);
+  }));
+
+  document.querySelectorAll('[data-printtab]').forEach(el => el.addEventListener('click', () => {
+    const doc = STATE.documents.find(d => d.id === el.dataset.printtab);
+    printDocInNewTab(doc);
   }));
 
   document.querySelectorAll('[data-deldoc]').forEach(el => el.addEventListener('click', () => deleteDoc(el.dataset.deldoc)));
