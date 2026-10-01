@@ -4842,31 +4842,31 @@ function renderInvoices() {
   ${STATE.invoiceUploading ? `<p style="color:var(--teal);font-size:13px;margin:8px 0 0;font-weight:600;">⏳ Đang bóc tách dữ liệu hoá đơn, vui lòng đợi...</p>` : ''}
 
   <div class="invoice-sticky-bar">
-    <div class="filters" style="margin-top:0;">
+    <div class="filters" style="margin-top:0;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;gap:8px;padding-bottom:4px;">
       ${isGlobalAdmin ? `
-      <select id="filter-inv-group" style="font-weight:700;color:var(--teal);border-color:var(--teal);">
+      <select id="filter-inv-group" style="font-weight:700;color:var(--teal);border-color:var(--teal);flex:0 0 auto;width:auto;">
         <option value="all" ${groupFilter === 'all' ? 'selected' : ''}>🏢 Tất cả kho nhóm</option>
         ${allGroups.map(g => `<option value="${g}" ${groupFilter === g ? 'selected' : ''}>📁 Kho ${g}</option>`).join('')}
         <option value="Không" ${groupFilter === 'Không' ? 'selected' : ''}>🚫 Hóa đơn không phân nhóm</option>
       </select>
       ` : ''}
-      <select id="filter-inv-month">
+      <select id="filter-inv-month" style="flex:0 0 auto;width:auto;">
         <option value="all">Tất cả tháng</option>
         ${allMonths.map(mk => `<option value="${mk}" ${monthFilter === mk ? 'selected' : ''}>${monthLabel(mk)}</option>`).join('')}
       </select>
-      <select id="filter-inv-requester">
+      <select id="filter-inv-requester" style="flex:0 0 auto;width:auto;">
         <option value="all">Tất cả người đề nghị</option>
         ${allRequesters.map(r => `<option value="${r}" ${requesterFilter === r ? 'selected' : ''}>${r}</option>`).join('')}
       </select>
-      <select id="filter-inv-beneficiary" style="max-width:220px;">
+      <select id="filter-inv-beneficiary" style="flex:0 0 auto;width:auto;max-width:220px;">
         <option value="all">Tất cả người thụ hưởng</option>
         ${allBeneficiaries.map(b => `<option value="${b}" ${beneficiaryFilter === b ? 'selected' : ''}>${b}</option>`).join('')}
       </select>
-      <select id="filter-inv-status">
+      <select id="filter-inv-status" style="flex:0 0 auto;width:auto;">
         <option value="all">Tất cả trạng thái</option>
         ${statusOptions.map(s => `<option value="${s.key}" ${statusFilter === s.key ? 'selected' : ''}>${s.label}</option>`).join('')}
       </select>
-      <div class="search-box" style="margin-left:auto;">
+      <div class="search-box" style="flex:0 0 auto;margin-left:8px;min-width:200px;">
         <span class="search-ic">🔍</span>
         <input type="text" id="filter-inv-search" placeholder="Tìm kiếm hoá đơn..." value="${STATE._invSearch || ''}">
       </div>
