@@ -5599,7 +5599,7 @@ function renderPaperPreview(doc) {
 
   const codeText = doc.type === 'advance' ? 'BM 03/KT –CPC1HN' : doc.formCode;
   const versionDateText = doc.type === 'advance' ? '10/10/2023' : (doc.formVersionDate || '18/09/2020');
-  const centerBody = doc.type === 'advance';
+  const centerBody = false;
 
   return `
   <div class="doc-preview">
