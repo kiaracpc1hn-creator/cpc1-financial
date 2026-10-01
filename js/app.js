@@ -1027,6 +1027,20 @@ function cancelSignature(doc) {
   });
 }
 
+function bulkRevertPendingToDraft() {
+  const docs = getAccessibleDocuments().filter(d => d.status === 'pending_signature');
+  if (docs.length === 0) return;
+  showConfirmModal('Đưa tất cả về Nháp?', `Sẽ chuyển ${docs.length} phiếu đang ở trạng thái "Chờ ký" về Nháp để chỉnh sửa lại (do hệ thống không còn dùng trạng thái Chờ ký nữa). Tiếp tục?`, async () => {
+    docs.forEach(doc => {
+      doc.status = 'draft';
+      doc.history.push({ at: new Date().toISOString(), action: 'Huỷ trình ký (chuyển hàng loạt), quay về nháp', by: currentUser().name });
+    });
+    await saveDocuments();
+    showToast(`✓ Đã đưa ${docs.length} phiếu về Nháp`);
+    render();
+  });
+}
+
 function escapeHtml(str) {
   if (!str) return '';
   return String(str)
@@ -4718,16 +4732,7 @@ function renderInvoiceTableHtml(records, selected) {
           <tr>
             <td><input type="checkbox" class="inv-select" data-invsel="${r.id}" ${selected.includes(r.id) ? 'checked' : ''}></td>
             <td>
-              ${isLocked ? `
-                <div style="font-weight:400;font-size:12px;color:#1E293B;padding:5px 4px;background:#F8FAFC;border:1.5px solid #CBD5E1;border-radius:4px;text-align:center;width:105px;box-sizing:border-box;" ${lockTitle}>
-                  ${fmtDate(r.date) || '—'}
-                </div>
-              ` : `
-                <div style="position:relative;display:inline-block;width:105px;">
-                  <input type="text" data-invdatetext="${r.id}" value="${fmtDate(r.date) || ''}" placeholder="dd/mm/yyyy" style="width:100%;padding:5px 4px;border:1.5px solid #0D9488;border-radius:4px;font-size:12px;text-align:center;font-weight:700;color:#0F172A;box-sizing:border-box;box-shadow:0 0 0 2px rgba(13,148,136,0.15);" title="Nhập ngày dạng dd/mm/yyyy hoặc chọn từ lịch">
-                  <input type="date" data-invdate="${r.id}" value="${r.date || ''}" style="position:absolute;top:0;right:0;width:24px;height:100%;opacity:0;cursor:pointer;" title="Mở lịch chọn ngày">
-                </div>
-              `}
+              <input type="date" data-invdate="${r.id}" value="${r.date || ''}" ${lockAttr} style="width:125px;padding:5px 6px;border-radius:4px;font-size:12px;text-align:center;box-sizing:border-box;${lockInputStyle}" ${lockTitle} title="${isLocked ? '🔒 Bấm 🔓 Mở khoá ở cột Thao tác để sửa ngày' : 'Bấm để mở lịch hoặc gõ trực tiếp ngày/tháng/năm'}">
             </td>
             <td>
               <input type="text" data-invseries="${r.id}" value="${r.seriesNo || ''}" placeholder="Ký hiệu" ${lockAttr} style="width:85px;padding:5px 6px;border-radius:4px;font-size:12px;text-transform:uppercase;${lockInputStyle}" ${lockTitle}>
@@ -4842,33 +4847,33 @@ function renderInvoices() {
   ${STATE.invoiceUploading ? `<p style="color:var(--teal);font-size:13px;margin:8px 0 0;font-weight:600;">⏳ Đang bóc tách dữ liệu hoá đơn, vui lòng đợi...</p>` : ''}
 
   <div class="invoice-sticky-bar">
-    <div class="filters" style="margin-top:0;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;gap:8px;padding-bottom:4px;">
+    <div class="filters" style="margin-top:0;flex-wrap:nowrap;gap:6px;">
       ${isGlobalAdmin ? `
-      <select id="filter-inv-group" style="font-weight:700;color:var(--teal);border-color:var(--teal);flex:0 0 auto;width:auto;">
+      <select id="filter-inv-group" style="font-weight:700;color:var(--teal);border-color:var(--teal);flex:1 1 0;min-width:0;">
         <option value="all" ${groupFilter === 'all' ? 'selected' : ''}>🏢 Tất cả kho nhóm</option>
         ${allGroups.map(g => `<option value="${g}" ${groupFilter === g ? 'selected' : ''}>📁 Kho ${g}</option>`).join('')}
         <option value="Không" ${groupFilter === 'Không' ? 'selected' : ''}>🚫 Hóa đơn không phân nhóm</option>
       </select>
       ` : ''}
-      <select id="filter-inv-month" style="flex:0 0 auto;width:auto;">
+      <select id="filter-inv-month" style="flex:1 1 0;min-width:0;">
         <option value="all">Tất cả tháng</option>
         ${allMonths.map(mk => `<option value="${mk}" ${monthFilter === mk ? 'selected' : ''}>${monthLabel(mk)}</option>`).join('')}
       </select>
-      <select id="filter-inv-requester" style="flex:0 0 auto;width:auto;">
+      <select id="filter-inv-requester" style="flex:1 1 0;min-width:0;">
         <option value="all">Tất cả người đề nghị</option>
         ${allRequesters.map(r => `<option value="${r}" ${requesterFilter === r ? 'selected' : ''}>${r}</option>`).join('')}
       </select>
-      <select id="filter-inv-beneficiary" style="flex:0 0 auto;width:auto;max-width:220px;">
+      <select id="filter-inv-beneficiary" style="flex:1 1 0;min-width:0;">
         <option value="all">Tất cả người thụ hưởng</option>
         ${allBeneficiaries.map(b => `<option value="${b}" ${beneficiaryFilter === b ? 'selected' : ''}>${b}</option>`).join('')}
       </select>
-      <select id="filter-inv-status" style="flex:0 0 auto;width:auto;">
+      <select id="filter-inv-status" style="flex:1 1 0;min-width:0;">
         <option value="all">Tất cả trạng thái</option>
         ${statusOptions.map(s => `<option value="${s.key}" ${statusFilter === s.key ? 'selected' : ''}>${s.label}</option>`).join('')}
       </select>
-      <div class="search-box" style="flex:0 0 auto;margin-left:8px;min-width:200px;">
+      <div class="search-box" style="flex:1.4 1 0;min-width:0;">
         <span class="search-ic">🔍</span>
-        <input type="text" id="filter-inv-search" placeholder="Tìm kiếm hoá đơn..." value="${STATE._invSearch || ''}">
+        <input type="text" id="filter-inv-search" placeholder="Tìm kiếm hoá đơn..." value="${STATE._invSearch || ''}" style="width:100%;min-width:0;">
       </div>
     </div>
 
@@ -5179,9 +5184,9 @@ function renderForm() {
     ${getOrphanedAttachments(doc).length > 0 ? `<button type="button" class="btn btn-outline btn-sm" id="cleanup-orphans" style="margin-top:8px;">🧹 Dọn ${getOrphanedAttachments(doc).length} file không gắn dòng nào</button>` : ''}
 
     <div class="form-actions">
-      <button class="btn btn-outline" id="save-draft">Lưu nháp</button>
-      <button class="btn btn-stamp" id="submit-doc">Trình ký →</button>
+      <button class="btn btn-stamp" id="save-draft">💾 Lưu phiếu</button>
     </div>
+    <p style="font-size:12px;color:var(--ink-soft);margin-top:8px;">Sau khi lưu, in phiếu ra và xin chữ ký trên bản giấy, rồi quay lại trang chi tiết phiếu để đính kèm bản đã ký — hệ thống sẽ tự chuyển thẳng sang "Đã ký".</p>
   </div>
   `;
 }
@@ -5343,6 +5348,9 @@ function renderList() {
       <h1>${categoryTitleMap[category] || 'Danh sách phiếu tài chính'}</h1>
       <p>Tổng cộng ${docs.length} phiếu (${category === 'all' ? 'tất cả trạng thái' : (category === 'draft' ? 'phiếu Nháp chưa trình' : (category === 'pending_signature' ? 'phiếu Đang trình ký' : 'phiếu Đã ký hoàn tất'))}).</p>
     </div>
+    ${category === 'pending_signature' && docs.length > 0 ? `
+    <button type="button" class="btn btn-stamp" id="bulk-revert-pending-btn">↩ Đưa tất cả ${docs.length} phiếu này về Nháp</button>
+    ` : ''}
   </div>
 
   ${renderGlobalDuplicateWarningBannerHtml()}
@@ -5774,8 +5782,8 @@ function renderDetail() {
 
     ${doc.status === 'draft' && isOwner ? `
     <div class="action-bar">
-      <p style="margin:0 0 10px;color:var(--ink-soft);font-weight:600;">Phiếu đang ở trạng thái Nháp. Bấm "Trình ký" để chuyển sang bước xin ký duyệt bản in giấy.</p>
-      <button class="btn btn-stamp" data-submitdoc="${doc.id}">Trình ký →</button>
+      <p style="margin:0 0 10px;color:var(--ink-soft);font-weight:600;">Phiếu đang ở trạng thái Nháp. In phiếu ra, xin đầy đủ chữ ký trên bản giấy, sau đó đính kèm bản scan/ảnh đã ký để hoàn tất — phiếu sẽ chuyển thẳng sang "Đã ký".</p>
+      <button class="btn btn-stamp" data-submitdoc="${doc.id}">📤 Đính kèm bản đã ký & Hoàn tất</button>
     </div>` : ''}
 
     ${doc.status === 'pending_signature' ? `
@@ -7069,12 +7077,15 @@ function attachHandlers() {
   document.querySelectorAll('[data-deldoc]').forEach(el => el.addEventListener('click', () => deleteDoc(el.dataset.deldoc)));
   document.querySelectorAll('[data-submitdoc]').forEach(el => el.addEventListener('click', () => {
     const doc = STATE.documents.find(d => d.id === el.dataset.submitdoc);
-    submitDoc(doc);
+    if (doc) openSignedUploadModal(doc);
   }));
   document.querySelectorAll('[data-cancelsign]').forEach(el => el.addEventListener('click', () => {
     const doc = STATE.documents.find(d => d.id === el.dataset.cancelsign);
     cancelSignature(doc);
   }));
+
+  const bulkRevertBtn = document.getElementById('bulk-revert-pending-btn');
+  if (bulkRevertBtn) bulkRevertBtn.addEventListener('click', bulkRevertPendingToDraft);
   document.querySelectorAll('[data-mkreimb]').forEach(el => el.addEventListener('click', () => {
     const adv = STATE.documents.find(d => d.id === el.dataset.mkreimb);
     const doc = mkDoc('reimbursement', currentUser(), {
@@ -7922,22 +7933,6 @@ function attachInvoiceTableHandlers() {
     const rec = STATE.invoices.find(r => r.id === el.dataset.invdate);
     if (rec) {
       rec.date = e.target.value;
-      const txtInput = document.querySelector(`[data-invdatetext="${rec.id}"]`);
-      if (txtInput) txtInput.value = fmtDate(rec.date);
-      syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
-      saveInvoices().catch(err => console.error(err));
-      showToast('Đã lưu ngày lập');
-    }
-  }));
-
-  document.querySelectorAll('[data-invdatetext]').forEach(el => el.addEventListener('change', (e) => {
-    const rec = STATE.invoices.find(r => r.id === el.dataset.invdatetext);
-    if (rec) {
-      const parsedIso = parseFormattedDateToIso(e.target.value);
-      rec.date = parsedIso;
-      e.target.value = fmtDate(parsedIso);
-      const datePicker = document.querySelector(`[data-invdate="${rec.id}"]`);
-      if (datePicker) datePicker.value = parsedIso;
       syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
       saveInvoices().catch(err => console.error(err));
       showToast('Đã lưu ngày lập');
