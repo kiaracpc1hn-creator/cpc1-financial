@@ -4023,10 +4023,6 @@ function renderOverview() {
   const unlinkedTotalAmount = unlinkedInvoices.reduce((sum, r) => sum + (r.amount || 0), 0);
   const overdueInvoices = getOverdueInvoices(false);
 
-  // 3. Pending signature documents
-  const pendingDocs = accessibleDocs.filter(d => d.status === 'pending_signature');
-  const pendingTotalAmount = pendingDocs.reduce((sum, d) => sum + computeTotal(d), 0);
-
   // 4. Month invoices summary
   const monthInvoices = accessibleInvoices.filter(r => monthKey(r.date || r.uploadedAt) === selectedMonth);
   const monthTotalAmount = monthInvoices.reduce((sum, r) => sum + (r.amount || 0), 0);
@@ -4076,15 +4072,6 @@ function renderOverview() {
       <div style="font-size:22px;font-weight:800;color:#E11D48;">${overdues.length} khoản</div>
       <div style="font-size:12.5px;color:#BE123C;margin-top:4px;">Tổng nợ: <b>${fmtMoney(overdueTotalAmount, 'VND')}</b></div>
       ${overdues.length > 0 ? `<button type="button" class="btn btn-outline btn-sm send-advance-overdue-email-btn" style="margin-top:8px;font-size:11px;padding:4px 10px;color:#E11D48;border-color:#E11D48;" title="Gửi email nhắc nợ tạm ứng quá hạn">📧 Nhắc nợ tạm ứng</button>` : ''}
-    </div>
-
-    <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(217,119,6,0.06);">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="font-size:12px;color:#92400E;font-weight:700;letter-spacing:0.5px;">⏳ PHIẾU ĐANG CHỜ KÝ DUYỆT</span>
-        <span style="font-size:20px;">⏳</span>
-      </div>
-      <div style="font-size:22px;font-weight:800;color:#D97706;">${pendingDocs.length} phiếu</div>
-      <div style="font-size:12.5px;color:#B45309;margin-top:4px;">Tổng tiền: <b>${fmtMoney(pendingTotalAmount, 'VND')}</b></div>
     </div>
 
     <div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(2,132,199,0.06);">
@@ -4152,65 +4139,6 @@ function renderOverview() {
                   </td>
                   <td style="text-align:center;">
                     <button class="icon-btn" data-open="${o.doc.id}" title="Xem chi tiết phiếu">👁</button>
-                  </td>
-                </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    `}
-  </div>
-
-  <!-- SECTION 2: PENDING SIGNATURES -->
-  <div class="form-card" style="margin-bottom:24px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
-      <h3 style="font-size:15.5px;color:#D97706;display:flex;align-items:center;gap:8px;margin:0;">
-        <span>⏳ List Phiếu Tài chính & ĐNTT Đang Chờ Ký duyệt</span>
-        <span class="badge" style="background:#FEF3C7;color:#D97706;font-weight:700;">${pendingDocs.length} phiếu</span>
-      </h3>
-      <div style="font-size:13px;color:var(--ink-soft);">
-        Tổng giá trị chờ ký: <b style="color:#D97706;font-size:14px;">${fmtMoney(pendingTotalAmount, 'VND')}</b>
-      </div>
-    </div>
-
-    ${pendingDocs.length === 0 ? `
-      <div style="text-align:center;padding:24px 10px;color:#15803D;background:#F0FDF4;border-radius:8px;border:1px dashed #86EFAC;">
-        🎉 Không có phiếu nào đang ở trạng thái chờ ký duyệt!
-      </div>
-    ` : `
-      <div style="overflow-x:auto;">
-        <table class="items-table" style="font-size:12.5px;width:100%;">
-          <thead>
-            <tr>
-              <th style="width:36px;text-align:center;">STT</th>
-              <th style="width:140px;text-align:center;">Mã phiếu</th>
-              <th style="width:140px;">Loại biểu mẫu</th>
-              <th>Người đề nghị</th>
-              <th>Bộ phận</th>
-              <th style="width:100px;text-align:center;">Ngày lập</th>
-              <th style="width:130px;text-align:right;">Số tiền</th>
-              <th style="width:100px;text-align:center;">Trạng thái</th>
-              <th style="width:70px;text-align:center;">Phiếu</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${pendingDocs.map((d, i) => {
-              const code = d.docNo || d.formCode;
-              const typeLabel = DOC_TYPES[d.type] ? DOC_TYPES[d.type].label : (d.title || d.type);
-              return `
-                <tr>
-                  <td style="text-align:center;">${i + 1}</td>
-                  <td style="text-align:center;font-weight:700;color:var(--teal);">${code}</td>
-                  <td>${typeLabel}</td>
-                  <td style="font-weight:600;">${d.requesterName}</td>
-                  <td>${d.department || ''}</td>
-                  <td style="text-align:center;">${fmtDate(d.documentDate || d.createdAt)}</td>
-                  <td style="text-align:right;font-weight:700;color:#D97706;">${fmtMoney(computeTotal(d), d.currency)}</td>
-                  <td style="text-align:center;">
-                    <span class="badge b-pending" style="font-size:11px;">Chờ ký</span>
-                  </td>
-                  <td style="text-align:center;">
-                    <button class="icon-btn" data-open="${d.id}" title="Xem chi tiết phiếu">👁</button>
                   </td>
                 </tr>`;
             }).join('')}
@@ -6196,17 +6124,17 @@ function renderSettings() {
     </div>
 
     ${isAuthorizedAdmin ? `
-    <!-- CARD 4: FIREBASE REALTIME (CHỈ ADMIN / TRƯỞNG NHÓM) -->
+    <!-- CARD 4: SUPABASE REALTIME (CHỈ ADMIN / TRƯỞNG NHÓM) -->
     <div class="form-card" style="width:100%;max-width:100%;margin-bottom:0;">
       <h3 style="font-size:16px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
-        <span>☁️ Đồng bộ Đám mây Firebase (Realtime Multi-user)</span>
+        <span>☁️ Đồng bộ Đám mây Supabase (Realtime Multi-user)</span>
         <span class="badge badge-teal">🟢 Đang hoạt động</span>
       </h3>
       <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;line-height:1.5;">
-        Dự án đã được kết nối với Firebase Firestore: <code>cpc1-vouchers</code>. Tất cả phiếu tài chính, kho hoá đơn và danh bạ người nhận được tự động đồng bộ thời gian thực giữa các máy tính trong công ty.
+        Dự án đã được kết nối với Supabase (Postgres). Tất cả phiếu tài chính, kho hoá đơn và danh bạ người nhận được tự động đồng bộ thời gian thực giữa các máy tính trong công ty.
       </p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <button type="button" class="btn btn-teal btn-sm" id="push-all-cloud-btn">☁ Đẩy toàn bộ dữ liệu hiện tại lên Firebase</button>
+        <button type="button" class="btn btn-teal btn-sm" id="push-all-cloud-btn">☁ Đẩy toàn bộ dữ liệu hiện tại lên Supabase</button>
       </div>
     </div>
 
@@ -7524,15 +7452,15 @@ function attachHandlers() {
   const pushCloudBtn = document.getElementById('push-all-cloud-btn');
   if (pushCloudBtn) {
     pushCloudBtn.addEventListener('click', async () => {
-      showToast('Đang đẩy dữ liệu lên Firebase Đám mây...');
+      showToast('Đang đẩy dữ liệu lên Supabase Đám mây...');
       try {
         await saveDocuments();
         await saveInvoices();
         await savePayees();
         await saveUsers();
-        showToast('✓ Đã đồng bộ toàn bộ dữ liệu lên Firebase thành công!');
+        showToast('✓ Đã đồng bộ toàn bộ dữ liệu lên Supabase thành công!');
       } catch (err) {
-        showAlertModal('Lỗi đồng bộ', 'Không thể đẩy dữ liệu lên Firebase: ' + err.message);
+        showAlertModal('Lỗi đồng bộ', 'Không thể đẩy dữ liệu lên Supabase: ' + err.message);
       }
     });
   }
