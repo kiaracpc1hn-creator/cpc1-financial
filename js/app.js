@@ -67,6 +67,7 @@ const MAX_ATTACH_BYTES = 25 * 1024 * 1024; // 25MB limit per attachment
 let STATE = {
   documents: [],
   payees: [],
+  chiHoList: [],
   selectedInvoiceIds: [],
   trash: [],
   isLoggedIn: false,
@@ -113,6 +114,11 @@ async function loadAll() {
     const r = await window.storage.get('payees');
     STATE.payees = r ? JSON.parse(r.value) : [];
   } catch (e) { STATE.payees = []; }
+
+  try {
+    const r = await window.storage.get('chiHoList');
+    STATE.chiHoList = r ? JSON.parse(r.value) : [];
+  } catch (e) { STATE.chiHoList = []; }
 
   try {
     const r = await window.storage.get('trash');
@@ -316,7 +322,7 @@ async function loadAll() {
   // Khởi chạy đồng bộ các bảng khác (users, deleted-user-keys, invoices, payees, trash) qua listenRealtime
   if (window.storage && window.storage.listenRealtime && !STATE._realtimeBound) {
     STATE._realtimeBound = true;
-    window.storage.listenRealtime(['users', 'deleted-user-keys', 'invoices', 'payees', 'trash'], (key, val) => {
+    window.storage.listenRealtime(['users', 'deleted-user-keys', 'invoices', 'payees', 'trash', 'chiHoList'], (key, val) => {
       try {
         if (!val) return;
         let changed = false;
@@ -354,6 +360,11 @@ async function loadAll() {
           if (STATE._rawStrTrash === val) return;
           STATE._rawStrTrash = val;
           STATE.trash = JSON.parse(val) || [];
+          changed = true;
+        } else if (key === 'chiHoList') {
+          if (STATE._rawStrChiHoList === val) return;
+          STATE._rawStrChiHoList = val;
+          STATE.chiHoList = JSON.parse(val) || [];
           changed = true;
         }
 
@@ -447,6 +458,41 @@ async function savePayees() {
   } catch (e) {
     console.warn('Error saving payees:', e);
   }
+}
+
+async function saveChiHoList() {
+  try {
+    const str = JSON.stringify(STATE.chiHoList || []);
+    STATE._rawStrChiHoList = str;
+    if (window.storage && window.storage._setLocal) {
+      window.storage._setLocal('chiHoList', str).catch(() => {});
+    }
+    await window.storage.set('chiHoList', str);
+  } catch (e) {
+    console.warn('Error saving chiHoList:', e);
+  }
+}
+
+function addChiHoOption(name) {
+  const clean = (name || '').trim();
+  if (!clean) return;
+  if (!STATE.chiHoList) STATE.chiHoList = [];
+  if (STATE.chiHoList.some(x => x.toLowerCase() === clean.toLowerCase())) {
+    showToast('Mục này đã có trong danh sách rồi');
+    return;
+  }
+  STATE.chiHoList.push(clean);
+  saveChiHoList();
+  showToast('✓ Đã thêm vào danh sách Chi hộ');
+  render();
+}
+
+function removeChiHoOption(name) {
+  if (!STATE.chiHoList) return;
+  STATE.chiHoList = STATE.chiHoList.filter(x => x !== name);
+  saveChiHoList();
+  showToast('✓ Đã xoá khỏi danh sách Chi hộ');
+  render();
 }
 
 function cleanOcrSpacedText(str) {
@@ -1992,8 +2038,12 @@ function getGlobalDuplicateWarnings() {
   const warnings = [];
   const seenMap = {};
   const trashDocIds = new Set((STATE.trash || []).map(t => t.id));
+  // Chỉ quét trong phạm vi phiếu mà tài khoản đang xem có quyền truy cập
+  // (phiếu của chính mình + cùng nhóm; Admin/Kế toán trưởng/Giám đốc xem toàn bộ),
+  // để tránh lộ thông tin phiếu của người/nhóm khác qua cảnh báo trùng lặp.
+  const visibleDocs = getAccessibleDocuments();
 
-  for (const d of STATE.documents) {
+  for (const d of visibleDocs) {
     if (d.status === 'cancelled') continue;
     if (trashDocIds.has(d.id)) continue;
     const items = [...(d.items || []), ...(d.spentItems || [])];
@@ -4634,17 +4684,14 @@ function getFilteredInvoices() {
 
 function renderInvoiceTableHtml(records, selected) {
   const allSelectedOnPage = records.length > 0 && records.every(r => selected.includes(r.id));
-  const payeeOptionsHtml = (STATE.payees || []).map(p => `<option value="${(p.name || '').replace(/"/g, '&quot;')}">`).join('');
   if (records.length === 0) {
     return `
-      <datalist id="payee-autocomplete-list">${payeeOptionsHtml}</datalist>
       <div class="empty-state" style="padding:32px 16px;">
         <div class="big">🧾</div>
         <p style="font-size:14px;color:var(--ink-soft);margin-top:6px;">Không tìm thấy hoá đơn nào phù hợp với bộ lọc hoặc từ khoá tìm kiếm.</p>
       </div>`;
   }
   return `
-    <datalist id="payee-autocomplete-list">${payeeOptionsHtml}</datalist>
     <table class="invoice-table" style="min-width:1260px;">
       <thead>
         <tr>
@@ -4692,7 +4739,12 @@ function renderInvoiceTableHtml(records, selected) {
             <td><input data-invref="${r.id}" value="${r.invoiceRef || ''}" placeholder="Số Invoice" ${lockAttr} style="width:95px;padding:5px 6px;border-radius:4px;font-size:12px;${lockInputStyle}" ${lockTitle}></td>
             <td>${r.requesterName}</td>
             <td style="min-width:220px;max-width:320px;">
-              <textarea class="inv-beneficiary-area" list="payee-autocomplete-list" data-invbeneficiary="${r.id}" rows="3" placeholder="Người thụ hưởng / Đơn vị bán" ${lockAttr} style="${lockTextareaStyle}" ${lockTitle}>${r.beneficiaryName || ''}</textarea>
+              <textarea class="inv-beneficiary-area" data-invbeneficiary="${r.id}" rows="3" placeholder="Người thụ hưởng / Đơn vị bán" ${lockAttr} style="${lockTextareaStyle}" ${lockTitle}>${r.beneficiaryName || ''}</textarea>
+              <select class="inv-chiho-select" data-invchiho="${r.id}" ${lockAttr} style="width:100%;margin-top:4px;padding:3px 4px;border-radius:4px;font-size:11px;border:1px solid var(--line);color:var(--ink-soft);background:var(--bg-card);">
+                <option value="">— Chọn nhanh Chi hộ —</option>
+                ${(STATE.chiHoList || []).map(c => `<option value="${c.replace(/"/g, '&quot;')}">${c}</option>`).join('')}
+                <option value="__add_new__">➕ Thêm mục mới...</option>
+              </select>
             </td>
             <td><span class="badge ${st.cls} badge-pill" title="${st.label}">${st.label}</span></td>
             <td style="white-space:nowrap;">
@@ -6138,6 +6190,25 @@ function renderSettings() {
       </div>
     </div>
 
+    <!-- CARD 4b: DANH SÁCH CHI HỘ (CHỈ ADMIN / TRƯỞNG NHÓM) -->
+    <div class="form-card" style="width:100%;max-width:100%;margin-bottom:0;">
+      <h3 style="font-size:16px;margin-bottom:10px;">🔖 Danh sách gợi ý "Chi hộ" (Người thụ hưởng ở Kho Hoá đơn)</h3>
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;line-height:1.5;">
+        Đây là các mục chọn nhanh hiện ra trong ô "Người thụ hưởng" ở Kho Hoá đơn (VD: Uniwave chi hộ, Năng động chi hộ, MTL chi hộ...). Bạn cũng có thể thêm mục mới ngay tại Kho Hoá đơn bằng cách chọn "➕ Thêm mục mới...".
+      </p>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+        <input type="text" id="new-chiho-input" placeholder="VD: Uniwave chi hộ" style="flex:1 1 220px;padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;">
+        <button type="button" class="btn btn-teal btn-sm" id="add-chiho-btn">➕ Thêm</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        ${(STATE.chiHoList && STATE.chiHoList.length > 0) ? STATE.chiHoList.map(c => `
+          <span style="display:inline-flex;align-items:center;gap:6px;background:#F0FDFA;border:1px solid #99F6E4;color:#0D9488;border-radius:999px;padding:4px 6px 4px 12px;font-size:12.5px;font-weight:600;">
+            ${c}
+            <button type="button" class="icon-btn" data-removechiho="${c.replace(/"/g, '&quot;')}" title="Xoá mục này" style="color:#E11D48;padding:0 4px;">✕</button>
+          </span>`).join('') : `<span style="font-size:13px;color:var(--ink-soft);">Chưa có mục nào. Thêm mục đầu tiên ở ô trên.</span>`}
+      </div>
+    </div>
+
     <!-- CARD 5: EMAIL CẤU HÌNH (CHỈ ADMIN / TRƯỞNG NHÓM) -->
     <div class="form-card" style="width:100%;max-width:100%;margin-bottom:0;">
       <h3 style="font-size:16px;margin-bottom:10px;">📧 Cấu hình Email Nhắc Nợ Tạm Ứng Quá Hạn</h3>
@@ -7465,6 +7536,23 @@ function attachHandlers() {
     });
   }
 
+  const addChiHoBtn = document.getElementById('add-chiho-btn');
+  const newChiHoInput = document.getElementById('new-chiho-input');
+  if (addChiHoBtn && newChiHoInput) {
+    const doAdd = () => {
+      const val = newChiHoInput.value;
+      if (!val || !val.trim()) return;
+      addChiHoOption(val);
+    };
+    addChiHoBtn.addEventListener('click', doAdd);
+    newChiHoInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); doAdd(); }
+    });
+  }
+  document.querySelectorAll('[data-removechiho]').forEach(el => el.addEventListener('click', () => {
+    removeChiHoOption(el.dataset.removechiho);
+  }));
+
   const saveCfgBtn = document.getElementById('save-cfg-btn');
   if (saveCfgBtn) saveCfgBtn.addEventListener('click', async () => {
     const claudeKey = (document.getElementById('cfg-claude-key') || {}).value?.trim() || '';
@@ -7947,6 +8035,31 @@ function attachInvoiceTableHandlers() {
     el.addEventListener('input', updateBen);
     el.addEventListener('change', updateBen);
     el.addEventListener('blur', updateBen);
+  });
+
+  document.querySelectorAll('[data-invchiho]').forEach(el => {
+    el.addEventListener('change', () => {
+      const recId = el.dataset.invchiho;
+      const rec = STATE.invoices.find(r => r.id === recId);
+      if (!rec) return;
+
+      if (el.value === '__add_new__') {
+        const newName = (window.prompt('Nhập tên mục Chi hộ mới (VD: Uniwave chi hộ):') || '').trim();
+        if (!newName) { el.value = ''; return; }
+        rec.beneficiaryName = newName;
+        syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
+        saveInvoices().catch(err => console.error(err));
+        addChiHoOption(newName); // lưu danh sách (nếu mới) + render lại
+        render();
+        return;
+      }
+
+      if (!el.value) return;
+      rec.beneficiaryName = el.value;
+      syncInvoiceRecordToDraftVouchers(rec).catch(() => {});
+      saveInvoices().catch(err => console.error(err));
+      render();
+    });
   });
 
   document.querySelectorAll('[data-invnote]').forEach(el => {
