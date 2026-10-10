@@ -4739,10 +4739,14 @@ function renderInvoiceTableHtml(records, selected) {
             <td><input data-invref="${r.id}" value="${r.invoiceRef || ''}" placeholder="Số Invoice" ${lockAttr} style="width:95px;padding:5px 6px;border-radius:4px;font-size:12px;${lockInputStyle}" ${lockTitle}></td>
             <td>${r.requesterName}</td>
             <td style="min-width:220px;max-width:320px;">
-              <textarea class="inv-beneficiary-area" data-invbeneficiary="${r.id}" rows="3" placeholder="Người thụ hưởng / Đơn vị bán" ${lockAttr} style="${lockTextareaStyle}" ${lockTitle}>${r.beneficiaryName || ''}</textarea>
+              ${(() => {
+                const isChiHo = (STATE.chiHoList || []).includes(r.beneficiaryName || '');
+                const chiHoStyle = isChiHo ? 'border:1.5px solid #3B82F6;background:#EFF6FF;color:#1E40AF;font-weight:600;' : lockTextareaStyle;
+                return `<textarea class="inv-beneficiary-area" data-invbeneficiary="${r.id}" rows="3" placeholder="Người thụ hưởng / Đơn vị bán" ${lockAttr} style="${chiHoStyle}" ${lockTitle}>${r.beneficiaryName || ''}</textarea>`;
+              })()}
               <select class="inv-chiho-select" data-invchiho="${r.id}" ${lockAttr} style="width:100%;margin-top:4px;padding:3px 4px;border-radius:4px;font-size:11px;border:1px solid var(--line);color:var(--ink-soft);background:var(--bg-card);">
                 <option value="">— Chọn nhanh Chi hộ —</option>
-                ${(STATE.chiHoList || []).map(c => `<option value="${c.replace(/"/g, '&quot;')}">${c}</option>`).join('')}
+                ${(STATE.chiHoList || []).map(c => `<option value="${c.replace(/"/g, '&quot;')}" ${c === r.beneficiaryName ? 'selected' : ''}>${c}</option>`).join('')}
                 <option value="__add_new__">➕ Thêm mục mới...</option>
               </select>
             </td>
