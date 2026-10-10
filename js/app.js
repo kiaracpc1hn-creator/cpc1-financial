@@ -297,6 +297,17 @@ async function loadAll() {
           // Sắp xếp danh sách phiếu theo thời gian tạo mới nhất lên trên
           newDocList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
+          // QUAN TRỌNG: cập nhật lại baseline "đã đồng bộ với Cloud" cho từng phiếu ngay sau khi
+          // vừa nhận bản mới nhất từ Cloud. Nếu không làm bước này, lần đầu tiên saveDocuments()
+          // được gọi trong tab này (dù chỉ do sửa 1 phiếu khác) sẽ coi MỌI phiếu đang có trong
+          // STATE.documents là "chưa từng ghi" và đẩy ngược dữ liệu cũ (có thể đã lỗi thời) của
+          // chúng lên Cloud, vô tình ghi đè mất cập nhật mới của người khác (VD: 1 phiếu người khác
+          // vừa chuyển "Đã ký" nhưng tab này chưa kịp nhận do Realtime bị gián đoạn).
+          if (!STATE._lastVoucherWrittenHash) STATE._lastVoucherWrittenHash = new Map();
+          newDocList.forEach(d => {
+            if (d && d.id) STATE._lastVoucherWrittenHash.set(d.id, voucherHash(d));
+          });
+
           const newStr = JSON.stringify(newDocList);
           if (STATE._rawStrDocuments !== newStr) {
             STATE._rawStrDocuments = newStr;
@@ -404,6 +415,24 @@ async function isFreshInstall() {
   }
 }
 
+// Dùng chung giữa saveDocuments() (lúc ghi lên Cloud) và listenVouchersRealtime()
+// (lúc vừa nhận bản mới nhất từ Cloud) để tính "chữ ký" nội dung 1 phiếu — tách riêng
+// để đảm bảo 2 nơi luôn tính hash theo đúng 1 cách như nhau.
+function sanitizeVoucherForHash(d) {
+  const copy = Object.assign({}, d);
+  if (Array.isArray(copy.attachments)) {
+    copy.attachments = copy.attachments.map(a => {
+      if (!a) return a;
+      const { dataUrl, fileDataUrl, content, ...rest } = a;
+      return rest;
+    });
+  }
+  return copy;
+}
+function voucherHash(d) {
+  return JSON.stringify(sanitizeVoucherForHash(d));
+}
+
 async function saveDocuments() {
   try {
     const currentDocIds = new Set((STATE.documents || []).map(d => d.id));
@@ -416,25 +445,20 @@ async function saveDocuments() {
     }
     STATE._previousDocIds = currentDocIds;
 
-    // Chỉ ghi lên Cloud Firestore những phiếu THẬT SỰ thay đổi so với lần ghi gần nhất,
-    // thay vì ghi lại toàn bộ danh sách mỗi lần gọi hàm này (16 nơi trong code gọi saveDocuments()
-    // cho dù chỉ 1 phiếu đổi) -> đây là nguồn gây quá tải write-queue của Firestore.
+    // Chỉ ghi lên Cloud những phiếu THẬT SỰ thay đổi so với lần đồng bộ gần nhất với Cloud,
+    // thay vì ghi lại toàn bộ danh sách mỗi lần gọi hàm này (nhiều nơi trong code gọi saveDocuments()
+    // cho dù chỉ 1 phiếu đổi). QUAN TRỌNG: baseline "đã đồng bộ" được khởi tạo ngay khi tải dữ liệu
+    // mới nhất từ Cloud (xem listenVouchersRealtime) — để tránh việc 1 tab đang mở sẵn, có dữ liệu cũ
+    // của 1 phiếu nào đó (do người khác vừa cập nhật mà tab này chưa kịp nhận), lại tưởng nhầm phiếu đó
+    // "thay đổi" và ghi đè bản cũ đè lên bản mới của người khác trên Cloud.
     if (!STATE._lastVoucherWrittenHash) STATE._lastVoucherWrittenHash = new Map();
 
     const sanitizedDocs = (STATE.documents || []).map(d => {
-      const copy = Object.assign({}, d);
-      if (Array.isArray(copy.attachments)) {
-        copy.attachments = copy.attachments.map(a => {
-          if (!a) return a;
-          const { dataUrl, fileDataUrl, content, ...rest } = a;
-          return rest;
-        });
-      }
-
+      const copy = sanitizeVoucherForHash(d);
       const hash = JSON.stringify(copy);
       if (STATE._lastVoucherWrittenHash.get(copy.id) !== hash) {
         STATE._lastVoucherWrittenHash.set(copy.id, hash);
-        // Lưu từng phiếu đơn lẻ lên Cloud Firestore collection để đảm bảo tuyệt đối không bị ghi đè chéo giữa các tài khoản
+        // Lưu từng phiếu đơn lẻ lên bảng Cloud riêng để đảm bảo không bị ghi đè chéo giữa các tài khoản
         window.storage.saveVoucherCloud(copy);
       }
       return copy;
@@ -449,7 +473,23 @@ let _lastPayeesSaveTime = 0;
 async function savePayees() {
   try {
     _lastPayeesSaveTime = Date.now();
-    const str = JSON.stringify(STATE.payees || []);
+
+    // Luôn lấy bản mới nhất từ Cloud trước khi ghi, rồi gộp thêm các mục Cloud có mà
+    // Local chưa có (do người khác vừa thêm cùng lúc) — tránh ghi đè mất dữ liệu người khác.
+    let cloudPayees = [];
+    try {
+      const cloudRes = await window.storage.get('payees', false, true);
+      if (cloudRes && cloudRes.value) cloudPayees = JSON.parse(cloudRes.value) || [];
+    } catch (e) { /* chưa có dữ liệu trên Cloud, bỏ qua */ }
+
+    const localIds = new Set((STATE.payees || []).map(p => p.id));
+    const merged = [...(STATE.payees || [])];
+    cloudPayees.forEach(p => {
+      if (p && p.id && !localIds.has(p.id)) merged.push(p);
+    });
+    STATE.payees = merged;
+
+    const str = JSON.stringify(STATE.payees);
     STATE._rawStrPayees = str;
     if (window.storage && window.storage._setLocal) {
       window.storage._setLocal('payees', str).catch(() => {});
@@ -580,6 +620,29 @@ async function saveInvoices(immediate = false) {
 }
 async function saveTrash() {
   try {
+    // Luôn lấy bản mới nhất từ Cloud trước khi ghi, rồi gộp thêm các mục Cloud có mà
+    // Local chưa có (do người khác vừa xoá cùng lúc) — tránh ghi đè mất mục người khác vừa xoá.
+    // Bỏ qua mục nào đang hiện diện dưới dạng phiếu/hoá đơn ĐANG HOẠT ĐỘNG ở Local (tức là
+    // mình vừa phục hồi nó khỏi Thùng rác), để không vô tình cho nó quay lại Thùng rác.
+    let cloudTrash = [];
+    try {
+      const cloudRes = await window.storage.get('trash', false, true);
+      if (cloudRes && cloudRes.value) cloudTrash = JSON.parse(cloudRes.value) || [];
+    } catch (e) { /* chưa có dữ liệu trên Cloud, bỏ qua */ }
+
+    const localIds = new Set((STATE.trash || []).map(t => t.id));
+    const activeIds = new Set([
+      ...(STATE.documents || []).map(d => d.id),
+      ...(STATE.invoices || []).map(r => r.id)
+    ]);
+    const merged = [...(STATE.trash || [])];
+    cloudTrash.forEach(t => {
+      if (!t || !t.id) return;
+      if (localIds.has(t.id) || activeIds.has(t.id)) return;
+      merged.push(t);
+    });
+    STATE.trash = merged;
+
     const sanitizedTrash = (STATE.trash || []).map(item => {
       const copy = Object.assign({}, item);
       if (Array.isArray(copy.attachments)) {
@@ -598,7 +661,26 @@ async function saveTrash() {
 }
 async function saveUsers() {
   try {
-    const str = JSON.stringify(STATE.users || []);
+    // Luôn lấy bản mới nhất từ Cloud trước khi ghi, rồi gộp thêm các tài khoản Cloud có mà
+    // Local chưa có (do người khác vừa tạo/sửa cùng lúc) — tránh ghi đè mất tài khoản người khác.
+    // Tài khoản nào đã bị xoá có chủ đích (nằm trong deletedUserKeys) thì không gộp lại.
+    let cloudUsers = [];
+    try {
+      const cloudRes = await window.storage.get('users', false, true);
+      if (cloudRes && cloudRes.value) cloudUsers = JSON.parse(cloudRes.value) || [];
+    } catch (e) { /* chưa có dữ liệu trên Cloud, bỏ qua */ }
+
+    const deletedKeys = new Set(STATE.deletedUserKeys || []);
+    const localIds = new Set((STATE.users || []).map(u => u.id));
+    const merged = [...(STATE.users || [])];
+    cloudUsers.forEach(u => {
+      if (!u || !u.id) return;
+      if (deletedKeys.has(u.id) || deletedKeys.has(u.username) || deletedKeys.has(u.employeeCode)) return;
+      if (!localIds.has(u.id)) merged.push(u);
+    });
+    STATE.users = merged;
+
+    const str = JSON.stringify(STATE.users);
     STATE._rawStrUsers = str;
     if (window.storage && window.storage._setLocal) {
       window.storage._setLocal('users', str).catch(() => {});
@@ -606,7 +688,16 @@ async function saveUsers() {
     await window.storage.set('users', str);
 
     if (STATE.deletedUserKeys && STATE.deletedUserKeys.length > 0) {
-      const delStr = JSON.stringify(STATE.deletedUserKeys);
+      // Gộp thêm (không ghi đè) các khoá đã bị người khác xoá cùng lúc nhưng Local chưa kịp biết.
+      let cloudDeletedKeys = [];
+      try {
+        const cloudRes = await window.storage.get('deleted-user-keys', false, true);
+        if (cloudRes && cloudRes.value) cloudDeletedKeys = JSON.parse(cloudRes.value) || [];
+      } catch (e) { /* chưa có dữ liệu trên Cloud, bỏ qua */ }
+      const mergedKeys = Array.from(new Set([...(STATE.deletedUserKeys || []), ...cloudDeletedKeys]));
+      STATE.deletedUserKeys = mergedKeys;
+
+      const delStr = JSON.stringify(mergedKeys);
       STATE._rawStrDeletedUserKeys = delStr;
       if (window.storage && window.storage._setLocal) {
         window.storage._setLocal('deleted-user-keys', delStr).catch(() => {});
