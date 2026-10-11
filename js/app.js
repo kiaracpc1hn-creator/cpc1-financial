@@ -6473,7 +6473,12 @@ function attachLoginScreenHandlers() {
     if (pinInputs[0]) pinInputs[0].focus();
     pinInputs.forEach((inp, idx) => {
       inp.addEventListener('input', (e) => {
-        const val = e.target.value;
+        // Một số trình duyệt/tính năng tự động điền trên Windows có thể nhét nhiều ký tự
+        // vào 1 ô cùng lúc (bỏ qua giới hạn maxlength="1") -> luôn ép về đúng 1 chữ số.
+        let val = (e.target.value || '').replace(/\D/g, '');
+        if (val.length > 1) val = val.slice(-1);
+        e.target.value = val;
+
         if (val && idx < pinInputs.length - 1) {
           pinInputs[idx + 1].focus();
         }
@@ -6484,6 +6489,20 @@ function attachLoginScreenHandlers() {
       inp.addEventListener('keydown', (e) => {
         if (e.key === 'Backspace' && !e.target.value && idx > 0) {
           pinInputs[idx - 1].focus();
+        }
+      });
+      inp.addEventListener('paste', (e) => {
+        // Nếu người dùng dán cả 4 số 1 lúc (hoặc trình duyệt tự điền kiểu dán), tự rải đều vào 4 ô
+        const pasted = (e.clipboardData || window.clipboardData).getData('text') || '';
+        const digits = pasted.replace(/\D/g, '').slice(0, pinInputs.length);
+        if (digits.length > 1) {
+          e.preventDefault();
+          digits.split('').forEach((d, i) => {
+            if (pinInputs[i]) pinInputs[i].value = d;
+          });
+          const lastIdx = Math.min(digits.length, pinInputs.length) - 1;
+          if (pinInputs[lastIdx]) pinInputs[lastIdx].focus();
+          if (digits.length === pinInputs.length && pinForm) pinForm.requestSubmit();
         }
       });
     });
@@ -6589,7 +6608,7 @@ function attachLoginScreenHandlers() {
       const userPin = STATE.pendingUser ? (STATE.pendingUser.pin || '1234') : '1234';
       if (pinDigits !== userPin) {
         if (errBox) {
-          errBox.textContent = '❌ Mã PIN bảo mật không chính xác! (Mã PIN mặc định: 1234)';
+          errBox.textContent = '❌ Mã PIN bảo mật không chính xác!';
           errBox.style.display = 'block';
         }
         if (pinSubmitBtn) {
