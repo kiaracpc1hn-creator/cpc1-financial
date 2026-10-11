@@ -124,6 +124,7 @@ async function loadAll() {
     const r = await window.storage.get('trash');
     STATE.trash = r ? JSON.parse(r.value) : [];
   } catch (e) { STATE.trash = []; }
+  STATE._previousTrashIds = new Set((STATE.trash || []).map(t => t.id));
 
   try {
     const r = await window.storage.get('invoices');
@@ -371,6 +372,7 @@ async function loadAll() {
           if (STATE._rawStrTrash === val) return;
           STATE._rawStrTrash = val;
           STATE.trash = JSON.parse(val) || [];
+          STATE._previousTrashIds = new Set(STATE.trash.map(t => t.id));
           changed = true;
         } else if (key === 'chiHoList') {
           if (STATE._rawStrChiHoList === val) return;
@@ -622,8 +624,10 @@ async function saveTrash() {
   try {
     // Luôn lấy bản mới nhất từ Cloud trước khi ghi, rồi gộp thêm các mục Cloud có mà
     // Local chưa có (do người khác vừa xoá cùng lúc) — tránh ghi đè mất mục người khác vừa xoá.
-    // Bỏ qua mục nào đang hiện diện dưới dạng phiếu/hoá đơn ĐANG HOẠT ĐỘNG ở Local (tức là
-    // mình vừa phục hồi nó khỏi Thùng rác), để không vô tình cho nó quay lại Thùng rác.
+    // Bỏ qua: (1) mục đang hiện diện dưới dạng phiếu/hoá đơn ĐANG HOẠT ĐỘNG ở Local (vừa được
+    // phục hồi khỏi Thùng rác), (2) mục vừa bị XOÁ VĨNH VIỄN (purge) trong chính tab này —
+    // nếu không loại trừ 2 trường hợp này, mục vừa xoá/khôi phục sẽ bị "hồi sinh" trở lại ngay
+    // lập tức do Cloud lúc đọc vẫn còn giữ bản cũ (chưa kịp cập nhật).
     let cloudTrash = [];
     try {
       const cloudRes = await window.storage.get('trash', false, true);
@@ -635,13 +639,23 @@ async function saveTrash() {
       ...(STATE.documents || []).map(d => d.id),
       ...(STATE.invoices || []).map(r => r.id)
     ]);
+    const removedThisTab = new Set(
+      STATE._previousTrashIds
+        ? [...STATE._previousTrashIds].filter(id => !localIds.has(id))
+        : []
+    );
+
     const merged = [...(STATE.trash || [])];
+    const mergedIds = new Set(localIds);
     cloudTrash.forEach(t => {
       if (!t || !t.id) return;
-      if (localIds.has(t.id) || activeIds.has(t.id)) return;
+      if (mergedIds.has(t.id)) return; // đã có rồi (kể cả trùng lặp sẵn có trên Cloud) -> bỏ qua, không thêm trùng nữa
+      if (activeIds.has(t.id) || removedThisTab.has(t.id)) return;
       merged.push(t);
+      mergedIds.add(t.id);
     });
     STATE.trash = merged;
+    STATE._previousTrashIds = new Set(merged.map(t => t.id));
 
     const sanitizedTrash = (STATE.trash || []).map(item => {
       const copy = Object.assign({}, item);
