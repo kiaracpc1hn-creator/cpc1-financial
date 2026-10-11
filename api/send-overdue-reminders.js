@@ -78,19 +78,22 @@ function esc(s) {
 }
 
 function buildSectionHtml(num, color, title, cols, rowsHtml, emptyText) {
+  const font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
   return `
       <div style="padding:18px 28px;background:#fff;">
-        <div style="display:flex;align-items:center;gap:8px;font-size:14.5px;font-weight:700;margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid #F1F5F9;color:#0F172A;font-family:'Source Serif 4',Georgia,'Times New Roman',serif;">
-          <span style="width:22px;height:22px;border-radius:50%;background:${color};color:#fff;font-size:12px;font-family:'Inter',-apple-system,Arial,sans-serif;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${num}</span>
+        <div style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:14.5px;font-weight:700;margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid #F1F5F9;color:#0F172A;font-family:${font};text-align:center;">
+          <span style="width:22px;height:22px;border-radius:50%;background:${color};color:#fff;font-size:12px;font-family:${font};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${num}</span>
           <span>${title}</span>
         </div>
         ${rowsHtml ? `
-        <table style="border-collapse:collapse;width:100%;font-size:12.5px;font-family:'Inter',-apple-system,Arial,sans-serif;">
-          <tr style="background:#F8FAFC;">${cols.map(c => `<th style="border:1px solid #E2E8F0;padding:7px 9px;font-size:11px;text-transform:uppercase;color:#64748B;">${c}</th>`).join('')}</tr>
+        <table style="border-collapse:collapse;width:100%;font-size:12.5px;font-family:${font};text-align:center;">
+          <tr style="background:#F8FAFC;">${cols.map(c => `<th style="border:1px solid #E2E8F0;padding:7px 9px;font-size:11px;text-transform:uppercase;color:#64748B;text-align:center;">${c}</th>`).join('')}</tr>
           ${rowsHtml}
-        </table>` : `<div style="color:#15803D;background:#F0FDF4;border:1px dashed #86EFAC;border-radius:8px;padding:10px 14px;font-size:12.5px;font-family:'Inter',-apple-system,Arial,sans-serif;">${emptyText}</div>`}
+        </table>` : `<div style="color:#15803D;background:#F0FDF4;border:1px dashed #86EFAC;border-radius:8px;padding:10px 14px;font-size:12.5px;font-family:${font};text-align:center;">${emptyText}</div>`}
       </div>`;
 }
+
+const EMAIL_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 function buildReportHtml(groupLabel, now, advanceRows, invoiceRows, counts) {
   return `
@@ -98,26 +101,23 @@ function buildReportHtml(groupLabel, now, advanceRows, invoiceRows, counts) {
     <html lang="vi">
     <head>
       <meta charset="UTF-8">
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
-      </style>
     </head>
-    <body style="margin:0;padding:24px;background:#EEF1F5;">
-      <div style="max-width:820px;margin:0 auto;font-family:'Inter',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">
-        <div style="background:#0A2F52;color:#fff;padding:22px 28px;border-radius:10px 10px 0 0;">
-          <h1 style="margin:0 0 4px;font-size:20px;font-family:'Source Serif 4',Georgia,'Times New Roman',serif;font-weight:700;letter-spacing:.01em;">📊 Báo cáo Cảnh báo Tài chính CPC1 — ${esc(groupLabel)}</h1>
-          <p style="margin:0;font-size:12.5px;color:#B7C6D6;font-family:'Inter',-apple-system,Arial,sans-serif;">Cập nhật ngày ${fmtDateVN(now)} · Tự động gửi định kỳ hàng tuần</p>
+    <body style="margin:0;padding:24px;background:#EEF1F5;font-family:${EMAIL_FONT};">
+      <div style="max-width:820px;margin:0 auto;font-family:${EMAIL_FONT};">
+        <div style="background:#0A2F52;color:#fff;padding:22px 28px;border-radius:10px 10px 0 0;text-align:center;">
+          <h1 style="margin:0 0 4px;font-size:20px;font-family:${EMAIL_FONT};font-weight:700;letter-spacing:.01em;">📊 Báo cáo Cảnh báo Tài chính CPC1 — ${esc(groupLabel)}</h1>
+          <p style="margin:0;font-size:12.5px;color:#B7C6D6;font-family:${EMAIL_FONT};">Cập nhật ngày ${fmtDateVN(now)} · Tự động gửi định kỳ hàng tuần</p>
         </div>
 
-        <div style="display:flex;gap:14px;padding:20px 28px 6px;background:#fff;flex-wrap:wrap;font-family:'Inter',-apple-system,Arial,sans-serif;">
-          <div style="flex:1;min-width:150px;border:1px solid #E2E8F0;border-top:3px solid #E11D48;border-radius:10px;padding:14px 16px;">
+        <div style="display:flex;gap:14px;padding:20px 28px 6px;background:#fff;flex-wrap:wrap;font-family:${EMAIL_FONT};">
+          <div style="flex:1;min-width:150px;border:1px solid #E2E8F0;border-top:3px solid #E11D48;border-radius:10px;padding:14px 16px;text-align:center;">
             <div style="font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#9F1239;">⏰ Tạm ứng quá hạn</div>
-            <div style="font-size:25px;font-weight:700;margin-top:6px;color:#E11D48;font-family:'Source Serif 4',Georgia,serif;">${counts.advances} khoản</div>
+            <div style="font-size:25px;font-weight:700;margin-top:6px;color:#E11D48;font-family:${EMAIL_FONT};">${counts.advances} khoản</div>
             <div style="font-size:11.5px;color:#64748B;margin-top:2px;">&gt; ${ADVANCE_THRESHOLD_DAYS} ngày chưa hoàn ứng</div>
           </div>
-          <div style="flex:1;min-width:150px;border:1px solid #E2E8F0;border-top:3px solid #0284C7;border-radius:10px;padding:14px 16px;">
+          <div style="flex:1;min-width:150px;border:1px solid #E2E8F0;border-top:3px solid #0284C7;border-radius:10px;padding:14px 16px;text-align:center;">
             <div style="font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#0369A1;">📥 Hoá đơn chưa ĐNTT</div>
-            <div style="font-size:25px;font-weight:700;margin-top:6px;color:#0284C7;font-family:'Source Serif 4',Georgia,serif;">${counts.invoices} hoá đơn</div>
+            <div style="font-size:25px;font-weight:700;margin-top:6px;color:#0284C7;font-family:${EMAIL_FONT};">${counts.invoices} hoá đơn</div>
             <div style="font-size:11.5px;color:#64748B;margin-top:2px;">&gt; ${INVOICE_THRESHOLD_DAYS} ngày chưa lập phiếu</div>
           </div>
         </div>
@@ -128,7 +128,7 @@ function buildReportHtml(groupLabel, now, advanceRows, invoiceRows, counts) {
         ${buildSectionHtml('2', '#0284C7', `Danh sách Hoá đơn &gt; ${INVOICE_THRESHOLD_DAYS} ngày chưa lập ĐNTT`,
           ['Số hoá đơn', 'Người phụ trách', 'Số tiền', 'Quá hạn'], invoiceRows, 'Không có hoá đơn nào quá hạn.')}
 
-        <div style="padding:16px 28px;background:#F8FAFC;font-size:12px;color:#64748B;border-top:1px solid #E2E8F0;border-radius:0 0 10px 10px;font-family:'Inter',-apple-system,Arial,sans-serif;">
+        <div style="padding:16px 28px;background:#F8FAFC;font-size:12px;color:#64748B;border-top:1px solid #E2E8F0;border-radius:0 0 10px 10px;font-family:${EMAIL_FONT};text-align:center;">
           Email tự động từ Hệ thống Phiếu tài chính CPC1. Vui lòng khẩn trương xử lý các mục trên. Không cần trả lời email này.
         </div>
       </div>
@@ -232,17 +232,17 @@ module.exports = async (req, res) => {
 
       const advanceRows = bucket.advances.map(o => `
         <tr>
-          <td><b style="font-family:'IBM Plex Mono',monospace;">${esc(o.doc.docNo || o.doc.formCode || '')}</b></td>
+          <td><b style="font-family:Consolas,Menlo,Monaco,monospace;">${esc(o.doc.docNo || o.doc.formCode || '')}</b></td>
           <td>${esc(o.doc.requesterName)}</td>
-          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${esc(fmtMoney((o.doc.items || []).reduce((s, it) => s + (it.amount || 0), 0), o.doc.currency))}</td>
+          <td style="text-align:right;font-family:Consolas,Menlo,Monaco,monospace;">${esc(fmtMoney((o.doc.items || []).reduce((s, it) => s + (it.amount || 0), 0), o.doc.currency))}</td>
           <td style="text-align:center;color:#E11D48;font-weight:700;">${o.daysOverdue} ngày</td>
         </tr>`).join('');
 
       const invoiceRows = bucket.invoices.map(o => `
         <tr>
-          <td><b style="font-family:'IBM Plex Mono',monospace;">${esc(o.rec.seriesNo ? o.rec.seriesNo + '|' + o.rec.invoiceNumber : (o.rec.invoiceNumber || ''))}</b></td>
+          <td><b style="font-family:Consolas,Menlo,Monaco,monospace;">${esc(o.rec.seriesNo ? o.rec.seriesNo + '|' + o.rec.invoiceNumber : (o.rec.invoiceNumber || ''))}</b></td>
           <td>${esc(o.rec.requesterName)}</td>
-          <td style="text-align:right;font-family:'IBM Plex Mono',monospace;">${esc(fmtMoney(o.rec.amount, o.rec.currency))}</td>
+          <td style="text-align:right;font-family:Consolas,Menlo,Monaco,monospace;">${esc(fmtMoney(o.rec.amount, o.rec.currency))}</td>
           <td style="text-align:center;color:#E11D48;font-weight:700;">${o.daysOverdue} ngày</td>
         </tr>`).join('');
 
