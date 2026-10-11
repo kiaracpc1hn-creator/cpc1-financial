@@ -232,18 +232,18 @@ module.exports = async (req, res) => {
 
       const advanceRows = bucket.advances.map(o => `
         <tr>
-          <td><b style="font-family:Consolas,Menlo,Monaco,monospace;">${esc(o.doc.docNo || o.doc.formCode || '')}</b></td>
-          <td>${esc(o.doc.requesterName)}</td>
-          <td style="text-align:right;font-family:Consolas,Menlo,Monaco,monospace;">${esc(fmtMoney((o.doc.items || []).reduce((s, it) => s + (it.amount || 0), 0), o.doc.currency))}</td>
-          <td style="text-align:center;color:#E11D48;font-weight:700;">${o.daysOverdue} ngày</td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;"><b style="font-family:Consolas,Menlo,Monaco,monospace;">${esc(o.doc.docNo || o.doc.formCode || '')}</b></td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(o.doc.requesterName)}</td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;font-family:Consolas,Menlo,Monaco,monospace;">${esc(fmtMoney((o.doc.items || []).reduce((s, it) => s + (it.amount || 0), 0), o.doc.currency))}</td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;color:#E11D48;font-weight:700;">${o.daysOverdue} ngày</td>
         </tr>`).join('');
 
       const invoiceRows = bucket.invoices.map(o => `
         <tr>
-          <td><b style="font-family:Consolas,Menlo,Monaco,monospace;">${esc(o.rec.seriesNo ? o.rec.seriesNo + '|' + o.rec.invoiceNumber : (o.rec.invoiceNumber || ''))}</b></td>
-          <td>${esc(o.rec.requesterName)}</td>
-          <td style="text-align:right;font-family:Consolas,Menlo,Monaco,monospace;">${esc(fmtMoney(o.rec.amount, o.rec.currency))}</td>
-          <td style="text-align:center;color:#E11D48;font-weight:700;">${o.daysOverdue} ngày</td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;"><b style="font-family:Consolas,Menlo,Monaco,monospace;">${esc(o.rec.seriesNo ? o.rec.seriesNo + '|' + o.rec.invoiceNumber : (o.rec.invoiceNumber || ''))}</b></td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(o.rec.requesterName)}</td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;font-family:Consolas,Menlo,Monaco,monospace;">${esc(fmtMoney(o.rec.amount, o.rec.currency))}</td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;color:#E11D48;font-weight:700;">${o.daysOverdue} ngày</td>
         </tr>`).join('');
 
       // Gom email cá nhân liên quan trong nhóm này
