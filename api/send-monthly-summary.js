@@ -89,15 +89,19 @@ const EMAIL_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica
 function buildSectionHtml(num, color, title, cols, rowsHtml, emptyText) {
   return `
       <div style="padding:18px 28px;background:#fff;">
-        <div style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:14.5px;font-weight:700;margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid #F1F5F9;color:#0F172A;font-family:${EMAIL_FONT};text-align:center;">
-          <span style="width:22px;height:22px;border-radius:50%;background:${color};color:#fff;font-size:12px;font-family:${EMAIL_FONT};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${num}</span>
-          <span>${title}</span>
-        </div>
-        ${rowsHtml ? `
+        <table role="presentation" align="center" style="border-collapse:collapse;margin:0 auto 10px;">
+          <tr>
+            <td style="width:26px;padding:0 8px 0 0;vertical-align:middle;">
+              <table role="presentation" style="border-collapse:collapse;"><tr><td style="width:22px;height:22px;border-radius:50%;background:${color};color:#fff;font-size:12px;font-family:${EMAIL_FONT};text-align:center;vertical-align:middle;">${num}</td></tr></table>
+            </td>
+            <td style="vertical-align:middle;font-size:14.5px;font-weight:700;color:#0F172A;font-family:${EMAIL_FONT};">${title}</td>
+          </tr>
+        </table>
+        <div style="border-bottom:2px solid #F1F5F9;margin:0 0 12px;"></div>
         <table style="border-collapse:collapse;width:100%;font-size:12.5px;font-family:${EMAIL_FONT};text-align:center;">
           <tr style="background:#F8FAFC;">${cols.map(c => `<th style="border:1px solid #E2E8F0;padding:7px 9px;font-size:11px;text-transform:uppercase;color:#64748B;text-align:center;">${c}</th>`).join('')}</tr>
-          ${rowsHtml}
-        </table>` : `<div style="color:#15803D;background:#F0FDF4;border:1px dashed #86EFAC;border-radius:8px;padding:10px 14px;font-size:12.5px;font-family:${EMAIL_FONT};text-align:center;">${emptyText}</div>`}
+          ${rowsHtml || `<tr><td colspan="${cols.length}" style="border:1px solid #E2E8F0;padding:14px;color:#15803D;background:#F0FDF4;text-align:center;">${emptyText}</td></tr>`}
+        </table>
       </div>`;
 }
 

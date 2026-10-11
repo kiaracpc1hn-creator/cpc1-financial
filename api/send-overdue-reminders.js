@@ -81,15 +81,19 @@ function buildSectionHtml(num, color, title, cols, rowsHtml, emptyText) {
   const font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
   return `
       <div style="padding:18px 28px;background:#fff;">
-        <div style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:14.5px;font-weight:700;margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid #F1F5F9;color:#0F172A;font-family:${font};text-align:center;">
-          <span style="width:22px;height:22px;border-radius:50%;background:${color};color:#fff;font-size:12px;font-family:${font};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${num}</span>
-          <span>${title}</span>
-        </div>
-        ${rowsHtml ? `
+        <table role="presentation" align="center" style="border-collapse:collapse;margin:0 auto 10px;">
+          <tr>
+            <td style="width:26px;padding:0 8px 0 0;vertical-align:middle;">
+              <table role="presentation" style="border-collapse:collapse;"><tr><td style="width:22px;height:22px;border-radius:50%;background:${color};color:#fff;font-size:12px;font-family:${font};text-align:center;vertical-align:middle;">${num}</td></tr></table>
+            </td>
+            <td style="vertical-align:middle;font-size:14.5px;font-weight:700;color:#0F172A;font-family:${font};">${title}</td>
+          </tr>
+        </table>
+        <div style="border-bottom:2px solid #F1F5F9;margin:0 0 12px;"></div>
         <table style="border-collapse:collapse;width:100%;font-size:12.5px;font-family:${font};text-align:center;">
           <tr style="background:#F8FAFC;">${cols.map(c => `<th style="border:1px solid #E2E8F0;padding:7px 9px;font-size:11px;text-transform:uppercase;color:#64748B;text-align:center;">${c}</th>`).join('')}</tr>
-          ${rowsHtml}
-        </table>` : `<div style="color:#15803D;background:#F0FDF4;border:1px dashed #86EFAC;border-radius:8px;padding:10px 14px;font-size:12.5px;font-family:${font};text-align:center;">${emptyText}</div>`}
+          ${rowsHtml || `<tr><td colspan="${cols.length}" style="border:1px solid #E2E8F0;padding:14px;color:#15803D;background:#F0FDF4;text-align:center;">${emptyText}</td></tr>`}
+        </table>
       </div>`;
 }
 
@@ -109,18 +113,20 @@ function buildReportHtml(groupLabel, now, advanceRows, invoiceRows, counts) {
           <p style="margin:0;font-size:12.5px;color:#B7C6D6;font-family:${EMAIL_FONT};">Cập nhật ngày ${fmtDateVN(now)} · Tự động gửi định kỳ hàng tuần</p>
         </div>
 
-        <div style="display:flex;gap:14px;padding:20px 28px 6px;background:#fff;flex-wrap:wrap;font-family:${EMAIL_FONT};">
-          <div style="flex:1;min-width:150px;border:1px solid #E2E8F0;border-top:3px solid #E11D48;border-radius:10px;padding:14px 16px;text-align:center;">
-            <div style="font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#9F1239;">⏰ Tạm ứng quá hạn</div>
-            <div style="font-size:25px;font-weight:700;margin-top:6px;color:#E11D48;font-family:${EMAIL_FONT};">${counts.advances} khoản</div>
-            <div style="font-size:11.5px;color:#64748B;margin-top:2px;">&gt; ${ADVANCE_THRESHOLD_DAYS} ngày chưa hoàn ứng</div>
-          </div>
-          <div style="flex:1;min-width:150px;border:1px solid #E2E8F0;border-top:3px solid #0284C7;border-radius:10px;padding:14px 16px;text-align:center;">
-            <div style="font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#0369A1;">📥 Hoá đơn chưa ĐNTT</div>
-            <div style="font-size:25px;font-weight:700;margin-top:6px;color:#0284C7;font-family:${EMAIL_FONT};">${counts.invoices} hoá đơn</div>
-            <div style="font-size:11.5px;color:#64748B;margin-top:2px;">&gt; ${INVOICE_THRESHOLD_DAYS} ngày chưa lập phiếu</div>
-          </div>
-        </div>
+        <table role="presentation" style="width:100%;border-collapse:separate;border-spacing:7px 0;padding:20px 24px 10px;background:#fff;font-family:${EMAIL_FONT};">
+          <tr>
+            <td style="width:50%;border:1px solid #E2E8F0;border-top:3px solid #E11D48;border-radius:10px;padding:18px 16px;text-align:center;vertical-align:top;">
+              <div style="font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#9F1239;">⏰ Tạm ứng quá hạn</div>
+              <div style="font-size:30px;font-weight:700;margin-top:8px;color:#E11D48;font-family:${EMAIL_FONT};">${counts.advances} khoản</div>
+              <div style="font-size:12px;color:#64748B;margin-top:4px;">&gt; ${ADVANCE_THRESHOLD_DAYS} ngày chưa hoàn ứng</div>
+            </td>
+            <td style="width:50%;border:1px solid #E2E8F0;border-top:3px solid #0284C7;border-radius:10px;padding:18px 16px;text-align:center;vertical-align:top;">
+              <div style="font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#0369A1;">📥 Hoá đơn chưa ĐNTT</div>
+              <div style="font-size:30px;font-weight:700;margin-top:8px;color:#0284C7;font-family:${EMAIL_FONT};">${counts.invoices} hoá đơn</div>
+              <div style="font-size:12px;color:#64748B;margin-top:4px;">&gt; ${INVOICE_THRESHOLD_DAYS} ngày chưa lập phiếu</div>
+            </td>
+          </tr>
+        </table>
 
         ${buildSectionHtml('1', '#E11D48', `Danh sách Tạm ứng quá hạn &gt; ${ADVANCE_THRESHOLD_DAYS} ngày chưa Hoàn ứng`,
           ['Mã phiếu', 'Người tạm ứng', 'Số tiền', 'Quá hạn'], advanceRows, 'Không có khoản tạm ứng nào quá hạn.')}
