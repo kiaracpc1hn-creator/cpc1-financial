@@ -178,6 +178,12 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Thiếu biến môi trường SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / GMAIL_USER / GMAIL_APP_PASSWORD' });
   }
 
+  // Thêm ?dryRun=1 vào cuối URL để CHỈ XEM TRƯỚC sẽ gửi cho ai, KHÔNG gửi mail thật.
+  const isDryRun = req.query && (req.query.dryRun === '1' || req.query.dryRun === 'true');
+  // Thêm ?testEmail=you@gmail.com để gửi TOÀN BỘ mail test về đúng 1 địa chỉ này (không gửi
+  // cho người thật, không CC vào Google Group) — dùng để xem thử mail thật trông thế nào.
+  const testEmailOverride = req.query && req.query.testEmail ? String(req.query.testEmail).trim() : null;
+
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const transporter = getTransporter();
@@ -347,11 +353,17 @@ module.exports = async (req, res) => {
       };
       if (cfg.groupEmail) mailOptions.cc = cfg.groupEmail;
 
+      if (isDryRun) {
+        // Chế độ xem thử: KHÔNG gửi mail, chỉ trả về sẽ gửi cho ai
+        sendResults.push({ group: groupKey, dryRun: true, to: Array.from(toSet), cc: cfg.groupEmail || null, subject, counts: { advances: bucket.advances.length, unmadeInvoices: bucket.unmadeInvoices.length, docs: bucket.docs.length, invoices: bucket.invoices.length } });
+        continue;
+      }
+
       const info = await transporter.sendMail(mailOptions);
       sendResults.push({ group: groupKey, to: Array.from(toSet), cc: cfg.groupEmail || null, counts: { advances: bucket.advances.length, unmadeInvoices: bucket.unmadeInvoices.length, docs: bucket.docs.length, invoices: bucket.invoices.length }, messageId: info.messageId });
     }
 
-    return res.status(200).json({ ok: true, month: monthLabel, sendResults });
+    return res.status(200).json({ ok: true, dryRun: isDryRun, month: monthLabel, sendResults });
   } catch (err) {
     console.error('[send-monthly-summary] Error:', err);
     return res.status(500).json({ error: err.message || String(err) });
