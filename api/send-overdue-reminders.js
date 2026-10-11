@@ -81,12 +81,18 @@ function buildSectionHtml(num, color, title, cols, rowsHtml, emptyText) {
   const font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
   return `
       <div style="padding:18px 28px;background:#fff;">
-        <table role="presentation" align="center" style="border-collapse:collapse;margin:0 auto 10px;">
+        <table role="presentation" width="100%" style="border-collapse:collapse;margin:0 0 10px;">
           <tr>
-            <td style="width:26px;padding:0 8px 0 0;vertical-align:middle;">
-              <table role="presentation" style="border-collapse:collapse;"><tr><td style="width:22px;height:22px;border-radius:50%;background:${color};color:#fff;font-size:12px;font-family:${font};text-align:center;vertical-align:middle;">${num}</td></tr></table>
+            <td align="left" style="padding:0;">
+              <table role="presentation" style="border-collapse:collapse;">
+                <tr>
+                  <td style="width:26px;padding:0 8px 0 0;vertical-align:middle;">
+                    <table role="presentation" style="border-collapse:collapse;"><tr><td style="width:22px;height:22px;border-radius:50%;background:${color};color:#fff;font-size:12px;font-family:${font};text-align:center;vertical-align:middle;">${num}</td></tr></table>
+                  </td>
+                  <td style="vertical-align:middle;font-size:14.5px;font-weight:700;color:#0F172A;font-family:${font};">${title}</td>
+                </tr>
+              </table>
             </td>
-            <td style="vertical-align:middle;font-size:14.5px;font-weight:700;color:#0F172A;font-family:${font};">${title}</td>
           </tr>
         </table>
         <div style="border-bottom:2px solid #F1F5F9;margin:0 0 12px;"></div>
