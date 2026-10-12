@@ -273,8 +273,12 @@
     },
 
     // Lưu 1 phiếu tài chính đơn lẻ lên bảng cpc1_vouchers_list
+    // Trả về true nếu ghi lên Cloud thành công, false nếu thất bại (mất mạng, lỗi tạm thời...).
+    // QUAN TRỌNG: bên gọi (app.js) phải dựa vào giá trị trả về này để quyết định có đánh dấu
+    // "đã đồng bộ" hay không — tránh trường hợp ghi thất bại nhưng vẫn bị coi là đã lưu xong,
+    // khiến phiếu không bao giờ được gửi lại lên Cloud.
     async saveVoucherCloud(docObj) {
-      if (!this.isFirebaseConnected() || !docObj || !docObj.id) return;
+      if (!this.isFirebaseConnected() || !docObj || !docObj.id) return false;
       try {
         const copy = Object.assign({}, docObj);
         if (Array.isArray(copy.attachments)) {
@@ -288,8 +292,10 @@
           .from(TABLE_VOUCHERS)
           .upsert({ id: docObj.id, data: copy, updated_at: new Date().toISOString() }, { onConflict: 'id' });
         if (error) throw error;
+        return true;
       } catch (err) {
         console.warn(`[CPC1 Cloud] Error saving voucher ${docObj.id}:`, err.message || err);
+        return false;
       }
     },
 

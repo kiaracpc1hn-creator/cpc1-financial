@@ -454,14 +454,32 @@ async function saveDocuments() {
     // của 1 phiếu nào đó (do người khác vừa cập nhật mà tab này chưa kịp nhận), lại tưởng nhầm phiếu đó
     // "thay đổi" và ghi đè bản cũ đè lên bản mới của người khác trên Cloud.
     if (!STATE._lastVoucherWrittenHash) STATE._lastVoucherWrittenHash = new Map();
+    if (!STATE._voucherWriteRetryCount) STATE._voucherWriteRetryCount = new Map();
 
+    const pendingCloudWrites = [];
     const sanitizedDocs = (STATE.documents || []).map(d => {
       const copy = sanitizeVoucherForHash(d);
       const hash = JSON.stringify(copy);
       if (STATE._lastVoucherWrittenHash.get(copy.id) !== hash) {
-        STATE._lastVoucherWrittenHash.set(copy.id, hash);
-        // Lưu từng phiếu đơn lẻ lên bảng Cloud riêng để đảm bảo không bị ghi đè chéo giữa các tài khoản
-        window.storage.saveVoucherCloud(copy);
+        // Lưu từng phiếu đơn lẻ lên bảng Cloud riêng để đảm bảo không bị ghi đè chéo giữa các tài khoản.
+        // CHỈ đánh dấu "đã đồng bộ" SAU KHI Cloud xác nhận ghi thành công — nếu ghi thất bại (mất
+        // mạng, lỗi tạm thời...), KHÔNG cập nhật hash, để lần gọi saveDocuments() kế tiếp sẽ tự
+        // động gửi lại phiếu này, tránh tình trạng 1 phiếu "biến mất" trạng thái mới vĩnh viễn trên
+        // các tài khoản khác chỉ vì 1 lần ghi cloud bị lỗi thoáng qua.
+        const p = window.storage.saveVoucherCloud(copy).then(ok => {
+          if (ok) {
+            STATE._lastVoucherWrittenHash.set(copy.id, hash);
+            STATE._voucherWriteRetryCount.delete(copy.id);
+          } else {
+            const n = (STATE._voucherWriteRetryCount.get(copy.id) || 0) + 1;
+            STATE._voucherWriteRetryCount.set(copy.id, n);
+            console.warn(`[CPC1] Ghi phiếu ${copy.id} lên Cloud thất bại (lần ${n}), sẽ tự thử lại.`);
+            if (n === 3) {
+              showToast('⚠️ Một số thay đổi chưa đồng bộ được lên Cloud — kiểm tra kết nối mạng');
+            }
+          }
+        });
+        pendingCloudWrites.push(p);
       }
       return copy;
     });
@@ -469,6 +487,9 @@ async function saveDocuments() {
     const str = JSON.stringify(sanitizedDocs);
     STATE._rawStrDocuments = str;
     await window.storage._setLocal('documents', str);
+    // Không chặn UI chờ Cloud (giữ cảm giác thao tác mượt), nhưng vẫn theo dõi kết quả ở trên
+    // để tự động thử lại nếu thất bại.
+    if (pendingCloudWrites.length) Promise.allSettled(pendingCloudWrites);
   } catch (e) { showToast('Lỗi lưu danh sách phiếu'); }
 }
 let _lastPayeesSaveTime = 0;
@@ -1566,16 +1587,16 @@ function removeSignedCopy(doc) {
     ? [...doc.signedAttachmentIds]
     : (doc.signedAttachmentId ? [doc.signedAttachmentId] : []);
 
-  showConfirmModal('Gỡ bản đã ký?', `Bạn có chắc muốn gỡ toàn bộ ${signedIds.length || 1} bản đã ký? Phiếu sẽ quay về trạng thái Chờ ký.`, async () => {
+  showConfirmModal('Gỡ bản đã ký?', `Bạn có chắc muốn gỡ toàn bộ ${signedIds.length || 1} bản đã ký? Phiếu sẽ quay về trạng thái Nháp để chỉnh sửa lại.`, async () => {
     for (const attId of signedIds) {
       await removeAttachmentSilent(doc, attId);
     }
     doc.signedAttachmentId = null;
     doc.signedAttachmentIds = [];
-    doc.status = 'pending_signature';
-    doc.history.push({ at: new Date().toISOString(), action: 'Gỡ bản đã ký, chờ tải lại', by: currentUser().name });
+    doc.status = 'draft';
+    doc.history.push({ at: new Date().toISOString(), action: 'Gỡ bản đã ký, quay về Nháp', by: currentUser().name });
     await saveDocuments();
-    showToast('Đã gỡ bản đã ký');
+    showToast('Đã gỡ bản đã ký — phiếu quay về Nháp');
     render();
   });
 }
@@ -8979,6 +9000,17 @@ async function initApp() {
   checkAndDispatchWeeklyOverdueAdvanceEmails();
   checkAndDispatchWeeklyOverdueInvoiceEmails();
   render();
+
+  // Tự động thử lại định kỳ các phiếu bị ghi lên Cloud thất bại trước đó (vd: mất mạng thoáng qua
+  // khi bấm "Đã ký"), phòng trường hợp người dùng không thao tác gì thêm để kích hoạt lưu lại.
+  if (!STATE._voucherRetryIntervalBound) {
+    STATE._voucherRetryIntervalBound = true;
+    setInterval(() => {
+      if (STATE._voucherWriteRetryCount && STATE._voucherWriteRetryCount.size > 0) {
+        saveDocuments();
+      }
+    }, 30000);
+  }
 }
 
 if (document.readyState === 'loading') {
