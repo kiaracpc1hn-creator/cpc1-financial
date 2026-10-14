@@ -140,12 +140,12 @@ function buildReportHtml(groupLabel, monthLabel, now, advanceRows, unmadeInvoice
           </tr>
           <tr>
             <td style="width:50%;border:1px solid #E2E8F0;border-top:3px solid #0D9488;border-radius:10px;padding:16px;text-align:center;vertical-align:top;">
-              <div style="font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#0F766E;">📄 ĐNTT đã lập trong tháng</div>
+              <div style="font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#0F766E;">📄 ĐNTT đã lập trong kỳ</div>
               <div style="font-size:28px;font-weight:700;margin-top:6px;color:#0D9488;font-family:${EMAIL_FONT};">${counts.docs} phiếu</div>
               <div style="font-size:11.5px;color:#64748B;margin-top:4px;">Tổng giá trị: ${esc(fmtMoney(totalDocAmountVnd, 'VND'))}</div>
             </td>
             <td style="width:50%;border:1px solid #E2E8F0;border-top:3px solid #0284C7;border-radius:10px;padding:16px;text-align:center;vertical-align:top;">
-              <div style="font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#0369A1;">🧾 Hoá đơn đã lập ĐNTT trong tháng</div>
+              <div style="font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#0369A1;">🧾 Hoá đơn đã lập ĐNTT trong kỳ</div>
               <div style="font-size:28px;font-weight:700;margin-top:6px;color:#0284C7;font-family:${EMAIL_FONT};">${counts.invoices} hoá đơn</div>
               <div style="font-size:11.5px;color:#64748B;margin-top:4px;">Tổng giá trị: ${esc(fmtMoney(totalInvAmountVnd, 'VND'))}</div>
             </td>
@@ -159,10 +159,10 @@ function buildReportHtml(groupLabel, monthLabel, now, advanceRows, unmadeInvoice
           ['Số hoá đơn', 'Ngày hoá đơn', 'Người phụ trách', 'Số tiền', 'Quá hạn'], unmadeInvoiceRows, 'Không có hoá đơn nào quá hạn chưa lập ĐNTT.')}
 
         ${buildSectionHtml('3', '#0D9488', `Danh sách ĐNTT đã lập trong ${esc(monthLabel)}`,
-          ['Mã phiếu', 'Loại', 'Người đề nghị', 'Ngày lập', 'Số tiền', 'Trạng thái'], docRows, 'Không có ĐNTT nào được lập trong tháng này.')}
+          ['Mã phiếu', 'Loại', 'Người đề nghị', 'Ngày lập', 'Số tiền', 'Trạng thái'], docRows, 'Không có ĐNTT nào được lập trong kỳ này.')}
 
         ${buildSectionHtml('4', '#0284C7', `Danh sách Hoá đơn đã được lập ĐNTT trong ${esc(monthLabel)}`,
-          ['Số hoá đơn', 'Ngày hoá đơn', 'Người phụ trách', 'Nội dung', 'Số tiền'], invRows, 'Không có hoá đơn nào được lập ĐNTT trong tháng này.')}
+          ['Số hoá đơn', 'Ngày hoá đơn', 'Người phụ trách', 'Nội dung', 'Số tiền', 'Ngày lập ĐNTT'], invRows, 'Không có hoá đơn nào được lập ĐNTT trong kỳ này.')}
 
         <div style="padding:16px 28px;background:#F8FAFC;font-size:12px;color:#64748B;border-top:1px solid #E2E8F0;border-radius:0 0 10px 10px;font-family:${EMAIL_FONT};text-align:center;">
           Email tự động từ Hệ thống Phiếu tài chính CPC1. Không cần trả lời email này.
@@ -206,13 +206,20 @@ module.exports = async (req, res) => {
     const transporter = getTransporter();
     const now = new Date();
 
-    // Tháng trước (tháng liền kề trước ngày gửi — gửi ngày 12 nên luôn đủ dữ liệu tháng trước)
-    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const prevYear = prevMonthDate.getFullYear();
-    const prevMonthIdx0 = prevMonthDate.getMonth();
-    const rangeStart = new Date(prevYear, prevMonthIdx0, 1);
-    const rangeEnd = new Date(prevYear, prevMonthIdx0 + 1, 1); // đầu tháng này (exclusive)
-    const monthLabel = monthLabelVN(prevYear, prevMonthIdx0);
+    // Kỳ báo cáo: từ 00:00 ngày 12 tháng trước đến hết ngày 11 tháng này (giờ Việt Nam) —
+    // tức là toàn bộ ĐNTT / hoá đơn đã lập TRƯỚC ngày 12 (mốc chốt) kể từ mốc chốt lần trước.
+    // Nếu gọi thủ công khi chưa tới ngày 12 thì lấy kỳ gần nhất đã khép (mốc chốt 12 của tháng trước).
+    const VN_OFFSET_MS = 7 * 3600 * 1000;
+    const vnNow = new Date(now.getTime() + VN_OFFSET_MS);
+    let endY = vnNow.getUTCFullYear();
+    let endM = vnNow.getUTCMonth();
+    if (vnNow.getUTCDate() < 12) endM -= 1;
+    const rangeEnd = new Date(Date.UTC(endY, endM, 12) - VN_OFFSET_MS);       // 00:00 ngày 12 tháng này (không tính)
+    const rangeStart = new Date(Date.UTC(endY, endM - 1, 12) - VN_OFFSET_MS); // 00:00 ngày 12 tháng trước
+    const pad2 = n => String(n).padStart(2, '0');
+    const sDate = new Date(Date.UTC(endY, endM - 1, 12));
+    const eDate = new Date(Date.UTC(endY, endM, 11));
+    const monthLabel = `kỳ 12/${pad2(sDate.getUTCMonth() + 1)}/${sDate.getUTCFullYear()} – 11/${pad2(eDate.getUTCMonth() + 1)}/${eDate.getUTCFullYear()}`;
 
     const { data: voucherRows, error: vErr } = await supabase.from('cpc1_vouchers_list').select('id, data');
     if (vErr) throw vErr;
@@ -291,6 +298,14 @@ module.exports = async (req, res) => {
       return Array.from(usedInvoiceNos).some(no => no.includes(invNum));
     });
 
+    // ĐNTT (trong kỳ) đã dùng hoá đơn này — để hiển thị "Ngày lập ĐNTT" cạnh "Ngày hoá đơn"
+    function findUsingDoc(rec) {
+      const invNum = (rec.invoiceNumber || '').trim();
+      if (!invNum) return null;
+      return docsThisMonth.find(d => [...(d.items || []), ...(d.spentItems || [])]
+        .some(it => it.invoiceNo && it.invoiceNo.includes(invNum))) || null;
+    }
+
     if (overdueAdvances.length === 0 && overdueInvoices.length === 0 && docsThisMonth.length === 0 && invoicesThisMonth.length === 0) {
       return res.status(200).json({ message: `Không có tạm ứng quá hạn / hoá đơn chưa làm ĐNTT / ĐNTT / hoá đơn nào trong ${monthLabel} — không gửi email.` });
     }
@@ -349,6 +364,7 @@ module.exports = async (req, res) => {
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(r.requesterName)}</td>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(r.note || '')}</td>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;font-family:Consolas,Menlo,Monaco,monospace;">${esc(fmtMoney(r.amount, r.currency))}</td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(fmtDateVN((findUsingDoc(r) || {}).documentDate || (findUsingDoc(r) || {}).createdAt))}</td>
         </tr>`).join('');
 
       const totalDocAmount = bucket.docs.reduce((s, d) => s + computeTotal(d), 0);
