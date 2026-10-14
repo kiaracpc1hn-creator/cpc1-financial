@@ -159,8 +159,12 @@ function getTransporter() {
 }
 
 module.exports = async (req, res) => {
-  const authHeader = req.headers['authorization'];
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // BẮT BUỘC có mã bí mật CRON_SECRET (đặt trong Vercel → Environment Variables).
+  // Vercel tự gửi mã này khi chạy lịch định kỳ. Khi muốn gọi thủ công để xem thử, thêm &key=MÃ_BÍ_MẬT vào link.
+  // Không có mã đúng thì từ chối — tránh người lạ gọi link này để gửi mail hàng loạt hoặc xem danh sách người nhận.
+  const secret = process.env.CRON_SECRET;
+  const provided = String(req.headers['authorization'] || '').replace(/^Bearer\s+/i, '') || String((req.query && req.query.key) || '');
+  if (!secret || provided !== secret) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !GMAIL_USER || !GMAIL_APP_PASSWORD) {
@@ -180,7 +184,15 @@ module.exports = async (req, res) => {
 
     const { data: voucherRows, error: vErr } = await supabase.from('cpc1_vouchers_list').select('id, data');
     if (vErr) throw vErr;
-    const documents = (voucherRows || []).map(r => r.data).filter(Boolean);
+    // Loại bỏ các phiếu đã nằm trong Thùng rác: đôi khi bản xoá trên bảng phiếu chưa kịp thực hiện
+    // (lỗi mạng thoáng qua), khiến phiếu "ma" vẫn nằm trên Cloud dù người dùng không còn thấy nó trong web.
+    let trashIds = new Set();
+    try {
+      const { data: trashRow } = await supabase.from('cpc1_store').select('value').eq('key', 'trash').maybeSingle();
+      const trashList = trashRow && trashRow.value ? JSON.parse(trashRow.value) : [];
+      trashIds = new Set((Array.isArray(trashList) ? trashList : []).map(t => t && t.id).filter(Boolean));
+    } catch (e) { /* không đọc được thùng rác thì bỏ qua bước lọc */ }
+    const documents = (voucherRows || []).map(r => r.data).filter(d => d && !trashIds.has(d.id));
 
     const { data: usersRow } = await supabase.from('cpc1_store').select('value').eq('key', 'users').maybeSingle();
     const users = usersRow && usersRow.value ? JSON.parse(usersRow.value) : [];
