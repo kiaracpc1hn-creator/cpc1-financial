@@ -204,7 +204,12 @@ async function loadAll() {
       const last = STATE._lastVoucherCloudWriteAt.get(docObj.id) || 0;
       if (Date.now() - last < 5000) return;
       STATE._lastVoucherCloudWriteAt.set(docObj.id, Date.now());
-      window.storage.saveVoucherCloud(docObj);
+      if (!STATE._lastVoucherWrittenHash) STATE._lastVoucherWrittenHash = new Map();
+      const h = voucherHash(docObj);
+      // Chỉ đánh dấu "đã đồng bộ" khi Cloud xác nhận ghi thành công thật sự
+      window.storage.saveVoucherCloud(docObj).then(ok => {
+        if (ok) STATE._lastVoucherWrittenHash.set(docObj.id, h);
+      });
     };
     window.storage.listenVouchersRealtime((cloudVouchers) => {
       try {
@@ -228,6 +233,7 @@ async function loadAll() {
           const localMap = new Map((STATE.documents || []).map(d => [d.id, d]));
           const STATUS_RANK = { draft: 1, pending_signature: 2, submitted: 2, signed: 3, completed: 3, cancelled: 4 };
 
+          const healIds = new Set(); // phiếu đang chờ ghi lại lên Cloud — chưa được coi là "đã đồng bộ"
           cloudVouchers.forEach(incDoc => {
             // Nếu phiếu nằm trong thùng rác -> Bỏ qua không đưa vào danh sách phiếu active và xóa sạch trên Cloud
             if (trashIds.has(incDoc.id)) {
@@ -237,48 +243,32 @@ async function loadAll() {
 
             const localDoc = localMap.get(incDoc.id);
             if (localDoc) {
-              const localRank = STATUS_RANK[localDoc.status] || 1;
-              const cloudRank = STATUS_RANK[incDoc.status] || 1;
+              // Cơ sở so sánh "bản nào mới hơn": dựa vào NHẬT KÝ LỊCH SỬ (mọi lần đổi trạng thái đều
+              // ghi 1 dòng lịch sử có mốc thời gian), chứ không dựa vào "thứ hạng" trạng thái nữa.
+              // - Máy này có sự kiện mà Cloud CHƯA có, và sự kiện mới nhất nằm ở máy này
+              //   => máy này đi trước (đang chờ ghi lên Cloud) => giữ trạng thái của máy này, ghi lại lên Cloud.
+              // - Ngược lại (Cloud có sự kiện mới hơn, VD admin vừa "Gỡ bản đã ký" về Nháp)
+              //   => Cloud thắng, KHÔNG bị bản cũ trên máy này ghi đè ngược lại.
+              const keyOf = h => `${h.action}_${h.at}`;
+              const cloudHist = Array.isArray(incDoc.history) ? incDoc.history : [];
+              const localHist = Array.isArray(localDoc.history) ? localDoc.history : [];
+              const cloudKeys = new Set(cloudHist.map(keyOf));
+              const localOnly = localHist.filter(h => !cloudKeys.has(keyOf(h)));
+              const latestAt = arr => arr.reduce((m, h) => Math.max(m, new Date(h.at || 0).getTime() || 0), 0);
+              const localIsAhead = localOnly.length > 0 && latestAt(localHist) > latestAt(cloudHist);
 
-              // Kiểm tra xem localDoc có vừa thực hiện hành động "Huỷ trình ký, quay về nháp" hay không
-              const hasCancelAction = Array.isArray(localDoc.history) && localDoc.history.some(h => h.action && h.action.includes('Huỷ trình ký'));
-
-              if (localRank > cloudRank && !hasCancelAction) {
-                // Giữ lại trạng thái tiến trình cao hơn từ Local (VD: Local đã 'pending_signature' hoặc 'signed' nhưng Snapshot Cloud còn chậm ở 'draft')
+              if (localIsAhead) {
                 incDoc.status = localDoc.status;
-                if (localDoc.signedAttachmentId) incDoc.signedAttachmentId = localDoc.signedAttachmentId;
-                if (localDoc.signedAttachmentIds && localDoc.signedAttachmentIds.length > 0) {
-                  incDoc.signedAttachmentIds = localDoc.signedAttachmentIds;
-                }
-
-                // Gộp nhật ký lịch sử
-                if (Array.isArray(localDoc.history)) {
-                  const cloudHistKeys = new Set((incDoc.history || []).map(h => `${h.action}_${h.at}`));
-                  localDoc.history.forEach(h => {
-                    if (!cloudHistKeys.has(`${h.action}_${h.at}`)) {
-                      if (!incDoc.history) incDoc.history = [];
-                      incDoc.history.push(h);
-                    }
-                  });
-                  incDoc.history.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
-                }
-
-                // Tự động chữa lành dữ liệu trên Cloud Firestore
+                incDoc.signedAttachmentId = localDoc.signedAttachmentId || null;
+                incDoc.signedAttachmentIds = localDoc.signedAttachmentIds || [];
+              }
+              if (localOnly.length > 0) {
+                // Gộp các sự kiện lịch sử mà Cloud chưa có
+                if (!incDoc.history) incDoc.history = [];
+                localOnly.forEach(h => incDoc.history.push(h));
+                incDoc.history.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+                healIds.add(incDoc.id);
                 guardedSaveVoucherCloud(incDoc);
-              } else if (Array.isArray(localDoc.history) && Array.isArray(incDoc.history)) {
-                // Gộp lịch sử nếu Cloud chưa có một số sự kiện từ Local
-                const cloudHistKeys = new Set(incDoc.history.map(h => `${h.action}_${h.at}`));
-                let merged = false;
-                localDoc.history.forEach(h => {
-                  if (!cloudHistKeys.has(`${h.action}_${h.at}`)) {
-                    incDoc.history.push(h);
-                    merged = true;
-                  }
-                });
-                if (merged) {
-                  incDoc.history.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
-                  guardedSaveVoucherCloud(incDoc);
-                }
               }
             }
             newDocList.push(incDoc);
@@ -290,6 +280,7 @@ async function loadAll() {
               const ageMs = Date.now() - new Date(localDoc.createdAt).getTime();
               if (ageMs < 120000) {
                 newDocList.unshift(localDoc);
+                healIds.add(localDoc.id);
                 guardedSaveVoucherCloud(localDoc);
               }
             }
@@ -306,7 +297,8 @@ async function loadAll() {
           // vừa chuyển "Đã ký" nhưng tab này chưa kịp nhận do Realtime bị gián đoạn).
           if (!STATE._lastVoucherWrittenHash) STATE._lastVoucherWrittenHash = new Map();
           newDocList.forEach(d => {
-            if (d && d.id) STATE._lastVoucherWrittenHash.set(d.id, voucherHash(d));
+            // Phiếu đang chờ ghi lại lên Cloud thì KHÔNG đánh dấu đã đồng bộ (sẽ được đánh dấu khi ghi thành công)
+            if (d && d.id && !healIds.has(d.id)) STATE._lastVoucherWrittenHash.set(d.id, voucherHash(d));
           });
 
           const newStr = JSON.stringify(newDocList);

@@ -313,12 +313,57 @@
       if (!this.isFirebaseConnected()) return () => {};
       const currentVouchers = new Map();
       try {
-        // Tải toàn bộ 1 lần đầu tiên
-        supabaseClient.from(TABLE_VOUCHERS).select('id, data').then(({ data, error }) => {
-          if (error) { console.warn('[CPC1 Cloud] Initial vouchers load error:', error.message); return; }
-          (data || []).forEach(row => currentVouchers.set(row.id, row.data));
-          callback(Array.from(currentVouchers.values()), []);
-        });
+        // Tải toàn bộ danh sách phiếu từ Cloud. Dùng cho lần tải đầu tiên VÀ để tự "đồng bộ lại"
+        // khi Realtime bị đứt kết nối âm thầm (máy ngủ, mạng chập chờn...) — lúc đó sự kiện thay đổi
+        // bị bỏ lỡ và máy sẽ hiển thị dữ liệu cũ cho đến khi F5.
+        const stamps = new Map(); // id -> updated_at, để lần đồng bộ lại chỉ tải phiếu THỰC SỰ thay đổi
+        let refreshing = false;
+        const fullLoad = () => {
+          supabaseClient.from(TABLE_VOUCHERS).select('id, data, updated_at').then(({ data, error }) => {
+            refreshing = false;
+            if (error) { console.warn('[CPC1 Cloud] Vouchers load error:', error.message); return; }
+            currentVouchers.clear(); stamps.clear();
+            (data || []).forEach(row => { currentVouchers.set(row.id, row.data); stamps.set(row.id, row.updated_at); });
+            callback(Array.from(currentVouchers.values()), []);
+          }, () => { refreshing = false; });
+        };
+        // Đồng bộ lại NHẸ: chỉ hỏi Cloud danh sách (id + thời điểm sửa) — vài KB — rồi chỉ tải về
+        // những phiếu có thay đổi. Không tải lại toàn bộ dữ liệu mỗi lần (tiết kiệm băng thông).
+        const refreshAll = () => {
+          if (refreshing) return;
+          refreshing = true;
+          if (stamps.size === 0) { fullLoad(); return; }
+          supabaseClient.from(TABLE_VOUCHERS).select('id, updated_at').then(({ data, error }) => {
+            if (error) { refreshing = false; console.warn('[CPC1 Cloud] Vouchers refresh error:', error.message); return; }
+            const remote = new Map((data || []).map(r => [r.id, r.updated_at]));
+            const changedIds = [];
+            remote.forEach((ts, id) => { if (stamps.get(id) !== ts) changedIds.push(id); });
+            let removed = false;
+            Array.from(currentVouchers.keys()).forEach(id => {
+              if (!remote.has(id)) { currentVouchers.delete(id); stamps.delete(id); removed = true; }
+            });
+            if (changedIds.length === 0) {
+              refreshing = false;
+              if (removed) callback(Array.from(currentVouchers.values()), []);
+              return;
+            }
+            if (changedIds.length > 40) { fullLoad(); return; }
+            supabaseClient.from(TABLE_VOUCHERS).select('id, data, updated_at').in('id', changedIds).then(({ data: rows, error: e2 }) => {
+              refreshing = false;
+              if (e2) { console.warn('[CPC1 Cloud] Vouchers refresh error:', e2.message); return; }
+              (rows || []).forEach(row => { currentVouchers.set(row.id, row.data); stamps.set(row.id, row.updated_at); });
+              callback(Array.from(currentVouchers.values()), []);
+            }, () => { refreshing = false; });
+          }, () => { refreshing = false; });
+        };
+        refreshAll();
+        if (!this._voucherResyncBound) {
+          this._voucherResyncBound = true;
+          document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshAll(); });
+          window.addEventListener('focus', refreshAll);
+          window.addEventListener('online', refreshAll);
+          setInterval(() => { if (!document.hidden) refreshAll(); }, 60000);
+        }
 
         const channel = supabaseClient
           .channel('cpc1_vouchers_realtime')
@@ -328,10 +373,10 @@
             if (payload.eventType === 'DELETE') {
               const oldId = payload.old && payload.old.id;
               const oldData = (payload.old && payload.old.data) || null;
-              currentVouchers.delete(oldId);
+              currentVouchers.delete(oldId); stamps.delete(oldId);
               callback(Array.from(currentVouchers.values()), [{ type: 'removed', doc: oldData, id: oldId }]);
             } else {
-              currentVouchers.set(payload.new.id, payload.new.data);
+              currentVouchers.set(payload.new.id, payload.new.data); stamps.set(payload.new.id, payload.new.updated_at);
               callback(Array.from(currentVouchers.values()), [{
                 type: payload.eventType === 'INSERT' ? 'added' : 'modified',
                 doc: payload.new.data,
