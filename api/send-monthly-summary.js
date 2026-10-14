@@ -62,7 +62,7 @@ function fmtMoney(n, currency) {
 function fmtDateVN(d) {
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return '';
-  return dt.toLocaleDateString('vi-VN');
+  return dt.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
 }
 function monthLabelVN(year, monthIndex0) {
   return `Tháng ${monthIndex0 + 1}/${year}`;
@@ -156,13 +156,13 @@ function buildReportHtml(groupLabel, monthLabel, now, advanceRows, unmadeInvoice
           ['Mã phiếu', 'Người tạm ứng', 'Số tiền', 'Quá hạn'], advanceRows, 'Không có khoản tạm ứng nào quá hạn.')}
 
         ${buildSectionHtml('2', '#D97706', `Danh sách Hoá đơn &gt; ${INVOICE_THRESHOLD_DAYS} ngày chưa lập ĐNTT (tính tới ngày gửi)`,
-          ['Số hoá đơn', 'Người phụ trách', 'Số tiền', 'Quá hạn'], unmadeInvoiceRows, 'Không có hoá đơn nào quá hạn chưa lập ĐNTT.')}
+          ['Số hoá đơn', 'Ngày hoá đơn', 'Người phụ trách', 'Số tiền', 'Quá hạn'], unmadeInvoiceRows, 'Không có hoá đơn nào quá hạn chưa lập ĐNTT.')}
 
         ${buildSectionHtml('3', '#0D9488', `Danh sách ĐNTT đã lập trong ${esc(monthLabel)}`,
           ['Mã phiếu', 'Loại', 'Người đề nghị', 'Ngày lập', 'Số tiền', 'Trạng thái'], docRows, 'Không có ĐNTT nào được lập trong tháng này.')}
 
         ${buildSectionHtml('4', '#0284C7', `Danh sách Hoá đơn đã được lập ĐNTT trong ${esc(monthLabel)}`,
-          ['Số hoá đơn', 'Người phụ trách', 'Nội dung', 'Số tiền'], invRows, 'Không có hoá đơn nào được lập ĐNTT trong tháng này.')}
+          ['Số hoá đơn', 'Ngày hoá đơn', 'Người phụ trách', 'Nội dung', 'Số tiền'], invRows, 'Không có hoá đơn nào được lập ĐNTT trong tháng này.')}
 
         <div style="padding:16px 28px;background:#F8FAFC;font-size:12px;color:#64748B;border-top:1px solid #E2E8F0;border-radius:0 0 10px 10px;font-family:${EMAIL_FONT};text-align:center;">
           Email tự động từ Hệ thống Phiếu tài chính CPC1. Không cần trả lời email này.
@@ -326,6 +326,7 @@ module.exports = async (req, res) => {
       const unmadeInvoiceRows = bucket.unmadeInvoices.map(o => `
         <tr>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;"><b style="font-family:Consolas,Menlo,Monaco,monospace;">${esc(o.rec.seriesNo ? o.rec.seriesNo + '|' + o.rec.invoiceNumber : (o.rec.invoiceNumber || ''))}</b></td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(fmtDateVN(o.rec.date || o.rec.uploadedAt))}</td>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(o.rec.requesterName)}</td>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;font-family:Consolas,Menlo,Monaco,monospace;">${esc(fmtMoney(o.rec.amount, o.rec.currency))}</td>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;color:#D97706;font-weight:700;">${o.daysOverdue} ngày</td>
@@ -344,6 +345,7 @@ module.exports = async (req, res) => {
       const invRows = bucket.invoices.map(r => `
         <tr>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;"><b style="font-family:Consolas,Menlo,Monaco,monospace;">${esc(r.seriesNo ? r.seriesNo + '|' + r.invoiceNumber : (r.invoiceNumber || ''))}</b></td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(fmtDateVN(r.date || r.uploadedAt))}</td>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(r.requesterName)}</td>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(r.note || '')}</td>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;font-family:Consolas,Menlo,Monaco,monospace;">${esc(fmtMoney(r.amount, r.currency))}</td>

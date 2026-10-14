@@ -71,7 +71,7 @@ function fmtMoney(n, currency) {
 function fmtDateVN(d) {
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return '';
-  return dt.toLocaleDateString('vi-VN');
+  return dt.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
 }
 function esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -138,7 +138,7 @@ function buildReportHtml(groupLabel, now, advanceRows, invoiceRows, counts) {
           ['Mã phiếu', 'Người tạm ứng', 'Số tiền', 'Quá hạn'], advanceRows, 'Không có khoản tạm ứng nào quá hạn.')}
 
         ${buildSectionHtml('2', '#0284C7', `Danh sách Hoá đơn &gt; ${INVOICE_THRESHOLD_DAYS} ngày chưa lập ĐNTT`,
-          ['Số hoá đơn', 'Người phụ trách', 'Số tiền', 'Quá hạn'], invoiceRows, 'Không có hoá đơn nào quá hạn.')}
+          ['Số hoá đơn', 'Ngày hoá đơn', 'Người phụ trách', 'Số tiền', 'Quá hạn'], invoiceRows, 'Không có hoá đơn nào quá hạn.')}
 
         <div style="padding:16px 28px;background:#F8FAFC;font-size:12px;color:#64748B;border-top:1px solid #E2E8F0;border-radius:0 0 10px 10px;font-family:${EMAIL_FONT};text-align:center;">
           Email tự động từ Hệ thống Phiếu tài chính CPC1. Vui lòng khẩn trương xử lý các mục trên. Không cần trả lời email này.
@@ -265,6 +265,7 @@ module.exports = async (req, res) => {
       const invoiceRows = bucket.invoices.map(o => `
         <tr>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;"><b style="font-family:Consolas,Menlo,Monaco,monospace;">${esc(o.rec.seriesNo ? o.rec.seriesNo + '|' + o.rec.invoiceNumber : (o.rec.invoiceNumber || ''))}</b></td>
+          <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(fmtDateVN(o.rec.date || o.rec.uploadedAt))}</td>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;">${esc(o.rec.requesterName)}</td>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;font-family:Consolas,Menlo,Monaco,monospace;">${esc(fmtMoney(o.rec.amount, o.rec.currency))}</td>
           <td style="padding:7px 9px;border:1px solid #E2E8F0;text-align:center;color:#E11D48;font-weight:700;">${o.daysOverdue} ngày</td>
